@@ -21,3 +21,6 @@ tmp
 # Windows reserved device name — accidental redirect artifact (see git "short read while indexing NUL")
 NUL
 
+
+# local editor/agent config (kept out of the repo)
+.claude

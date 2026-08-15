@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '@/store/useStore';
-import { isElectron } from '@/lib/ipc';
+import { isElectron, isWeb } from '@/lib/ipc';
 import { Layout } from '@/components/Layout/Layout';
 import { Dashboard } from '@/components/Dashboard/Dashboard';
 import { WatchlistView } from '@/components/Watchlist/WatchlistView';
@@ -15,7 +15,8 @@ export default function App() {
   const view = useStore((s) => s.view);
   const [showWelcome, setShowWelcome] = useState(false);
   const [appVersion, setAppVersion] = useState('');
-  const [showIntro, setShowIntro] = useState(true);
+  // Skip the 5 MB intro video on the web build (heavy + 10s delay on mobile data).
+  const [showIntro, setShowIntro] = useState(!isWeb);
   const [isFading, setIsFading] = useState(false);
 
   const handleIntroEnd = () => {
@@ -92,7 +93,7 @@ export default function App() {
       )}
 
       <Layout>
-        {!isElectron && (
+        {!isElectron && !isWeb && (
           <div
             className="mb-4 rounded-xl px-4 py-2 text-sm"
             style={{

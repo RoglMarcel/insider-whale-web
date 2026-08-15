@@ -8,6 +8,10 @@ name: Scrape & Publish (web)
 # for a few-times-a-day insider feed, not for an exact-minute trigger.
 on:
   workflow_dispatch: {}          # lets you run it manually from the Actions tab
+  push:
+    branches: [main]             # UI/code changes auto-rebuild + redeploy the site
+    paths-ignore:                # ...but not for pure docs edits
+      - '**/*.md'
   schedule:
     - cron: '0 14 * * 1-5'       # ~US market open  (13:30–14:30 UTC across DST)
     - cron: '0 17 * * 1-5'       # ~midday

@@ -12,6 +12,7 @@ import { webApi } from './webApi';
  * This is the seam that made the mobile/web port additive — see the analysis doc.
  */
 export const isElectron = typeof window !== 'undefined' && !!window.api;
-const isWeb = import.meta.env.VITE_TARGET === 'web';
+/** True in the hosted GitHub Pages build (set by vite.config.web.ts). */
+export const isWeb = import.meta.env.VITE_TARGET === 'web';
 
 export const api: InsiderTrackerAPI = isElectron ? window.api : isWeb ? webApi : mockApi;

@@ -14,7 +14,7 @@ const VIEW_META: Record<string, { title: string; subtitle: string }> = {
   settings: { title: 'Settings', subtitle: 'Schedule, filters, sources & data' },
 };
 
-export function Header() {
+export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
   const view = useStore((s) => s.view);
   const signals = useStore((s) => s.signals);
   const openSignal = useStore((s) => s.openSignal);
@@ -51,10 +51,23 @@ export function Header() {
   }, [bellOpen]);
 
   return (
-    <header className="flex items-center gap-4 px-8 py-5 select-none" style={{ WebkitAppRegion: 'drag' } as any}>
+    <header className="flex items-center gap-2 px-4 py-4 select-none lg:gap-4 lg:px-8 lg:py-5" style={{ WebkitAppRegion: 'drag' } as any}>
+      {/* Hamburger — opens the nav drawer on mobile (hidden on lg+) */}
+      <button
+        type="button"
+        className="icon-btn shrink-0 lg:hidden"
+        aria-label="Open menu"
+        onClick={() => onMenuClick?.()}
+        style={{ WebkitAppRegion: 'no-drag' } as any}
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <path d="M3 6h18M3 12h18M3 18h18" />
+        </svg>
+      </button>
+
       <div className="min-w-0 flex-1">
-        <h1 className="text-2xl font-extrabold tracking-tight">{meta.title}</h1>
-        <p className="truncate text-sm text-secondary">{meta.subtitle}</p>
+        <h1 className="truncate text-xl font-extrabold tracking-tight lg:text-2xl">{meta.title}</h1>
+        <p className="truncate text-xs text-secondary lg:text-sm">{meta.subtitle}</p>
       </div>
 
       {/* Live scrape phase */}
@@ -77,7 +90,7 @@ export function Header() {
       </div>
 
       {/* Interactive controls */}
-      <div className="flex items-center gap-4" style={{ WebkitAppRegion: 'no-drag' } as any}>
+      <div className="flex items-center gap-2 lg:gap-4" style={{ WebkitAppRegion: 'no-drag' } as any}>
         {/* Notification bell — HIGH conviction list */}
         <div className="relative" ref={bellRef}>
           <button
@@ -141,9 +154,9 @@ export function Header() {
         <ThemeToggle />
 
         {/* Manual refresh */}
-        <button className="btn btn-primary" onClick={() => refresh()} disabled={running}>
+        <button className="btn btn-primary shrink-0" onClick={() => refresh()} disabled={running}>
           <RefreshIcon size={16} className={running ? 'animate-spin' : ''} />
-          {running ? 'Scraping…' : 'Refresh'}
+          <span className="hidden sm:inline">{running ? 'Scraping…' : 'Refresh'}</span>
         </button>
       </div>
     </header>

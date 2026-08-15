@@ -20,7 +20,20 @@ the project without rediscovering the same context.
 - Important: this local folder is currently not a git repository. Releases are
   built locally and uploaded to GitHub Releases.
 
-- **v1.1.2** (Current)
+- **v1.1.3** (Current)
+  - **Mobile-usable web layout.** The fixed `w-60` sidebar becomes an off-canvas
+    drawer below `lg` (hamburger in the header, backdrop, closes on nav/backdrop
+    tap); it stays a static column on `lg+` (desktop unchanged, verified). Header
+    padding/title scale down on small screens and no longer overlap; `main` uses
+    full width (`px-4 lg:px-8`). Signal grid already reflowed 1→2→3 cols.
+  - **Web build de-clutter.** The Electron-only "Preview mode — scraping & local
+    database disabled" banner is hidden on the web target (`isWeb`), and the 5 MB
+    intro video is skipped on the web build (heavy + 10s delay on mobile data).
+    New exported `isWeb` flag in `src/lib/ipc.ts`.
+  - **CI: auto-deploy on push.** `scrape.yml` now also triggers on push to `main`
+    (paths-ignore `**/*.md`), so UI/code changes rebuild + redeploy without a
+    manual "Run workflow".
+- **v1.1.2**
   - **Web / mobile target (scrape-to-static), additive & non-breaking.** New headless
     runner `scripts/scrape-web.ts` runs the same `runScrape` orchestrator on plain
     Node (esbuild aliases `electron` → `scripts/electron-stub.ts`; only `auth.ts`

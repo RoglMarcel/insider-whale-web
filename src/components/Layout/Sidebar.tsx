@@ -18,7 +18,7 @@ const NAV: NavItem[] = [
   { key: 'settings', label: 'Settings', icon: SettingsIcon },
 ];
 
-export function Sidebar() {
+export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: () => void }) {
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
   const watchlistCount = useStore((s) => s.watchlist.length);
@@ -29,14 +29,33 @@ export function Sidebar() {
     api.app.getVersion().then(setVersion).catch(() => undefined);
   }, []);
 
+  const go = (key: View) => {
+    setView(key);
+    onClose?.(); // close the drawer after navigating on mobile
+  };
+
   return (
-    <aside className="glass m-3 mr-0 flex w-60 shrink-0 flex-col rounded-2xl p-4">
-      {/* Logo */}
-      <div className="mb-6 flex items-center px-2 pt-1">
+    <aside
+      className={`glass fixed inset-y-3 left-3 z-50 flex w-60 flex-col rounded-2xl p-4 transition-transform duration-300 lg:static lg:inset-auto lg:m-3 lg:mr-0 lg:shrink-0 lg:translate-x-0 lg:transition-none ${
+        open ? 'translate-x-0' : '-translate-x-[120%]'
+      }`}
+    >
+      {/* Logo + mobile close */}
+      <div className="mb-6 flex items-center justify-between px-2 pt-1">
         <div className="leading-tight">
           <div className="text-sm font-extrabold">Insider &amp; Whale</div>
           <div className="text-xs text-secondary">Terminal</div>
         </div>
+        <button
+          type="button"
+          className="icon-btn lg:hidden"
+          aria-label="Close menu"
+          onClick={() => onClose?.()}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M18 6 6 18M6 6l12 12" />
+          </svg>
+        </button>
       </div>
 
       {/* Nav */}
@@ -48,7 +67,7 @@ export function Sidebar() {
             <button
               key={item.key}
               className={`sidebar-item ${active ? 'sidebar-item-active' : ''}`}
-              onClick={() => setView(item.key)}
+              onClick={() => go(item.key)}
             >
               <Icon size={18} />
               <span className="flex-1 text-left">{item.label}</span>
