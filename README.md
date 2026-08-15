@@ -20,7 +20,18 @@ the project without rediscovering the same context.
 - Important: this local folder is currently not a git repository. Releases are
   built locally and uploaded to GitHub Releases.
 
-- **v1.1.6** (Current)
+- **v1.1.7** (Current)
+  - **Fix: `publish:web` skipped every login-gated source.** The script set userData
+    *after* `app.whenReady()` (and defaulted to Electron's dev folder), but Windows
+    `safeStorage` decrypts with an AES key stored in `<userData>/Local State` — so all
+    9 saved sessions failed to decrypt, read as "logged out", and the 6 gated sources
+    were silently dropped from the run (absent from `sourceBreakdown`, no error).
+    userData is now set **before** ready and defaults to `Roaming/insider-whale-terminal`.
+    Added a pre-flight that prints sessions-that-decrypt + unlocked sources, and warns
+    loudly on the wrong-folder case. Measured: 263 signals / 0 options / 0 combos →
+    **355 signals / 17 with options / 1 combo** (barchart 50, finviz 200, optionstrat 17,
+    insiderfinance 10). GuruFocus still hard-fails on Cloudflare even headed (known 🔴).
+- **v1.1.6**
   - **Desktop-as-publisher (Variante B).** New `npm run publish:web` (runs under
     Electron for real `safeStorage` + logged-in sessions) does the FULL scrape with
     your account-gated sources, writes the shared `data/insider-tracker.db` + JSON,

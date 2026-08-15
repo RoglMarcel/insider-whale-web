@@ -24,9 +24,22 @@ import { app, safeStorage } from 'electron';
 import { runScrape } from '../electron/scraper';
 import { initDatabase, closeDatabase, getMostRecentSessionSignals } from '../electron/database';
 import { fetchVix } from '../electron/vix';
-import { DEFAULT_SETTINGS, SCRAPER_SOURCES, type AppSettings, type ScraperSource } from '../src/types';
+import { authStatus, sourceUnlocked } from '../electron/auth';
+import { DEFAULT_SETTINGS, SCRAPER_SOURCES, LOGIN_PLATFORMS, type AppSettings, type ScraperSource } from '../src/types';
 
 const DO_PUSH = process.argv.includes('--push') || process.env.PUBLISH_PUSH === '1';
+
+/**
+ * MUST run before app.whenReady(): on Windows `safeStorage` decrypts with an AES
+ * key stored in `<userData>/Local State`, so pointing userData at the wrong folder
+ * (or setting it after ready) makes every saved session fail to decrypt — which
+ * silently reads as "logged out" and skips all login-gated sources.
+ * Default = the desktop app's folder (Roaming/insider-whale-terminal).
+ */
+const USER_DATA_DIR =
+  process.env.USERDATA_DIR ||
+  path.join(app.getPath('appData'), process.env.APP_NAME || 'insider-whale-terminal');
+app.setPath('userData', USER_DATA_DIR);
 
 function git(args: string[]): void {
   execFileSync('git', args, { cwd: process.cwd(), stdio: 'inherit' });
@@ -35,22 +48,30 @@ function git(args: string[]): void {
 async function main(): Promise<void> {
   await app.whenReady();
 
-  // Point at the desktop app's userData so its saved sessions are found. The
-  // packaged app keys userData off its name; override with USERDATA_DIR if empty.
-  if (process.env.USERDATA_DIR) {
-    app.setPath('userData', process.env.USERDATA_DIR);
-  } else {
-    app.setName(process.env.APP_NAME || 'insider-whale-terminal');
-  }
   const sessionsDir = path.join(app.getPath('userData'), 'sessions');
   const sessionCount = fs.existsSync(sessionsDir)
     ? fs.readdirSync(sessionsDir).filter((f) => f.endsWith('.session')).length
     : 0;
   console.log(`[publish-web] userData: ${app.getPath('userData')}`);
   console.log(`[publish-web] safeStorage available: ${safeStorage.isEncryptionAvailable()}`);
-  console.log(`[publish-web] saved sessions found: ${sessionCount}` + (sessionCount === 0
-    ? '  ⚠ none — login-gated sources will be skipped. Set USERDATA_DIR to your desktop app data folder.'
-    : ''));
+  console.log(`[publish-web] session files on disk: ${sessionCount}`);
+
+  // Pre-flight: a file that exists but does NOT decrypt reads as "logged out" and
+  // the source is skipped without any error — so report what actually unlocked.
+  const status = authStatus();
+  const decrypted = Object.entries(status).filter(([, v]) => v.loggedIn).map(([k]) => k);
+  const gatedKeys = SCRAPER_SOURCES.filter((s) => LOGIN_PLATFORMS.some((p) => p.sourceKey === s.key));
+  const unlocked = gatedKeys.filter((s) => sourceUnlocked(s.key)).map((s) => s.key);
+  console.log(`[publish-web] sessions that decrypt: ${decrypted.length}/${sessionCount}` +
+    (decrypted.length ? ` (${decrypted.join(', ')})` : ''));
+  console.log(`[publish-web] login-gated sources unlocked: ${unlocked.join(', ') || 'NONE'}`);
+  if (sessionCount > 0 && decrypted.length === 0) {
+    console.warn(
+      '[publish-web] ⚠ Session files exist but none decrypt — this is almost always the WRONG userData folder.\n' +
+      '    safeStorage keys off <userData>/Local State. Point at the desktop app\'s folder, e.g.:\n' +
+      `    set USERDATA_DIR=${path.join(app.getPath('appData'), 'insider-whale-terminal')} && npm run publish:web`,
+    );
+  }
 
   const dbDir = path.resolve(process.cwd(), 'data');
   const outDir = path.resolve(process.cwd(), 'public', 'data');

@@ -25,3 +25,5 @@ NUL
 
 # local editor/agent config (kept out of the repo)
 .claude
+*.db-wal
+*.db-shm
