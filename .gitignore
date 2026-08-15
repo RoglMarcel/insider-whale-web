@@ -13,6 +13,7 @@ Thumbs.db
 .env
 .env.*
 *.db
+!data/insider-tracker.db
 *.db-journal
 *.sqlite
 .vite

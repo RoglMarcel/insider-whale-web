@@ -3,6 +3,7 @@ import { useStore } from '@/store/useStore';
 import { GlassCard } from '@/components/UI/GlassCard';
 import { CheckIcon } from '@/components/UI/icons';
 import { LOGIN_PLATFORMS, type LoginPlatform } from '@/types';
+import { isWeb } from '@/lib/ipc';
 
 function categoryLabel(c: LoginPlatform['category']): string {
   return c === 'valuation' ? 'Fair value' : c === 'options' ? 'Options flow' : 'Insider trades';
@@ -77,7 +78,11 @@ function PlatformRow({ platform }: { platform: LoginPlatform }) {
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          {loggedIn ? (
+          {isWeb ? (
+            <span className="text-[11px] text-secondary">
+              {loggedIn ? 'Session active (CI)' : 'Desktop / CI only'}
+            </span>
+          ) : loggedIn ? (
             <>
               <span className="inline-flex items-center gap-1 text-xs font-semibold" style={{ color: 'var(--accent-green)' }}>
                 <CheckIcon size={14} /> Logged in
@@ -111,11 +116,21 @@ export function PlatformLogins() {
   return (
     <GlassCard className="p-6">
       <h3 className="mb-1 text-sm font-bold uppercase tracking-wide text-secondary">Platform Logins</h3>
-      <p className="mb-2 text-xs text-secondary">
-        Sign in to read past free-view limits and account-gated data. A browser window opens for you to log in
-        (email, Google, anything) - only the resulting session cookies are stored, encrypted on this device. No
-        passwords are saved.
-      </p>
+      {isWeb ? (
+        <p className="mb-2 text-xs text-secondary">
+          This is the hosted web view — it only <em>displays</em> data, it never scrapes, so logging in here
+          would have nowhere to send the cookies. Login-gated sources (options flow, GuruFocus, X…) are scraped
+          two ways: (1) in the <strong>desktop app</strong>, which publishes its results here, or (2) by the
+          cloud scraper if you add exported session cookies as the <code>SCRAPE_SESSIONS</code> GitHub secret.
+          See the README section “Login-gated sources”.
+        </p>
+      ) : (
+        <p className="mb-2 text-xs text-secondary">
+          Sign in to read past free-view limits and account-gated data. A browser window opens for you to log in
+          (email, Google, anything) - only the resulting session cookies are stored, encrypted on this device. No
+          passwords are saved.
+        </p>
+      )}
       <div className="divide-y" style={{ borderColor: 'var(--border-glass)' }}>
         {LOGIN_PLATFORMS.map((p) => (
           <PlatformRow key={p.key} platform={p} />

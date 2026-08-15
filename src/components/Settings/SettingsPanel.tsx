@@ -7,7 +7,7 @@ import { formatUSD } from '@/lib/format';
 import { PlatformLogins } from './PlatformLogins';
 import { AlertRules } from './AlertRules';
 import { ShadowScoring } from './ShadowScoring';
-import { api } from '@/lib/ipc';
+import { api, isWeb } from '@/lib/ipc';
 
 function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
@@ -70,6 +70,21 @@ export function SettingsPanel() {
 
   return (
     <div className="animate-fade-in mx-auto flex max-w-3xl flex-col gap-5">
+      {isWeb && (
+        <div
+          className="rounded-xl px-4 py-2.5 text-xs"
+          style={{
+            background: 'color-mix(in srgb, var(--accent-blue) 12%, transparent)',
+            color: 'var(--text-primary)',
+            border: '1px solid color-mix(in srgb, var(--accent-blue) 26%, transparent)',
+          }}
+        >
+          Live web view — the schedule, source and filter toggles below don’t control the cloud scraper (that
+          runs on a fixed GitHub Actions schedule). They’re here for parity with the desktop app; changes are
+          local to this browser only.
+        </div>
+      )}
+
       {/* Schedule */}
       <SectionCard title="Auto-Refresh Schedule">
         <Row label="Enable scheduled scrapes" hint="Runs automatically on weekdays (US Eastern)">

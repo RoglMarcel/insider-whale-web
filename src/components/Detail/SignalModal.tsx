@@ -256,12 +256,12 @@ export function SignalModal() {
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4"
       style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)' }}
       onClick={closeSignal}
     >
       <div
-        className="glass animate-scale-in flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl"
+        className="glass animate-scale-in flex max-h-[95vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl sm:max-h-[88vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -324,7 +324,7 @@ export function SignalModal() {
         </div>
 
         {/* Body */}
-        <div className="flex flex-col gap-7 overflow-y-auto px-6 py-6">
+        <div className="flex flex-col gap-7 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6">
           {chartOnly ? (
             <TradingViewChart ticker={selectedTicker} theme={theme} />
           ) : loadingSignal ? (

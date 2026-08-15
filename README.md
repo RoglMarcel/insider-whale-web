@@ -20,7 +20,28 @@ the project without rediscovering the same context.
 - Important: this local folder is currently not a git repository. Releases are
   built locally and uploaded to GitHub Releases.
 
-- **v1.1.3** (Current)
+- **v1.1.4** (Current)
+  - **Web de-clutter (#1).** On the web build (`isWeb`) the controls that only work
+    in the desktop shell are hidden/relabeled: header **Refresh** and dashboard
+    **Export CSV** are hidden; **Platform Logins** explains why web login is inert
+    and points to the two real paths; a note on the **Settings** page clarifies the
+    schedule/source toggles don’t drive the cloud scraper. Detail modal padding/height
+    tuned for phones.
+  - **History persistence (#3).** The SQLite DB is now committed back to the repo
+    (`data/insider-tracker.db`, un-ignored) after each successful deploy
+    (`[skip ci]` guards the loop; `contents: write` + `fetch-depth: 0`). Each run
+    opens the prior DB, so track-records / score-trend / “new signal” detection
+    accumulate. Trade-off: the repo grows by one binary DB blob per run.
+  - **Phone push via ntfy (#2).** If the repo secret `NTFY_TOPIC` is set, the run
+    curls new HIGH/combo tickers to `ntfy.sh/<topic>` (subscribe in the free ntfy
+    Android app). No-op when unset.
+  - **Login-gated sources in CI (the login answer).** The runner reads the optional
+    `SCRAPE_SESSIONS` secret (JSON map of `platformKey → Playwright storageState`),
+    writes each to the session file `auth.ts` already reads (`RAW:` plaintext), and
+    auto-enables those scraper sources — reusing the existing auth path unchanged.
+    See “Login-gated sources on the web build” below. Caveats: sessions expire, and
+    one datacenter IP scraping X/GuruFocus is easily blocked.
+- **v1.1.3**
   - **Mobile-usable web layout.** The fixed `w-60` sidebar becomes an off-canvas
     drawer below `lg` (hamburger in the header, backdrop, closes on nav/backdrop
     tap); it stays a static column on `lg+` (desktop unchanged, verified). Header
@@ -162,6 +183,44 @@ the project without rediscovering the same context.
 Distribution is handled by `electron-builder`. The app also uses
 `electron-updater`, so installed clients can receive updates from GitHub Releases.
 When publishing a new release, upload both the installer and `latest.yml`.
+
+## Web / mobile build (GitHub Pages, "scrape-to-static")
+
+The same React renderer is also shipped as a **free hosted website** so the app is
+usable on a phone with no server and no cost. A GitHub Actions workflow
+(`.github/workflows/scrape.yml`) runs the real `runScrape` orchestrator headlessly
+on Node (esbuild aliases `electron` → `scripts/electron-stub.ts`), writes
+`public/data/{signals,meta}.json`, builds the web bundle (`vite.config.web.ts`,
+`VITE_TARGET=web`), and deploys it to GitHub Pages. The renderer picks its data
+source in `src/lib/ipc.ts` (`window.api` / `webApi` / `mockApi`).
+
+- Live site: `https://<owner>.github.io/insider-whale-web/`
+- Local dev: `npm run dev:web` · one-off scrape: `npm run scrape:web` · build: `npm run build:web`
+- History accumulates in the committed `data/insider-tracker.db`.
+
+### Login-gated sources on the web build
+
+A static site can only *display* data — logging in there can’t reach the cloud
+scraper. Two real ways to get account-gated sources (options flow, GuruFocus,
+Finviz Elite, X, valuation…) into the site:
+
+1. **Desktop-as-publisher** — run the desktop app (it already logs in per user,
+   residential IP, encrypted sessions) and have it publish its scraped output to
+   the web repo. Best reliability / lowest ban risk.
+2. **CI session secret** — set the repo secret **`SCRAPE_SESSIONS`** to a JSON map
+   of `platformKey → Playwright storageState`, e.g.
+   `{ "barchart": { "cookies": [...], "origins": [...] } }`. The runner writes each
+   to `<userData>/sessions/<key>.session` (`RAW:` plaintext) so `auth.ts` unlocks
+   the source and injects the cookies. Get a `storageState` by logging in once in a
+   Playwright/Chromium session and saving `context.storageState()`.
+   Caveats: cookies expire (re-paste periodically); one datacenter IP scraping
+   X/GuruFocus is easily rate-limited or banned — the account risk is the user’s.
+
+### Phone notifications (ntfy)
+
+Set the repo secret **`NTFY_TOPIC`** to any hard-to-guess string and subscribe to
+that topic in the free **ntfy** Android app. Each run pushes new HIGH/combo tickers
+there. Unset = no notifications.
 
 ## Safety Note
 

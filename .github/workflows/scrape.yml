@@ -4,6 +4,9 @@ name: Scrape & Publish (web)
 # runner a few times a day, build the web UI with the fresh data baked in, and
 # deploy it to GitHub Pages. No server, no cost, no phone battery used.
 #
+# The SQLite history DB is committed back to the repo (data/insider-tracker.db)
+# so track-records / score-trend / "new signal" detection accumulate across runs.
+#
 # NOTE: GitHub cron is UTC and can be delayed several minutes under load — fine
 # for a few-times-a-day insider feed, not for an exact-minute trigger.
 on:
@@ -17,9 +20,9 @@ on:
     - cron: '0 17 * * 1-5'       # ~midday
     - cron: '30 20 * * 1-5'      # ~after US close  (20:00–21:00 UTC across DST)
 
-# Required for deploying to GitHub Pages from Actions.
+# contents:write lets the run commit the updated history DB back to the repo.
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -37,6 +40,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # full history so the persist-step push is clean
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -59,10 +64,27 @@ jobs:
 
       - name: Scrape → public/data/*.json
         env:
-          APP_VERSION: ${{ github.sha }}
+          # Optional: JSON map of login-gated session cookies (see README
+          # "Login-gated sources"). Empty if the secret is not set → 🟢 sources only.
+          SCRAPE_SESSIONS: ${{ secrets.SCRAPE_SESSIONS }}
         run: |
           export APP_VERSION="$(node -p "require('./package.json').version")"
           npm run scrape:web
+
+      # Optional phone push: set the repo secret NTFY_TOPIC (any hard-to-guess
+      # string) and subscribe to it in the ntfy Android app. No-op if unset.
+      - name: Notify new signals (ntfy)
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: |
+          if [ -z "$NTFY_TOPIC" ]; then echo "NTFY_TOPIC not set — skipping push."; exit 0; fi
+          NEW=$(node -e "const m=require('./public/data/meta.json');const a=[...(m.newHighConviction||[]),...(m.newCombos||[])];process.stdout.write([...new Set(a)].join(', '))")
+          if [ -n "$NEW" ]; then
+            curl -s -H "Title: New insider/whale signals" -H "Tags: chart_with_upwards_trend" \
+              -d "New HIGH/combo: $NEW" "https://ntfy.sh/$NTFY_TOPIC" >/dev/null && echo "Notified: $NEW"
+          else
+            echo "No new HIGH/combo signals this run."
+          fi
 
       - name: Build web UI (bakes in public/data)
         run: npm run build:web
@@ -78,3 +100,18 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deploy
         uses: actions/deploy-pages@v4
+
+      # Persist history AFTER a successful deploy so a persist hiccup never blocks
+      # the site. [skip ci] stops this commit from re-triggering the workflow.
+      - name: Persist history DB
+        run: |
+          [ -f data/insider-tracker.db ] || { echo "no DB to persist"; exit 0; }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f data/insider-tracker.db
+          if git diff --staged --quiet; then
+            echo "DB unchanged — nothing to commit."
+          else
+            git commit -m "chore(data): update history DB [skip ci]"
+            git push || echo "push rejected (concurrent run?) — will persist next run."
+          fi

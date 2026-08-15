@@ -4,7 +4,7 @@ import { StatCards } from './StatCards';
 import { SignalGrid } from './SignalGrid';
 import { FilterBar } from './FilterBar';
 import { SearchIcon } from '@/components/UI/icons';
-import { api } from '@/lib/ipc';
+import { api, isWeb } from '@/lib/ipc';
 
 export function Dashboard() {
   const { filteredSignals, filter } = useSignals();
@@ -60,14 +60,17 @@ export function Dashboard() {
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-          <button
-            className="btn shrink-0"
-            onClick={() => void onExport()}
-            disabled={exporting || filteredSignals.length === 0}
-            title="Export the current signals to a CSV file"
-          >
-            {exporting ? 'Exporting…' : 'Export CSV'}
-          </button>
+          {/* CSV export writes a file via the desktop shell — not available on the web build. */}
+          {!isWeb && (
+            <button
+              className="btn shrink-0"
+              onClick={() => void onExport()}
+              disabled={exporting || filteredSignals.length === 0}
+              title="Export the current signals to a CSV file"
+            >
+              {exporting ? 'Exporting…' : 'Export CSV'}
+            </button>
+          )}
         </div>
       </div>
 

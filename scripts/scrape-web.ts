@@ -17,10 +17,11 @@
  */
 import path from 'node:path';
 import fs from 'node:fs';
+import { app } from 'electron'; // aliased to scripts/electron-stub.ts (see the scrape:web npm script)
 import { runScrape } from '../electron/scraper';
 import { initDatabase, closeDatabase } from '../electron/database';
 import { fetchVix } from '../electron/vix';
-import { DEFAULT_SETTINGS, type AppSettings, type ScraperSource } from '../src/types';
+import { DEFAULT_SETTINGS, SCRAPER_SOURCES, type AppSettings, type ScraperSource } from '../src/types';
 
 // Only robust, browser-optional sources by default. secform4/openinsider/
 // insidermonitor are static HTML; edgar is authoritative XML over fetch.
@@ -41,6 +42,42 @@ const WEB_SOURCES: Record<ScraperSource, boolean> = {
   marketbeatoptions: false,
 };
 
+/**
+ * Login-gated sources in CI: the user pastes exported Playwright `storageState`
+ * blobs into the GitHub secret SCRAPE_SESSIONS as a JSON map
+ *   { "barchart": {cookies:[…],origins:[…]}, "gurufocus": {…}, … }
+ * We write each to the exact session file `auth.ts` reads (RAW: = plaintext, no
+ * OS keychain in CI), which makes `sourceUnlocked()` return true and injects the
+ * cookies via `loadMergedStorageState()` — zero changes to auth/orchestrator.
+ * Only source keys (not e.g. twitter/valuation) get auto-enabled here.
+ * NOTE: never log the blob contents; only the key names.
+ */
+function applySessions(): ScraperSource[] {
+  const raw = process.env.SCRAPE_SESSIONS;
+  if (!raw) return [];
+  let map: Record<string, unknown>;
+  try {
+    map = JSON.parse(raw);
+  } catch {
+    console.warn('[scrape-web] SCRAPE_SESSIONS is set but not valid JSON — ignoring it.');
+    return [];
+  }
+  const dir = path.join(app.getPath('userData'), 'sessions');
+  fs.mkdirSync(dir, { recursive: true });
+  const sourceKeys = new Set<string>(SCRAPER_SOURCES.map((s) => s.key));
+  const enabled: ScraperSource[] = [];
+  for (const [key, state] of Object.entries(map)) {
+    if (!state || typeof state !== 'object') continue;
+    fs.writeFileSync(path.join(dir, `${key}.session`), 'RAW:' + JSON.stringify(state));
+    if (sourceKeys.has(key)) enabled.push(key as ScraperSource);
+  }
+  console.log(
+    `[scrape-web] injected ${Object.keys(map).length} session(s); unlocked gated sources: ` +
+    (enabled.length ? enabled.join(', ') : '(none are scraper sources)'),
+  );
+  return enabled;
+}
+
 async function main(): Promise<void> {
   const version = process.env.APP_VERSION ?? readVersion();
   const outDir = path.resolve(process.cwd(), 'public', 'data');
@@ -52,12 +89,17 @@ async function main(): Promise<void> {
   // initialized DB; persisting it across runs (for history/track-records) is a
   // later step — see tutorial "Was v1.1.2 noch NICHT kann".
   const dbPath = path.join(dbDir, 'insider-tracker.db');
-  console.log(`[scrape-web] init DB at ${dbPath}`);
+  console.log(`[scrape-web] init DB at ${dbPath} (${fs.existsSync(dbPath) ? 'existing — history preserved' : 'fresh'})`);
   initDatabase(dbPath);
+
+  // Unlock any login-gated sources whose cookies were supplied via SCRAPE_SESSIONS.
+  const sessionSources = applySessions();
+  const sources: Record<ScraperSource, boolean> = { ...WEB_SOURCES };
+  for (const key of sessionSources) sources[key] = true;
 
   const settings: AppSettings = {
     ...DEFAULT_SETTINGS,
-    sources: WEB_SOURCES,
+    sources,
     headless: true,
     scheduleEnabled: false, // the CI cron is the scheduler; nothing schedules in-process
   };

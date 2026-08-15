@@ -5,6 +5,7 @@ import { ThemeToggle } from '@/components/UI/ThemeToggle';
 import { VixIndicator } from '@/components/UI/VixIndicator';
 import { RefreshIcon, BellIcon } from '@/components/UI/icons';
 import { timeAgo } from '@/lib/format';
+import { isWeb } from '@/lib/ipc';
 
 const VIEW_META: Record<string, { title: string; subtitle: string }> = {
   dashboard: { title: 'Alerts', subtitle: 'Ranked insider & whale conviction signals' },
@@ -153,11 +154,14 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
 
         <ThemeToggle />
 
-        {/* Manual refresh */}
-        <button className="btn btn-primary shrink-0" onClick={() => refresh()} disabled={running}>
-          <RefreshIcon size={16} className={running ? 'animate-spin' : ''} />
-          <span className="hidden sm:inline">{running ? 'Scraping…' : 'Refresh'}</span>
-        </button>
+        {/* Manual refresh — desktop/Electron only. On the web the data comes from
+            the scheduled GitHub Actions scrape, so an in-app refresh does nothing. */}
+        {!isWeb && (
+          <button className="btn btn-primary shrink-0" onClick={() => refresh()} disabled={running}>
+            <RefreshIcon size={16} className={running ? 'animate-spin' : ''} />
+            <span className="hidden sm:inline">{running ? 'Scraping…' : 'Refresh'}</span>
+          </button>
+        )}
       </div>
     </header>
   );
