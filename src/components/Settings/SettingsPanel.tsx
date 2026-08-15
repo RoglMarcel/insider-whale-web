@@ -85,6 +85,19 @@ export function SettingsPanel() {
         </div>
       )}
 
+      {/* Web build: the local scraper/scorer doesn't exist, so the interactive
+          controls below are omitted. A read-only note replaces the schedule. */}
+      {isWeb && (
+        <SectionCard title="Cloud scrape schedule">
+          <div className="py-2 text-xs text-secondary">
+            Runs automatically on GitHub Actions ~3× every weekday (around US market open, midday and after
+            close, UTC cron) plus on every code push. It can’t be changed from here.
+          </div>
+        </SectionCard>
+      )}
+
+      {!isWeb && (
+      <>
       {/* Schedule */}
       <SectionCard title="Auto-Refresh Schedule">
         <Row label="Enable scheduled scrapes" hint="Runs automatically on weekdays (US Eastern)">
@@ -183,10 +196,14 @@ export function SettingsPanel() {
           );
         })}
       </SectionCard>
+      </>
+      )}
 
       {/* Platform Logins */}
       <PlatformLogins />
 
+      {!isWeb && (
+      <>
       <AlertRules />
 
       <ShadowScoring />
@@ -207,6 +224,8 @@ export function SettingsPanel() {
           </button>
         </Row>
       </SectionCard>
+      </>
+      )}
     </div>
   );
 }

@@ -19,7 +19,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { app } from 'electron'; // aliased to scripts/electron-stub.ts (see the scrape:web npm script)
 import { runScrape } from '../electron/scraper';
-import { initDatabase, closeDatabase } from '../electron/database';
+import { initDatabase, closeDatabase, getMostRecentSessionSignals } from '../electron/database';
 import { fetchVix } from '../electron/vix';
 import { DEFAULT_SETTINGS, SCRAPER_SOURCES, type AppSettings, type ScraperSource } from '../src/types';
 
@@ -104,6 +104,9 @@ async function main(): Promise<void> {
     scheduleEnabled: false, // the CI cron is the scheduler; nothing schedules in-process
   };
 
+  // Snapshot the previous run's tickers BEFORE scraping (for "new notable" push).
+  const prevTickers = new Set(getMostRecentSessionSignals().map((s) => s.ticker));
+
   console.log('[scrape-web] fetching VIX…');
   const vix = await fetchVix().catch(() => null);
 
@@ -112,6 +115,13 @@ async function main(): Promise<void> {
   const started = Date.now();
   const result = await runScrape({ settings, vix: vix?.value });
   const secs = Math.round((Date.now() - started) / 1000);
+
+  // Notable new WATCH-tier entrants (HIGH is unreachable without options flow, so
+  // notifying only on HIGH would never fire in the 🟢-only build).
+  const NOTABLE_MIN_SCORE = 65;
+  const newNotable = result.signals
+    .filter((s) => s.score >= NOTABLE_MIN_SCORE && !prevTickers.has(s.ticker))
+    .map((s) => s.ticker);
 
   const meta = {
     generatedAt: new Date().toISOString(),
@@ -123,6 +133,8 @@ async function main(): Promise<void> {
     sourceHealth: result.sourceHealth ?? [],
     newHighConviction: result.newHighConviction,
     newCombos: result.newCombos,
+    newNotable,
+    scoreSurges: result.scoreSurges ?? [],
     // Keep the payload small — surface only the error messages, not stacks.
     errors: result.errors.map((e) => `${e.source}: ${e.message}`),
   };

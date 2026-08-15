@@ -78,12 +78,12 @@ jobs:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: |
           if [ -z "$NTFY_TOPIC" ]; then echo "NTFY_TOPIC not set — skipping push."; exit 0; fi
-          NEW=$(node -e "const m=require('./public/data/meta.json');const a=[...(m.newHighConviction||[]),...(m.newCombos||[])];process.stdout.write([...new Set(a)].join(', '))")
+          NEW=$(node -e "const m=require('./public/data/meta.json');const a=[...(m.newHighConviction||[]),...(m.newCombos||[]),...(m.newNotable||[]),...(m.scoreSurges||[]).map(s=>s&&s.ticker?s.ticker:s)];process.stdout.write([...new Set(a.filter(Boolean))].join(', '))")
           if [ -n "$NEW" ]; then
             curl -s -H "Title: New insider/whale signals" -H "Tags: chart_with_upwards_trend" \
-              -d "New HIGH/combo: $NEW" "https://ntfy.sh/$NTFY_TOPIC" >/dev/null && echo "Notified: $NEW"
+              -d "New / surging tickers: $NEW" "https://ntfy.sh/$NTFY_TOPIC" >/dev/null && echo "Notified: $NEW"
           else
-            echo "No new HIGH/combo signals this run."
+            echo "No new notable signals this run."
           fi
 
       - name: Build web UI (bakes in public/data)

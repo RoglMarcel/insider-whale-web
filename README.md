@@ -20,7 +20,17 @@ the project without rediscovering the same context.
 - Important: this local folder is currently not a git repository. Releases are
   built locally and uploaded to GitHub Releases.
 
-- **v1.1.4** (Current)
+- **v1.1.5** (Current)
+  - **Web Settings pruned.** On the web build the sections that control the
+    (nonexistent) local scraper/scorer are removed, not just annotated: Auto-Refresh
+    Schedule, Notifications threshold, Filters, Data Sources, Shadow Scoring, Alert
+    Rules, and the Data card (Headless toggle / Clear history). A read-only "Cloud
+    scrape schedule" note replaces the schedule; Platform Logins (honest) stays.
+  - **Meaningful notifications.** HIGH/combo are unreachable without options flow, so
+    ntfy would never fire. The runner now also emits `newNotable` (new WATCH-tier
+    entrants scoring ≥ 65 vs the previous run) and `scoreSurges`; the ntfy step
+    notifies on the union. Needs history (v1.1.4) to detect "new".
+- **v1.1.4**
   - **Web de-clutter (#1).** On the web build (`isWeb`) the controls that only work
     in the desktop shell are hidden/relabeled: header **Refresh** and dashboard
     **Export CSV** are hidden; **Platform Logins** explains why web login is inert
