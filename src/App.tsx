@@ -1,0 +1,126 @@
+import { useEffect, useState } from 'react';
+import { useStore } from '@/store/useStore';
+import { isElectron } from '@/lib/ipc';
+import { Layout } from '@/components/Layout/Layout';
+import { Dashboard } from '@/components/Dashboard/Dashboard';
+import { WatchlistView } from '@/components/Watchlist/WatchlistView';
+import { HistoryView } from '@/components/History/HistoryView';
+import { SettingsPanel } from '@/components/Settings/SettingsPanel';
+import { NewsView } from '@/components/News/NewsView';
+import { SignalModal } from '@/components/Detail/SignalModal';
+import { WelcomeModal } from '@/components/Welcome/WelcomeModal';
+
+export default function App() {
+  const init = useStore((s) => s.init);
+  const view = useStore((s) => s.view);
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [appVersion, setAppVersion] = useState('');
+  const [showIntro, setShowIntro] = useState(true);
+  const [isFading, setIsFading] = useState(false);
+
+  const handleIntroEnd = () => {
+    setIsFading((fading) => {
+      if (fading) return fading;
+      setTimeout(() => {
+        setShowIntro(false);
+      }, 500);
+      return true;
+    });
+  };
+
+  useEffect(() => {
+    void init();
+  }, [init]);
+
+  useEffect(() => {
+    // Hard fallback: if the video is completely blocked/throttled or runs in the background,
+    // force fade out after 11 seconds (video duration is 10 seconds).
+    const fallbackTimer = setTimeout(() => {
+      handleIntroEnd();
+    }, 11000);
+    return () => clearTimeout(fallbackTimer);
+  }, []);
+
+  useEffect(() => {
+    const checkVersion = async () => {
+      if (isElectron && window.api?.app?.getVersion) {
+        try {
+          const ver = await window.api.app.getVersion();
+          setAppVersion(ver);
+          const lastSeen = localStorage.getItem('last_seen_version');
+          if (lastSeen !== ver) {
+            setShowWelcome(true);
+          }
+        } catch (err) {
+          console.error('Failed to get app version:', err);
+        }
+      } else {
+        // Fallback for non-electron preview
+        const lastSeen = localStorage.getItem('last_seen_version');
+        if (lastSeen !== '1.0.21') {
+          setAppVersion('1.0.21');
+          setShowWelcome(true);
+        }
+      }
+    };
+    void checkVersion();
+  }, []);
+
+  const handleCloseWelcome = () => {
+    localStorage.setItem('last_seen_version', appVersion || '1.0.21');
+    setShowWelcome(false);
+  };
+
+  return (
+    <>
+      {showIntro && (
+        <div
+          className={`fixed inset-0 z-[9999] bg-black flex items-center justify-center transition-opacity duration-500 ${
+            isFading ? 'opacity-0 pointer-events-none' : 'opacity-100'
+          }`}
+        >
+          <video
+            src="./intro.mp4"
+            autoPlay
+            muted
+            playsInline
+            onEnded={handleIntroEnd}
+            onError={() => setShowIntro(false)}
+            className="max-w-[50%] max-h-[50%] object-contain"
+          />
+        </div>
+      )}
+
+      <Layout>
+        {!isElectron && (
+          <div
+            className="mb-4 rounded-xl px-4 py-2 text-sm"
+            style={{
+              background: 'color-mix(in srgb, var(--accent-yellow) 16%, transparent)',
+              color: 'var(--text-primary)',
+              border: '1px solid color-mix(in srgb, var(--accent-yellow) 30%, transparent)',
+            }}
+          >
+            Preview mode — running outside Electron, so scraping & the local database are disabled.
+          </div>
+        )}
+
+        {view === 'dashboard' && <Dashboard />}
+        {view === 'watchlist' && <WatchlistView />}
+        {view === 'history' && <HistoryView />}
+        {view === 'news' && <NewsView />}
+        {view === 'settings' && <SettingsPanel />}
+
+        <SignalModal />
+
+        {showWelcome && (
+          <WelcomeModal
+            version={appVersion || '1.0.15'}
+            lastSeenVersion={localStorage.getItem('last_seen_version')}
+            onClose={handleCloseWelcome}
+          />
+        )}
+      </Layout>
+    </>
+  );
+}

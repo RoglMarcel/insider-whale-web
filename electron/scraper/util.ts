@@ -1,0 +1,303 @@
+import type { Page } from 'playwright';
+
+// ──────────────────────────────────────────────────────────────────────────
+// Value parsing — scraped cells are messy strings; normalize to raw numbers.
+// ──────────────────────────────────────────────────────────────────────────
+
+/** Parse "$1,234,567", "+$1.2M", "(450K)", "-12,000" → a raw JS number. */
+export function parseMoney(raw?: string | null): number {
+  if (raw == null) return 0;
+  const trimmed = String(raw).trim();
+  if (!trimmed) return 0;
+  const negative = /^\(.*\)$/.test(trimmed) || trimmed.startsWith('-');
+  // First number in the string, plus a k/m/b magnitude suffix ONLY when it
+  // immediately follows the digits. This anchors the suffix to the numeric token,
+  // so "1,000 mln" parses as 1000 (not 1e9) and a stray letter elsewhere is ignored,
+  // while "3M" / "$1.2M" still scale correctly.
+  // Word-boundary after suffix so "40B shares" scales but "Buy" / "Block" do not.
+  const m = trimmed.replace(/,/g, '').match(/(\d*\.?\d+)([kmb])?(?![a-z])/i);
+  if (!m) return 0;
+  const n = parseFloat(m[1]);
+  if (Number.isNaN(n)) return 0;
+  const suffix = (m[2] || '').toLowerCase();
+  const mult = suffix === 'k' ? 1e3 : suffix === 'm' ? 1e6 : suffix === 'b' ? 1e9 : 1;
+  return (negative ? -1 : 1) * n * mult;
+}
+
+/** Parse a share/quantity string into a number (absolute value). */
+export function parseShares(raw?: string | null): number {
+  return Math.abs(parseMoney(raw));
+}
+
+/** No real Form 4 open-market buy exceeds this (excludes mega-M&A block misreads). */
+export const MAX_SANE_TRADE_VALUE = 5_000_000_000;
+/** BRK.A is ~$700k/share; anything above $1M/share is almost certainly a unit error. */
+export const MAX_SANE_SHARE_PRICE = 1_000_000;
+/** Defensive share-count ceiling for a single Form 4 line. */
+export const MAX_SANE_SHARES = 500_000_000;
+
+export interface SanitizedAmounts {
+  shares: number;
+  price?: number;
+  value: number;
+}
+
+/**
+ * Normalize shares/price/value and drop impossible combinations (e.g. Insider
+ * Monitor mis-parsing "40,000,000 $13.25" as price=$40,000,000 → $1.6e15 value).
+ * Returns null when the row cannot be salvaged — caller should skip the trade.
+ */
+export function sanitizeTradeAmounts(
+  shares: number,
+  price: number | undefined,
+  value: number,
+): SanitizedAmounts | null {
+  let s = Number.isFinite(shares) && shares > 0 ? shares : 0;
+  let p = price != null && Number.isFinite(price) && price > 0 ? price : undefined;
+  let v = Number.isFinite(value) && value > 0 ? Math.abs(value) : 0;
+
+  // Prefer an explicit value column when product of shares×price is absurd.
+  if (s > 0 && p != null && s * p > MAX_SANE_TRADE_VALUE) {
+    if (v > 0 && v <= MAX_SANE_TRADE_VALUE) {
+      p = v / s;
+    } else if (p > MAX_SANE_SHARE_PRICE && v <= 0) {
+      // Classic unit glitch: price was parsed as the share count (or value).
+      // Drop price and wait for value; if still no value, drop the row.
+      p = undefined;
+    } else {
+      return null;
+    }
+  }
+
+  if (!v && s > 0 && p != null) v = s * p;
+  if (v > MAX_SANE_TRADE_VALUE) {
+    if (s > 0 && p != null && s * p > 0 && s * p <= MAX_SANE_TRADE_VALUE) v = s * p;
+    else return null;
+  }
+  if (p != null && p > MAX_SANE_SHARE_PRICE) {
+    if (v > 0 && s > 0) p = v / s;
+    if (p > MAX_SANE_SHARE_PRICE) return null;
+  }
+  if (s > MAX_SANE_SHARES) {
+    if (v > 0 && p != null && p > 0) s = Math.round(v / p);
+    if (s > MAX_SANE_SHARES || s <= 0) return null;
+  }
+  if (!(v > 0)) return null;
+  if (s > 0 && p == null) p = v / s;
+  return { shares: s, price: p, value: v };
+}
+
+export function parseDate(raw?: string | null): string {
+  if (!raw) return '';
+  const cleaned = String(raw).trim().replace(/\s+/g, ' ');
+  if (!cleaned) return '';
+
+  // 1. Try ISO pattern: YYYY-MM-DD or YYYY/MM/DD
+  const matchIso = cleaned.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (matchIso) {
+    const y = matchIso[1];
+    const m = matchIso[2].padStart(2, '0');
+    const d = matchIso[3].padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  // 2. Try US slash pattern: MM/DD/YYYY or MM/DD/YY
+  const matchSlash = cleaned.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+  if (matchSlash) {
+    const m = matchSlash[1].padStart(2, '0');
+    const d = matchSlash[2].padStart(2, '0');
+    let y = matchSlash[3];
+    if (y.length === 2) {
+      y = '20' + y;
+    }
+    return `${y}-${m}-${d}`;
+  }
+
+  // 3. Month-name + day with NO year (e.g. Finviz "Jul 01"): Date.parse would
+  // read the day as the year 2001. Assume the current year, rolling back one
+  // year if that lands in the future (a trade date can't be forward-dated).
+  // Strings that DO carry a year ("Jul 1, 2026" / "Jul 01 2026") fall through.
+  const matchMonthDay = cleaned.match(/^([A-Za-z]{3,9})\s+(\d{1,2})\b(?!\s*,)(?!\s+\d{4}\b)/);
+  if (matchMonthDay) {
+    const year = new Date().getFullYear();
+    const candidate = new Date(`${matchMonthDay[1]} ${matchMonthDay[2]}, ${year}`);
+    if (!Number.isNaN(candidate.getTime())) {
+      if (candidate.getTime() > Date.now() + 86_400_000) candidate.setFullYear(year - 1);
+      const y = candidate.getFullYear();
+      const m = String(candidate.getMonth() + 1).padStart(2, '0');
+      const d = String(candidate.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+  }
+
+  // 4. Fallback to JS Date parsing (parsed in local time for non-ISO formats)
+  const t = Date.parse(cleaned);
+  if (!Number.isNaN(t)) {
+    const dateObj = new Date(t);
+    const y = dateObj.getFullYear();
+    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const day = String(dateObj.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
+  return '';
+}
+
+/** Normalize a ticker symbol (keeps dots/dashes for BRK.B-style symbols). */
+export function cleanTicker(raw?: string | null): string {
+  if (!raw) return '';
+  return String(raw).trim().toUpperCase().replace(/[^A-Z0-9.\-]/g, '').slice(0, 12);
+}
+
+export function cleanText(raw?: string | null): string {
+  return String(raw ?? '').replace(/\s+/g, ' ').trim();
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Generic HTML table extraction
+// ──────────────────────────────────────────────────────────────────────────
+
+export interface ExtractedTable {
+  headers: string[];
+  rows: string[][];
+  rowUrls?: (string | null)[];
+}
+
+/** Pull headers + body rows from the first matching table on the page. */
+export async function extractTable(page: Page, selector: string): Promise<ExtractedTable> {
+  return page.evaluate((sel: string) => {
+    const getDeepText = (node: Node): string => {
+      if (!node) return '';
+      if (node.nodeType === Node.TEXT_NODE) {
+        return node.textContent || '';
+      }
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const el = node as HTMLElement;
+        const tagName = el.tagName.toUpperCase();
+        if (tagName === 'STYLE' || tagName === 'SCRIPT') return '';
+        if (tagName === 'BR') return '\n';
+        
+        let prefix = '';
+        let suffix = '';
+        if (tagName === 'DIV' || tagName === 'P') {
+          prefix = '\n';
+          suffix = '\n';
+        }
+
+        let inner = '';
+        if (el.shadowRoot) {
+          inner = Array.from(el.shadowRoot.childNodes).map(getDeepText).join('');
+        } else {
+          inner = Array.from(el.childNodes).map(getDeepText).join('');
+        }
+        return prefix + inner + suffix;
+      }
+      return Array.from(node.childNodes).map(getDeepText).join('');
+    };
+
+    const norm = (s: string | null) => {
+      if (!s) return '';
+      return s
+        .replace(/[^\S\r\n]+/g, ' ') // collapse horizontal whitespace
+        .replace(/\r?\n/g, '\n')     // normalize newlines
+        .trim();
+    };
+
+    const table = document.querySelector(sel);
+    if (!table) return { headers: [] as string[], rows: [] as string[][], rowUrls: [] as string[] };
+
+    let headers: string[] = [];
+    const headEls = table.querySelectorAll('thead th, thead td');
+    if (headEls.length) headers = Array.from(headEls).map((e) => norm(getDeepText(e)));
+    if (!headers.length) {
+      const thRow = table.querySelector('tr');
+      if (thRow && thRow.querySelectorAll('th').length) {
+        headers = Array.from(thRow.querySelectorAll('th')).map((e) => norm(getDeepText(e)));
+      }
+    }
+
+    const bodyRowEls = table.querySelectorAll('tbody tr');
+    const rowEls = bodyRowEls.length ? bodyRowEls : table.querySelectorAll('tr');
+    const rows: string[][] = [];
+    const rowUrls: (string | null)[] = [];
+    const pageUrl = window.location.href;
+
+    rowEls.forEach((tr) => {
+      // Check if it is a header row by checking if it contains th or td
+      const tds = Array.from(tr.querySelectorAll('td'));
+      if (tds.length) {
+        const cells = tds.map((td) => norm(getDeepText(td)));
+        rows.push(cells);
+
+        // Find the best link in the row
+        const anchors = Array.from(tr.querySelectorAll('a'));
+        let bestUrl: string | null = null;
+        let highestPriority = -1;
+
+        for (const a of anchors) {
+          let href = a.getAttribute('href');
+          if (!href) continue;
+
+          try {
+            href = new URL(href, pageUrl).href;
+          } catch {
+            // ignore invalid urls
+          }
+
+          let priority = 0;
+          if (href.includes('sec.gov/Archives/edgar/') || href.includes('sec.gov/Archives/') || href.includes('edgar/data/')) {
+            priority = 10;
+          } else if (href.includes('/s.php?id=') || href.includes('openinsider.com/s.php')) {
+            priority = 9;
+          } else if (href.includes('/filings/')) {
+            priority = 8;
+          } else if (href.includes('/insider-trades/') || href.includes('/insidertrades.com/')) {
+            priority = 5;
+          } else if (href.includes('/insider-trading/') || href.includes('/insider/')) {
+            priority = 3;
+          } else if (href.includes('/stock/') || href.includes('/quote.ashx') || href.includes('/stocks/')) {
+            priority = 2;
+          } else {
+            priority = 1;
+          }
+
+          if (priority > highestPriority) {
+            highestPriority = priority;
+            bestUrl = href;
+          }
+        }
+        rowUrls.push(bestUrl);
+      }
+    });
+    return { headers, rows, rowUrls };
+  }, selector);
+}
+
+/** Try each selector in order; return the first table that yields rows. */
+export async function extractFirstTable(page: Page, selectors: string[]): Promise<ExtractedTable> {
+  for (const sel of selectors) {
+    try {
+      const t = await extractTable(page, sel);
+      if (t.rows.length) return t;
+    } catch {
+      /* try next selector */
+    }
+  }
+  return { headers: [], rows: [] };
+}
+
+/** Find the index of the column whose header matches any alias (substring, case-insensitive). */
+export function colIndex(headers: string[], aliases: string[]): number {
+  const lower = headers.map((h) => h.toLowerCase());
+  for (const alias of aliases) {
+    const a = alias.toLowerCase();
+    const i = lower.findIndex((h) => h.includes(a));
+    if (i >= 0) return i;
+  }
+  return -1;
+}
+
+/** Safe cell read by index. */
+export function cell(row: string[], idx: number): string {
+  return idx >= 0 && idx < row.length ? row[idx] : '';
+}

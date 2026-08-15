@@ -1,0 +1,346 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Apple-inspired glassmorphism design tokens (Precisely calibrated)
+   ────────────────────────────────────────────────────────────────────────── */
+:root {
+  --bg-primary: #f5f5f7;
+  --bg-secondary: #e5e5ea;
+  --bg-glass: rgba(255, 255, 255, 0.68);
+  --bg-glass-hover: rgba(255, 255, 255, 0.85);
+  --border-glass: rgba(0, 0, 0, 0.06);
+  --border-active: rgba(0, 0, 0, 0.12);
+  --text-primary: #1d1d1f;
+  --text-secondary: #8e8e93;
+  --accent-green: #34c759;
+  --accent-yellow: #ffcc00;
+  --accent-red: #ff3b30;
+  --accent-blue: #007aff;
+  --accent-purple: #af52de;
+  --shadow-glass: 0 1px 2px rgba(0, 0, 0, 0.01), 0 8px 24px rgba(0, 0, 0, 0.04), inset 0 0 0 1px rgba(255, 255, 255, 0.6);
+  --shadow-glass-hover: 0 4px 8px rgba(0, 0, 0, 0.02), 0 16px 36px rgba(0, 0, 0, 0.06), inset 0 0 0 1px rgba(255, 255, 255, 0.8);
+  --blob-1: rgba(0, 122, 255, 0.12);
+  --blob-2: rgba(52, 199, 89, 0.10);
+  --blob-3: rgba(175, 82, 222, 0.08);
+}
+
+[data-theme='dark'] {
+  --bg-primary: #050507;          /* Sleek pitch black/charcoal */
+  --bg-secondary: #0c0c0f;        /* Very dark gray/black secondary */
+  --bg-glass: #111115;            /* Solid dark terminal panels */
+  --bg-glass-hover: #16161d;      /* Hover panel highlight */
+  --border-glass: #1f1f26;        /* Sharp, clean, subtle border lines */
+  --border-active: #2f2f39;
+  --text-primary: #ffffff;        /* Crisp white text */
+  --text-secondary: #8a8d98;      /* Sharp slate gray */
+  --accent-green: #00e676;        /* Bright terminal green (gains) */
+  --accent-yellow: #ffd60a;
+  --accent-red: #ff3b30;          /* Vivid red (bearish/puts) */
+  --accent-blue: #0076ff;         /* Strong, professional terminal blue */
+  --accent-purple: #a855f7;       /* Vivid purple */
+  --shadow-glass: 0 2px 10px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  --shadow-glass-hover: 0 4px 20px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  /* Faint ambient glow for dark mode */
+  --blob-1: rgba(0, 118, 255, 0.04);
+  --blob-2: rgba(0, 230, 118, 0.02);
+  --blob-3: rgba(168, 85, 247, 0.03);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+  letter-spacing: -0.011em;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  letter-spacing: -0.022em;
+  font-weight: 700;
+}
+
+/* Monospace Terminal font for values, tickers, gauges, prices */
+.font-mono-terminal {
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: -0.022em;
+}
+
+/* Soft, blurred color blobs behind the glass — the Apple "depth" trick. */
+#root::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(40rem 40rem at 12% 8%, var(--blob-1), transparent 60%),
+    radial-gradient(36rem 36rem at 88% 18%, var(--blob-3), transparent 60%),
+    radial-gradient(38rem 38rem at 70% 90%, var(--blob-2), transparent 60%);
+  transition: background 0.4s ease;
+}
+
+@layer components {
+  .glass {
+    background: var(--bg-glass);
+    backdrop-filter: blur(24px) saturate(190%);
+    -webkit-backdrop-filter: blur(24px) saturate(190%);
+    border: 1px solid var(--border-glass);
+    border-radius: 12px;
+    box-shadow: var(--shadow-glass);
+  }
+
+  .glass-card {
+    @apply glass;
+    transition:
+      transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+      background-color 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+      box-shadow 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+      border-color 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .glass-card-hover:hover {
+    transform: translateY(-1.5px);
+    background: var(--bg-glass-hover);
+    border-color: var(--border-active);
+    box-shadow: var(--shadow-glass-hover);
+  }
+
+  .text-secondary {
+    color: var(--text-secondary);
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-all duration-150;
+    border: 1px solid var(--border-glass);
+    background: var(--bg-glass);
+    color: var(--text-primary);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    cursor: pointer;
+  }
+
+  .btn:hover {
+    background: var(--bg-glass-hover);
+    border-color: var(--border-active);
+  }
+
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    background: var(--accent-blue);
+    border-color: transparent;
+    color: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  }
+
+  .btn-primary:hover {
+    background: var(--accent-blue);
+    filter: brightness(1.08);
+  }
+
+  .icon-btn {
+    @apply inline-flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-150;
+    border: 1px solid var(--border-glass);
+    background: var(--bg-glass);
+    color: var(--text-primary);
+    cursor: pointer;
+  }
+
+  .icon-btn:hover {
+    background: var(--bg-glass-hover);
+    border-color: var(--border-active);
+    transform: translateY(-0.5px);
+  }
+
+  .sidebar-item {
+    @apply flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+
+  .sidebar-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary);
+  }
+
+  .sidebar-item-active {
+    background: var(--bg-glass);
+    color: var(--text-primary);
+    box-shadow: var(--shadow-glass);
+    border: 1px solid var(--border-glass);
+  }
+
+  .input {
+    @apply w-full rounded-lg px-3 py-2 text-sm outline-none transition-all;
+    background: var(--bg-glass);
+    border: 1px solid var(--border-glass);
+    color: var(--text-primary);
+    box-shadow: inset 0 1.5px 3px rgba(0, 0, 0, 0.02);
+  }
+
+  .input:focus {
+    border-color: var(--accent-blue);
+    box-shadow: inset 0 1.5px 3px rgba(0, 0, 0, 0.01), 0 0 0 3px color-mix(in srgb, var(--accent-blue) 25%, transparent);
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wide;
+  }
+}
+
+/* Custom scrollbar — thin and theme-aware. */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-glass);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+  background-clip: content-box;
+}
+
+/* Recharts theming hooks */
+.recharts-cartesian-axis-tick-value {
+  fill: var(--text-secondary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+}
+.recharts-default-tooltip {
+  background: var(--bg-glass) !important;
+  border: 1px solid var(--border-glass) !important;
+  border-radius: 8px !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+}
+
+/* Custom Table Layout Adjustments */
+table {
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  width: 100%;
+}
+
+th {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  padding: 10px 14px !important;
+  background: color-mix(in srgb, var(--bg-primary) 35%, transparent) !important;
+  border-bottom: 1px solid var(--border-glass) !important;
+  color: var(--text-secondary) !important;
+}
+
+td {
+  padding: 11px 14px !important;
+  vertical-align: middle !important;
+  border-bottom: 1px solid var(--border-glass) !important;
+}
+
+tr:last-child td {
+  border-bottom: none !important;
+}
+
+tr {
+  transition: background-color 0.12s ease;
+}
+
+tr:hover td {
+  background-color: color-mix(in srgb, var(--text-primary) 2.5%, transparent) !important;
+}
+
+/* Feature 4 — combo signal pulse ring */
+@keyframes combo-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(10, 132, 255, 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(10, 132, 255, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(10, 132, 255, 0);
+  }
+}
+.combo-pulse {
+  animation: combo-pulse 2s infinite;
+}
+
+/* Congressional MEGA_SIGNAL — unmissable pulsing banner + badge */
+@keyframes mega-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+.mega-signal-banner {
+  animation: mega-pulse 1.5s ease-in-out infinite;
+}
+
+/* Feature 8 — VIX high-fear pulse */
+@keyframes vix-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(1.2);
+  }
+}
+.vix-pulse {
+  animation: vix-pulse 1.4s ease-in-out infinite;
+}
+
+/* Features 6 + 9 — skeleton shimmer for lazy-loaded track records */
+@keyframes shimmer {
+  0% {
+    background-position: -400px 0;
+  }
+  100% {
+    background-position: 400px 0;
+  }
+}
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--border-glass) 25%,
+    var(--bg-glass-hover) 50%,
+    var(--border-glass) 75%
+  );
+  background-size: 800px 100%;
+  animation: shimmer 1.4s infinite linear;
+  border-radius: 6px;
+}
