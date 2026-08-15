@@ -126,7 +126,7 @@ export async function syncTaskScheduler(settings: AppSettings): Promise<void> {
           $triggers = @(
             ${triggers.join(',\n            ')}
           )
-          $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+          $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -WakeToRun
           Register-ScheduledTask -TaskName '${consolidatedTaskName}' -Action $action -Trigger $triggers -Settings $settings -Force
         `;
         await execFileAsync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', psCommand]);

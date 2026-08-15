@@ -20,7 +20,19 @@ the project without rediscovering the same context.
 - Important: this local folder is currently not a git repository. Releases are
   built locally and uploaded to GitHub Releases.
 
-- **v1.1.5** (Current)
+- **v1.1.6** (Current)
+  - **Desktop-as-publisher (Variante B).** New `npm run publish:web` (runs under
+    Electron for real `safeStorage` + logged-in sessions) does the FULL scrape with
+    your account-gated sources, writes the shared `data/insider-tracker.db` + JSON,
+    and — with `--push` — commits + pushes so Actions redeploys. The login-gated
+    OPTIONS flow then rides the next ~72h of cloud 🟢 runs via the existing 72h
+    options merge (lights up COMBO/HIGH). Safe by default (no push without `--push`);
+    `USERDATA_DIR` overrides where saved sessions are read from.
+  - **Scheduler wakes the PC (Variante 2).** `syncTaskScheduler` adds `-WakeToRun`
+    so the weekday scheduled scrape fires from standby (PC must be asleep, not off,
+    and on power). Applies after the next desktop rebuild. See "Keeping login-gated
+    sources fresh" below to also publish those wake-runs to the web.
+- **v1.1.5**
   - **Web Settings pruned.** On the web build the sections that control the
     (nonexistent) local scraper/scorer are removed, not just annotated: Auto-Refresh
     Schedule, Notifications threshold, Filters, Data Sources, Shadow Scoring, Alert
@@ -226,10 +238,38 @@ Finviz Elite, X, valuation…) into the site:
    Caveats: cookies expire (re-paste periodically); one datacenter IP scraping
    X/GuruFocus is easily rate-limited or banned — the account risk is the user’s.
 
+### Keeping login-gated sources fresh (Variante B)
+
+The cloud runs only 🟢 sources. To add options flow / GuruFocus / X / valuation to
+the site, publish from a machine that is logged in:
+
+```bash
+npm run publish:web           # scrape with your logins, write locally, print git cmds
+npm run publish:web -- --push # ...and commit + push (Actions redeploys)
+```
+
+- Runs under Electron so it can decrypt your saved sessions. Check the log line
+  `saved sessions found: N` — if `0`, set `USERDATA_DIR` to the desktop app's data
+  folder (find it via the desktop app; the "userData path" gotcha applies).
+- Options flow survives ~72h in subsequent cloud runs via the orchestrator's merge,
+  so a weekend publish stays visible into midweek even with the PC off.
+
+**Automate it (weekday nights, waking the PC from standby):** register a Windows
+task that runs the publish and let `-WakeToRun` (v1.1.6) wake the PC. Requires the
+PC asleep (not off), on power, wake-timers allowed, and cached git credentials:
+
+```powershell
+$repo = "C:\Users\8marc\Desktop\Insider"
+$action  = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c cd /d `"$repo`" && npm run publish:web -- --push"
+$trigger = New-ScheduledTaskTrigger -Daily -At 2am
+$set     = New-ScheduledTaskSettingsSet -WakeToRun -StartWhenAvailable -AllowStartIfOnBatteries
+Register-ScheduledTask -TaskName "InsiderWhaleTerminal_Publish" -Action $action -Trigger $trigger -Settings $set -Force
+```
+
 ### Phone notifications (ntfy)
 
 Set the repo secret **`NTFY_TOPIC`** to any hard-to-guess string and subscribe to
-that topic in the free **ntfy** Android app. Each run pushes new HIGH/combo tickers
+that topic in the free **ntfy** Android app. Each run pushes new / surging tickers
 there. Unset = no notifications.
 
 ## Safety Note
