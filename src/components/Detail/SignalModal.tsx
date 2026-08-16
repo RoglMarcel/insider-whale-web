@@ -292,7 +292,10 @@ export function SignalModal() {
               )}
             </div>
             <p className="truncate text-sm text-secondary">
-              {!chartOnly && signal?.companyName || `${selectedTicker} Asset Chart`}
+              {/* `&&` binds tighter than `||`, so a missing companyName used to fall
+                  through to the chart-only placeholder ("AMZN Asset Chart") even in
+                  the full detail view. Keep the placeholder for chart-only mode only. */}
+              {chartOnly ? `${selectedTicker} Asset Chart` : signal?.companyName || selectedTicker}
               {!chartOnly && signal?.sector ? ` · ${signal.sector}` : ''}
             </p>
             {!chartOnly && signal && (

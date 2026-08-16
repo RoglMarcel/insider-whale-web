@@ -20,7 +20,18 @@ the project without rediscovering the same context.
 - Important: this local folder is currently not a git repository. Releases are
   built locally and uploaded to GitHub Releases.
 
-- **v1.1.8** (Current)
+- **v1.1.9** (Current)
+  - **Company names for options-only ("whale") tickers.** Those aggregates are built
+    purely from options scrapers, which report no company name — so cards showed `—`
+    and the detail modal fell back to a chart placeholder. Names now come from the
+    SEC's `company_tickers.json` (already fetched for the CIK map, so no extra
+    request): 10,940 entries incl. share-class aliases (SEC writes `BRK-B`, the
+    scrapers normalize to `BRK.B`). Verified: NVDA → NVIDIA CORP, AMZN → AMAZON COM INC.
+  - **Fix: "AMZN Asset Chart" leaked into the full detail view.** In `SignalModal`,
+    `!chartOnly && signal?.companyName || \`${ticker} Asset Chart\`` binds as
+    `(… && …) || …`, so a missing company name always fell through to the chart-only
+    placeholder. Placeholder is now used only in chart-only mode.
+- **v1.1.8**
   - **Web publishes the ACTIVE UNION, not just the current run.** The cloud run only
     scrapes 🟢 sources, so publishing `result.signals` alone dropped every ticker the
     desktop had published from login-gated sources — and with the insider leg gone,

@@ -66,7 +66,7 @@ import { scrapeBarchart } from './barchart';
 import { scrapeOptionStrat } from './optionstrat';
 import { scrapeInsiderFinance } from './insiderfinance';
 import { scrapeMarketBeatOptions } from './marketbeatoptions';
-import { scrapeOpenInsiderSales, fetchEdgarForm144, type InsiderFlowRow } from './sellside';
+import { scrapeOpenInsiderSales, fetchEdgarForm144, getTickerNameMap, type InsiderFlowRow } from './sellside';
 import { fetchActivistFilings } from './activist';
 import {
   scrapeCapitolTradesApi,
@@ -910,6 +910,23 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
       }
     } catch (err) {
       console.error('[scraper] politician-trade merge failed:', err);
+    }
+
+    // Company names for aggregates that have none — options-only ("whale") tickers
+    // never get one, because the options scrapers report no company name. The SEC's
+    // company_tickers.json is already fetched for the CIK map, so this is free.
+    if (aggregates.length) {
+      try {
+        const names = await withTimeout(getTickerNameMap(), 20_000, new Map<string, string>());
+        for (const agg of aggregates) {
+          if (!agg.companyName) {
+            const name = names.get(agg.ticker.toUpperCase());
+            if (name) agg.companyName = name;
+          }
+        }
+      } catch {
+        /* best-effort — a missing name only affects display */
+      }
     }
 
     if (aggregates.length) {

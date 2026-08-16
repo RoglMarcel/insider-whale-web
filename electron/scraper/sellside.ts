@@ -91,32 +91,54 @@ const SEC_UA = 'insider-whale-terminal/1.0 (marcel.rogls@gmail.com)';
 const xml = new XMLParser({ ignoreAttributes: false, parseTagValue: false });
 
 // The CIK→ticker map is ~1MB and changes rarely — cache it for the session.
-let cikTickerCache: { at: number; map: Map<number, string> } | null = null;
+// The same file also carries each issuer's registered name (`title`), which is the
+// only company-name source for options-only ("whale") tickers — those aggregates
+// come from options scrapers that report no company name at all.
+let cikTickerCache: { at: number; map: Map<number, string>; names: Map<string, string> } | null = null;
 const CIK_MAP_TTL_MS = 24 * 60 * 60 * 1000;
 
-export async function getCikTickerMap(): Promise<Map<number, string>> {
-  if (cikTickerCache && Date.now() - cikTickerCache.at < CIK_MAP_TTL_MS) return cikTickerCache.map;
+async function loadSecTickerFile(): Promise<{ map: Map<number, string>; names: Map<string, string> }> {
+  if (cikTickerCache && Date.now() - cikTickerCache.at < CIK_MAP_TTL_MS) return cikTickerCache;
   const map = new Map<number, string>();
+  const names = new Map<string, string>();
   try {
     const res = await fetch(TICKER_MAP_URL, {
       headers: { 'User-Agent': SEC_UA },
       signal: AbortSignal.timeout(20_000),
     });
     if (res.ok) {
-      const json = (await res.json()) as Record<string, { cik_str?: number; ticker?: string }>;
+      const json = (await res.json()) as Record<string, { cik_str?: number; ticker?: string; title?: string }>;
       for (const entry of Object.values(json)) {
         if (typeof entry?.cik_str === 'number' && typeof entry?.ticker === 'string' && !map.has(entry.cik_str)) {
           // First occurrence wins — the file is ordered so the primary share
           // class of a CIK comes first.
           map.set(entry.cik_str, entry.ticker.toUpperCase());
         }
+        if (typeof entry?.ticker === 'string' && typeof entry?.title === 'string') {
+          const t = entry.ticker.toUpperCase();
+          const title = entry.title.trim();
+          if (!names.has(t)) names.set(t, title);
+          // Share classes: the SEC writes BRK-B, the scrapers normalize to BRK.B
+          // (cleanTicker keeps both separators) — register the alias too.
+          const alias = t.includes('-') ? t.replace(/-/g, '.') : t.includes('.') ? t.replace(/\./g, '-') : '';
+          if (alias && !names.has(alias)) names.set(alias, title);
+        }
       }
     }
   } catch {
     /* best-effort — an empty map just yields zero 144 rows this run */
   }
-  if (map.size > 0) cikTickerCache = { at: Date.now(), map };
-  return map;
+  if (map.size > 0) cikTickerCache = { at: Date.now(), map, names };
+  return { map, names };
+}
+
+export async function getCikTickerMap(): Promise<Map<number, string>> {
+  return (await loadSecTickerFile()).map;
+}
+
+/** TICKER → registered company name, from the SEC's company_tickers.json. */
+export async function getTickerNameMap(): Promise<Map<string, string>> {
+  return (await loadSecTickerFile()).names;
 }
 
 function asArray<T>(v: T | T[] | undefined | null): T[] {
