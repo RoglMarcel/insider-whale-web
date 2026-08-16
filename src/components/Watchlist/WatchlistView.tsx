@@ -1,15 +1,5 @@
 import type { MouseEvent } from 'react';
-import { useEffect, useMemo, useState } from 'react';
-import {
-  ResponsiveContainer,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ReferenceLine,
-} from 'recharts';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { useWatchlist } from '@/hooks/useWatchlist';
 import { useStore } from '@/store/useStore';
 import { GlassCard } from '@/components/UI/GlassCard';
@@ -18,12 +8,24 @@ import { ConvictionBadge } from '@/components/UI/ConvictionBadge';
 import { StarIcon, TrashIcon } from '@/components/UI/icons';
 import { formatUSD, timeAgo, formatDateTime } from '@/lib/format';
 import { api } from '@/lib/ipc';
+
+// Recharts is only needed here; lazy so it never blocks the alerts list.
+const ScoreTrendChart = lazy(() => import('./ScoreTrendChart'));
 import type { Signal } from '@/types';
 
 const ACCENT_BLUE = '#0a84ff';
 const GRID = 'rgba(128,128,128,0.2)';
 
 export function WatchlistView() {
+  // Axis furniture costs more width than it explains on a phone.
+  const [compactChart, setCompactChart] = useState(
+    typeof window !== 'undefined' ? window.innerWidth < 768 : false,
+  );
+  useEffect(() => {
+    const onResize = () => setCompactChart(window.innerWidth < 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
   const { watchlist, removeWatch } = useWatchlist();
   const openSignal = useStore((s) => s.openSignal);
 
@@ -156,25 +158,9 @@ export function WatchlistView() {
 
         {chartData.length > 1 ? (
           <div style={{ width: '100%', height: 280 }}>
-            <ResponsiveContainer>
-              <LineChart data={chartData} margin={{ top: 10, right: 16, left: -8, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
-                <XAxis dataKey="time" tick={{ fontSize: 11 }} stroke={GRID} />
-                <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} stroke={GRID} />
-                <Tooltip />
-                <ReferenceLine y={80} stroke="#30d158" strokeDasharray="4 4" />
-                <ReferenceLine y={50} stroke="#ffd60a" strokeDasharray="4 4" />
-                <Line
-                  type="monotone"
-                  dataKey="score"
-                  stroke={ACCENT_BLUE}
-                  strokeWidth={2.5}
-                  dot={{ r: 3, fill: ACCENT_BLUE }}
-                  activeDot={{ r: 5 }}
-                  isAnimationActive
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            <Suspense fallback={<div className="skeleton h-full w-full" />}>
+              <ScoreTrendChart data={chartData} compact={compactChart} />
+            </Suspense>
           </div>
         ) : (
           <div className="py-16 text-center text-sm text-secondary">
