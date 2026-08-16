@@ -317,7 +317,9 @@ check('founder weight 8', getRankWeight('Founder').weight, 8);
 check('CEO still 10', getRankWeight('Chief Executive Officer').weight, 10);
 
 console.log('\n— normalization —');
-approx('MAX_POSSIBLE_RAW ≈ 2662 (display reference)', MAX_POSSIBLE_RAW, 2662.15, 2);
+// Display reference only (never divides a real score). Rose 2662 → 2855 in v1.1.10
+// when the options premium ladder gained rungs above $2M (top base 18 → 26).
+approx('MAX_POSSIBLE_RAW ≈ 2855 (display reference)', MAX_POSSIBLE_RAW, 2855.04, 2);
 approx('SCORE_HALF_SATURATION ≈ 105', SCORE_HALF_SATURATION, 105, 0.6);
 
 console.log('\n— Feature 10: valuation multiplier —');

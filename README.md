@@ -20,7 +20,20 @@ the project without rediscovering the same context.
 - Important: this local folder is currently not a git repository. Releases are
   built locally and uploaded to GitHub Releases.
 
-- **v1.1.9** (Current)
+- **v1.1.10** (Current)
+  - **Options premium ladder now resolves above $2M (live scoring change).** The top
+    rung was a flat 18 for *any* premium over $2M, so a $12.5M print scored exactly
+    like a $7.4M one. On mega-caps that erased the size advantage and could flip a
+    bull-dominated tape to "net bearish" — observed live on NVDA ($14.3M calls vs
+    $11.8M puts scored −3 → "🐻 put-dominated"). New rungs: **>$10M → 26, >$5M → 22,
+    >$2M → 18**; everything below $2M is unchanged. NVDA now scores **+5.3 (net
+    bullish)**, matching the actual premium split.
+  - **Ceilings can no longer drift.** `MAX_SINGLE_OPTION_POINTS` hardcoded the base
+    18; it now derives from a shared `MAX_OPTION_BASE_POINTS` used by the ladder
+    itself, so the breakdown progress bars stay in sync with the model.
+    `MAX_POSSIBLE_RAW` (display reference only — it never divides a real score) moves
+    2662 → 2855; `verify:scoring` updated accordingly. All scoring checks pass.
+- **v1.1.9**
   - **Company names for options-only ("whale") tickers.** Those aggregates are built
     purely from options scrapers, which report no company name — so cards showed `—`
     and the detail modal fell back to a chart placeholder. Names now come from the

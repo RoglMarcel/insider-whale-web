@@ -1091,8 +1091,13 @@ export const CONVICTION_THRESHOLDS = {
 // real ceilings if the model is retuned.
 /** Max insider earnings-timing multiplier: earnings 1–5d (1.8) × finance pre-earnings (1.3). */
 export const MAX_INSIDER_TIMING_MULT = 1.8 * 1.3; // 2.34
-/** Max points for a single option: base(18) × sweep(1.6) × dte(1.5) × otm(1.4) × volOi(1.3). */
-export const MAX_SINGLE_OPTION_POINTS = 18 * 1.6 * 1.5 * 1.4 * 1.3; // 78.624
+/**
+ * Top rung of the premium ladder in `baseOptionPoints()` (electron/scoring.ts).
+ * Shared so the ladder and the display ceilings below can never drift apart.
+ */
+export const MAX_OPTION_BASE_POINTS = 26;
+/** Max points for a single option: base(26) × sweep(1.6) × dte(1.5) × otm(1.4) × volOi(1.3). */
+export const MAX_SINGLE_OPTION_POINTS = MAX_OPTION_BASE_POINTS * 1.6 * 1.5 * 1.4 * 1.3; // 113.568
 /**
  * Display ceiling for the summed per-direction options score: best print plus
  * a geometric tail (best + ½·2nd + ¼·3rd + … < 2× best).

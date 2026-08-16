@@ -15,6 +15,7 @@ import {
   daysBetween,
   normalizeInsiderName,
   MAX_INSIDER_TIMING_MULT,
+  MAX_OPTION_BASE_POINTS,
   MAX_OPTIONS_SCORE_TOTAL,
   DEFAULT_SCORING_CONFIG,
   type ScoringConfig,
@@ -266,7 +267,17 @@ function optionPremium(o: OptionsActivity): number {
   return o.premiumTotal ?? o.notional ?? 0;
 }
 
+/**
+ * Premium ladder. The top rung used to be a flat 18 for anything above $2M, which
+ * made a $12.5M print score exactly like a $7.4M one — on mega-caps (where
+ * eight-figure prints are routine) that erased the size advantage and could flip a
+ * clearly bull-dominated tape to "net bearish" (observed live on NVDA: $14.3M calls
+ * vs $11.8M puts scored −3). The ladder now keeps resolving above $2M; everything
+ * below $2M is unchanged.
+ */
 function baseOptionPoints(premium: number): number {
+  if (premium > 10_000_000) return MAX_OPTION_BASE_POINTS; // 26
+  if (premium > 5_000_000) return 22;
   if (premium > 2_000_000) return 18;
   if (premium >= 1_000_000) return 14;
   if (premium >= 500_000) return 9;
