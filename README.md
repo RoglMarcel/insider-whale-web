@@ -20,7 +20,21 @@ the project without rediscovering the same context.
 - Important: this local folder is currently not a git repository. Releases are
   built locally and uploaded to GitHub Releases.
 
-- **v1.1.10** (Current)
+- **v1.1.11** (Current)
+  - **Fix: stat cards described a different set than the grid.** The search box was
+    Dashboard-local state applied *after* `stats` were computed from
+    `filteredSignals`, so the header could read "308 signals · 12 on watch · 17
+    options" while a search left 2 cards visible. `search` is now part of
+    `SignalFilter` and handled inside `filterSignals`, so the cards, the grid and the
+    stats are always the same set. Verified: search "am" → header 32 / 1 on watch /
+    2 options, grid 32.
+  - **Fix: politician combos didn't count as combos.** `POLITICIAN_INSIDER` /
+    `_OPTIONS` / `MEGA_SIGNAL` render a COMBO badge on the card, but `stats.combos`
+    and the `type=combo` filter checked only the classic `comboSignal` — so the
+    header said "0 combos" while three cards showed one, and the Combo filter came
+    back empty. New shared `isComboSignal()` in types is used by the filter and the
+    stats. Verified on live data: combos 0 → 3 (MSFT, CEG, BRK.B).
+- **v1.1.10**
   - **Options premium ladder now resolves above $2M (live scoring change).** The top
     rung was a flat 18 for *any* premium over $2M, so a $12.5M print scored exactly
     like a $7.4M one. On mega-caps that erased the size advantage and could flip a

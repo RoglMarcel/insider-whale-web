@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useStore } from '@/store/useStore';
-import { filterSignals } from '@/types';
+import { filterSignals, isComboSignal } from '@/types';
 
 export interface SignalStats {
   total: number;
@@ -32,7 +32,7 @@ export function useSignals() {
       high: filteredSignals.filter((s) => s.convictionLevel === 'HIGH').length,
       watch: filteredSignals.filter((s) => s.convictionLevel === 'WATCH').length,
       options: filteredSignals.filter((s) => (s.optionsActivity?.length ?? 0) > 0).length,
-      combos: filteredSignals.filter((s) => s.comboSignal).length,
+      combos: filteredSignals.filter(isComboSignal).length,
       totalVolume: filteredSignals.reduce((acc, s) => {
         const v = s.totalDollarVolume || 0;
         if (!Number.isFinite(v) || v <= 0 || v > MAX_SIGNAL_VOLUME) return acc;

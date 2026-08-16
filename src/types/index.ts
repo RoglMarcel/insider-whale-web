@@ -370,6 +370,12 @@ export interface SignalFilter {
   bigPlayersOnly: boolean;
   /** Dashboard sort: raw conviction score or data-confidence. */
   sortBy?: SortKey;
+  /**
+   * Free-text query over ticker / company / insider name. Part of the filter (not
+   * Dashboard-local state) so the stat cards describe the same set the grid shows —
+   * otherwise the header reported "12 on watch" while a search left none visible.
+   */
+  search?: string;
 }
 
 // Default to "This Week", not 48h: insider Form 4 *trade* dates lag the *filing*
@@ -927,6 +933,16 @@ function signalTradeMs(s: Signal): number | null {
   return Number.isNaN(t) ? null : t;
 }
 
+/**
+ * Does this signal read as a COMBO to the user? True for the classic
+ * insider+options combo AND for the politician tiers, because both render a COMBO
+ * badge on the card. Shared by the filter, the stat cards and the notifications so
+ * they can't disagree (the header said "0 combos" while three cards showed one).
+ */
+export function isComboSignal(s: Signal): boolean {
+  return !!(s.comboSignal || s.breakdown?.politicianComboTier);
+}
+
 export function filterSignals(signals: Signal[], filter: SignalFilter): Signal[] {
   const now = Date.now();
   // Calendar-day cutoffs so same-day & recent trades reliably pass regardless of
@@ -944,8 +960,20 @@ export function filterSignals(signals: Signal[], filter: SignalFilter): Signal[]
       const ms = signalTradeMs(s);
       if (ms == null || ms < cutoff) return false;
     }
-    // Transaction-type filter
-    if (filter.type === 'combo' && !s.comboSignal) return false;
+    // Free-text search (ticker / company / insider), same rule the grid used to
+    // apply locally.
+    const q = filter.search?.trim().toLowerCase();
+    if (q) {
+      const hit =
+        s.ticker.toLowerCase().includes(q) ||
+        !!s.companyName?.toLowerCase().includes(q) ||
+        !!s.rawTrades?.some((t) => t.insiderName.toLowerCase().includes(q));
+      if (!hit) return false;
+    }
+    // Transaction-type filter. A politician combo tier (POLITICIAN_INSIDER /
+    // _OPTIONS / MEGA_SIGNAL) badges the card as a COMBO too, so it must satisfy
+    // the combo filter — otherwise the card shows "COMBO" but the filter hides it.
+    if (filter.type === 'combo' && !isComboSignal(s)) return false;
     if (filter.type === 'options' && (s.optionsActivity?.length ?? 0) === 0) return false;
     if (filter.type === 'openmarket') {
       const hasOpenMarket = (s.rawTrades ?? []).some((t) => classifyTransaction(t.transactionType).modifier >= 1);

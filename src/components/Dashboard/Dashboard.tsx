@@ -7,8 +7,10 @@ import { SearchIcon } from '@/components/UI/icons';
 import { api, isWeb } from '@/lib/ipc';
 
 export function Dashboard() {
-  const { filteredSignals, filter } = useSignals();
-  const [searchQuery, setSearchQuery] = useState('');
+  // `search` lives in the shared filter (not local state) so the stat cards above
+  // describe exactly the set rendered below.
+  const { filteredSignals, filter, setFilter } = useSignals();
+  const searchQuery = filter.search ?? '';
   const [exporting, setExporting] = useState(false);
 
   const onExport = async () => {
@@ -30,16 +32,9 @@ export function Dashboard() {
     return list;
   }, [filteredSignals, filter.sortBy]);
 
-  const searched = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) return sorted;
-    return sorted.filter((s) => {
-      const tickerMatch = s.ticker.toLowerCase().includes(query);
-      const companyMatch = s.companyName?.toLowerCase().includes(query);
-      const insiderMatch = s.rawTrades?.some((t) => t.insiderName.toLowerCase().includes(query));
-      return tickerMatch || companyMatch || insiderMatch;
-    });
-  }, [sorted, searchQuery]);
+  // Search is applied by filterSignals now (see SignalFilter.search), so `sorted`
+  // is already the searched set.
+  const searched = sorted;
 
   return (
     <div className="flex flex-col gap-6 animate-fade-in">
@@ -57,7 +52,7 @@ export function Dashboard() {
               className="input pl-10 pr-4 py-2"
               placeholder="Search ticker, company, or insider..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => setFilter({ search: e.target.value })}
             />
           </div>
           {/* CSV export writes a file via the desktop shell — not available on the web build. */}
