@@ -27,3 +27,6 @@ NUL
 .claude
 *.db-wal
 *.db-shm
+
+# generated backtest reports (deleted from the repo on purpose)
+backtest-*-report.md
