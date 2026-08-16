@@ -20,7 +20,17 @@ the project without rediscovering the same context.
 - Important: this local folder is currently not a git repository. Releases are
   built locally and uploaded to GitHub Releases.
 
-- **v1.1.11** (Current)
+- **v1.1.12** (Current)
+  - **GuruFocus disabled in `publish:web`.** It hard-fails every run on a Cloudflare
+    challenge that never clears (headed retry included) — and the repeated attempts
+    got the publishing machine's residential IP blocked outright ("Sorry, you have
+    been blocked"). Skipped by policy; remove it from `SKIP` to re-enable.
+  - **Purged 33 corrupted tickers using the SEC registry as the oracle.** The earlier
+    duplicate-proof purge couldn't clear leftovers like `AAAT` (which ranked 4th by
+    score). Rule: doubled first letter **and** absent from `company_tickers.json`
+    **and** the de-doubled form is registered. Real doubled-letter tickers were
+    verified and spared: AAT, BBBY, CC, CCL, EEFT, QQQ, RRBI, VVV.
+- **v1.1.11**
   - **Fix: stat cards described a different set than the grid.** The search box was
     Dashboard-local state applied *after* `stats` were computed from
     `filteredSignals`, so the header could read "308 signals · 12 on watch · 17

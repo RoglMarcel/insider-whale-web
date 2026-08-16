@@ -96,7 +96,15 @@ async function main(): Promise<void> {
 
   // Enable EVERY source; sourceUnlocked() gates the login-gated ones by your
   // real saved sessions, so only the ones you're actually logged into run.
-  const sources = Object.fromEntries(SCRAPER_SOURCES.map((s) => [s.key, true])) as Record<ScraperSource, boolean>;
+  // EXCEPT the ones on this list: GuruFocus sits behind a Cloudflare challenge
+  // that never clears (hard-fails with -1 every run, headed retry included) and
+  // the repeated attempts got this machine's residential IP blocked outright.
+  // Re-enable by removing it here once that changes.
+  const SKIP: ReadonlySet<string> = new Set(['gurufocus']);
+  const sources = Object.fromEntries(
+    SCRAPER_SOURCES.map((s) => [s.key, !SKIP.has(s.key)]),
+  ) as Record<ScraperSource, boolean>;
+  if (SKIP.size) console.log(`[publish-web] skipping by policy: ${[...SKIP].join(', ')}`);
   const settings: AppSettings = { ...DEFAULT_SETTINGS, sources, headless: true, scheduleEnabled: false };
 
   const vix = await fetchVix().catch(() => null);
