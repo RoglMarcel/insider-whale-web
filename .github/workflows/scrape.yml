@@ -71,6 +71,11 @@ jobs:
           export APP_VERSION="$(node -p "require('./package.json').version")"
           npm run scrape:web
 
+      # Label ripened signals with realized SPY-relative alpha. This is what makes
+      # the scoring model measurable over time; it only fills gaps, so it is cheap.
+      - name: Label ripened outcomes (training data)
+        run: npm run label:outcomes || echo "labeling failed — continuing (never blocks the site)"
+
       # Optional phone push: set the repo secret NTFY_TOPIC (any hard-to-guess
       # string) and subscribe to it in the ntfy Android app. No-op if unset.
       - name: Notify new signals (ntfy)

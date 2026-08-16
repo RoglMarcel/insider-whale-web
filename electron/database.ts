@@ -239,6 +239,28 @@ CREATE TABLE IF NOT EXISTS ticker_meta (
   fetched_at DATETIME
 );
 
+-- Labeled training data. One row per (ticker, entry date, horizon): the realized
+-- SPY-relative alpha of a signal, written once the horizon has ripened. This is
+-- what makes the scoring model measurable — the component backtest can read it
+-- directly instead of re-fetching hundreds of price series per run, and the set
+-- grows on its own with every scheduled scrape.
+CREATE TABLE IF NOT EXISTS signal_outcomes (
+  ticker TEXT NOT NULL,
+  entry_date TEXT NOT NULL,      -- YYYY-MM-DD, max(trade, filing, first-seen)
+  horizon INTEGER NOT NULL,      -- calendar days forward (5 / 10 / 20)
+  entry_price REAL,
+  exit_price REAL,
+  ret REAL,                      -- (exit/entry) - 1
+  spy_ret REAL,
+  alpha REAL,                    -- ret - spy_ret
+  score REAL,                    -- score AT SIGNAL TIME (never recomputed)
+  conviction TEXT,
+  breakdown TEXT,                -- JSON snapshot of the component values
+  computed_at DATETIME,
+  PRIMARY KEY (ticker, entry_date, horizon)
+);
+CREATE INDEX IF NOT EXISTS idx_outcomes_entry ON signal_outcomes(entry_date);
+
 CREATE TABLE IF NOT EXISTS live_news (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   tweet_id TEXT UNIQUE NOT NULL,
@@ -313,6 +335,26 @@ export function runMigrations(database: Database.Database): void {
       /* already migrated — skip */
     }
   }
+
+  // Labeled outcomes (training data) — additive, safe on existing DBs.
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS signal_outcomes (
+      ticker TEXT NOT NULL,
+      entry_date TEXT NOT NULL,
+      horizon INTEGER NOT NULL,
+      entry_price REAL,
+      exit_price REAL,
+      ret REAL,
+      spy_ret REAL,
+      alpha REAL,
+      score REAL,
+      conviction TEXT,
+      breakdown TEXT,
+      computed_at DATETIME,
+      PRIMARY KEY (ticker, entry_date, horizon)
+    );
+    CREATE INDEX IF NOT EXISTS idx_outcomes_entry ON signal_outcomes(entry_date);
+  `);
 
   // Feature 6 — insider track records (new table)
   database.exec(`
@@ -1111,6 +1153,155 @@ export interface BacktestSignalRow {
   scraped_at: string;
   trade_date: string | null;
   filing_date: string | null;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Labeled outcomes (training data)
+// ──────────────────────────────────────────────────────────────────────────
+
+export interface OutcomeCandidate {
+  ticker: string;
+  entryDate: string; // YYYY-MM-DD
+  score: number;
+  conviction: string | null;
+  breakdown: string | null;
+}
+
+/**
+ * One candidate per ticker per entry date, taken from the FIRST time we saw that
+ * signal (MIN(id)) so the score is the one that was actionable then — scoring a
+ * signal by a later, already-decayed row would leak hindsight into the label.
+ * Entry date follows the backtest convention: max(trade, filing, first-seen).
+ */
+export function getOutcomeCandidates(): OutcomeCandidate[] {
+  // Entry date is resolved in JS: SQLite's scalar MAX(a,b,c) cannot be mixed with
+  // an aggregate MIN() in the same expression (it silently yields garbage).
+  const rows = getDb()
+    .prepare(
+      `
+      SELECT ticker, trade_date, filing_date, substr(scraped_at, 1, 10) AS seen_date,
+             score, conviction_level AS conviction, score_breakdown AS breakdown
+      FROM signals
+      WHERE id IN (SELECT MIN(id) FROM signals GROUP BY ticker, substr(scraped_at, 1, 10))
+    `,
+    )
+    .all() as {
+    ticker: string;
+    trade_date: string | null;
+    filing_date: string | null;
+    seen_date: string;
+    score: number;
+    conviction: string | null;
+    breakdown: string | null;
+  }[];
+
+  const ymd = (v: string | null | undefined) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '');
+  const out = new Map<string, OutcomeCandidate>();
+  for (const r of rows) {
+    // max(trade, filing, first-seen) — the date the signal was actionable.
+    const entryDate = [ymd(r.trade_date), ymd(r.filing_date), ymd(r.seen_date)].sort().pop() || '';
+    if (!entryDate) continue;
+    const key = `${r.ticker}|${entryDate}`;
+    if (!out.has(key)) {
+      out.set(key, {
+        ticker: r.ticker,
+        entryDate,
+        score: r.score,
+        conviction: r.conviction,
+        breakdown: r.breakdown,
+      });
+    }
+  }
+  return [...out.values()].sort((a, b) => a.entryDate.localeCompare(b.entryDate));
+}
+
+/** Horizons already labeled, so a re-run only fetches what is genuinely missing. */
+export function getLabeledKeys(): Set<string> {
+  const rows = getDb()
+    .prepare(`SELECT ticker, entry_date, horizon FROM signal_outcomes`)
+    .all() as { ticker: string; entry_date: string; horizon: number }[];
+  return new Set(rows.map((r) => `${r.ticker}|${r.entry_date}|${r.horizon}`));
+}
+
+export interface SignalOutcome {
+  ticker: string;
+  entryDate: string;
+  horizon: number;
+  entryPrice: number;
+  exitPrice: number;
+  ret: number;
+  spyRet: number;
+  alpha: number;
+  score: number;
+  conviction: string | null;
+  breakdown: string | null;
+}
+
+export function upsertSignalOutcomes(rows: SignalOutcome[]): number {
+  if (!rows.length) return 0;
+  const db = getDb();
+  const stmt = db.prepare(`
+    INSERT INTO signal_outcomes
+      (ticker, entry_date, horizon, entry_price, exit_price, ret, spy_ret, alpha, score, conviction, breakdown, computed_at)
+    VALUES (@ticker, @entryDate, @horizon, @entryPrice, @exitPrice, @ret, @spyRet, @alpha, @score, @conviction, @breakdown, @computedAt)
+    ON CONFLICT(ticker, entry_date, horizon) DO NOTHING
+  `);
+  const now = new Date().toISOString();
+  let n = 0;
+  db.transaction((list: SignalOutcome[]) => {
+    for (const r of list) n += stmt.run({ ...r, computedAt: now }).changes;
+  })(rows);
+  return n;
+}
+
+/** Labeled rows per horizon + how many carry a NON-CONSTANT value per component. */
+export function getOutcomeCoverage(): {
+  perHorizon: { horizon: number; n: number }[];
+  components: { name: string; varying: number; total: number }[];
+} {
+  const db = getDb();
+  const perHorizon = db
+    .prepare(`SELECT horizon, COUNT(*) AS n FROM signal_outcomes GROUP BY horizon ORDER BY horizon`)
+    .all() as { horizon: number; n: number }[];
+  const rows = db
+    .prepare(`SELECT breakdown FROM signal_outcomes WHERE horizon = 20 AND breakdown IS NOT NULL`)
+    .all() as { breakdown: string }[];
+  const counters: Record<string, number> = {};
+  const bump = (k: string, on: boolean) => {
+    counters[k] = (counters[k] ?? 0) + (on ? 1 : 0);
+  };
+  for (const r of rows) {
+    let b: any = {};
+    try {
+      b = JSON.parse(r.breakdown) ?? {};
+    } catch {
+      /* skip */
+    }
+    bump('Options score', (b.optionsScore ?? 0) !== 0);
+    bump('Cluster', (b.clusterMultiplier ?? 1) !== 1);
+    bump('Track record', (b.trackRecordMultiplier ?? 1) !== 1);
+    bump('Combo', (b.comboBonus ?? 0) !== 0 || !!b.politicianComboTier);
+    bump('VIX', (b.vixMultiplier ?? 1) !== 1);
+    bump('Valuation', (b.valuationMultiplier ?? 1) !== 1);
+    bump('Earnings timing', (b.timingMultiplier ?? 1) !== 1);
+    bump('Freshness', (b.freshnessMultiplier ?? 1) !== 1);
+    bump('Insider rank', (b.rankWeight ?? 0) !== 0);
+  }
+  return {
+    perHorizon,
+    components: Object.entries(counters).map(([name, varying]) => ({ name, varying, total: rows.length })),
+  };
+}
+
+/** Score + realized alpha pairs for one horizon (score-calibration report). */
+export function getScoreOutcomeRows(horizon: number): { score: number; alpha: number; entryDate: string }[] {
+  return getDb()
+    .prepare(
+      `SELECT score, alpha, entry_date AS entryDate
+       FROM signal_outcomes
+       WHERE horizon = ? AND alpha IS NOT NULL AND score IS NOT NULL`,
+    )
+    .all(horizon) as { score: number; alpha: number; entryDate: string }[];
 }
 
 export function getSignalRowsForBacktest(): BacktestSignalRow[] {

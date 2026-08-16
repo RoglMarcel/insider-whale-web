@@ -20,7 +20,27 @@ the project without rediscovering the same context.
 - Important: this local folder is currently not a git repository. Releases are
   built locally and uploaded to GitHub Releases.
 
-- **v1.1.12** (Current)
+- **v1.1.13** (Current)
+  - **Labeled training data (`signal_outcomes`).** New table + `npm run label:outcomes`
+    records, for every ripened signal, the realized 5/10/20-day SPY-relative alpha,
+    with the score frozen at FIRST sighting so labels can't inherit hindsight. Wired
+    into the CI run, so the dataset now grows by itself. Bootstrapped from the
+    desktop pre-migration backup (3029 rows, 2026-07-10 → 08-14): **3,949 labeled
+    outcomes** (5d n=1590, 10d n=1442, 20d n=917) — past the n≈780 needed to detect
+    an IC of 0.10. Newest-first ordering keeps delisted tickers from eating the
+    per-run budget.
+  - **Honest measurability report.** The labeler prints how often each component
+    actually *varies*: earnings timing 45%, insider rank 36%, freshness 35% →
+    measurable; options 9.5%, cluster 8.1%, track record 3.8%, combo 1.7%,
+    **VIX 0%, valuation 0%** → not measurable. The earlier "no alpha" verdict for
+    those was largely *unmeasurable*, not *disproven*.
+  - **`npm run analyze:score` — does a high score mean anything?** Spearman IC with
+    SE/t-stat plus per-bucket alpha and hit rate. First result on real data: the
+    score is **non-monotonic** — IC is significantly NEGATIVE at 10d (−0.079, t=−3.0)
+    and 20d (−0.149, t=−4.5), driven by the 20–59 band underperforming (−2.6% to
+    −3.5%), while 60+ looks strong (+2.5% to +9.8%) on samples far too small (n=2–15)
+    to trust. Recalibrating on this would be overfitting; more data is the only fix.
+- **v1.1.12**
   - **GuruFocus disabled in `publish:web`.** It hard-fails every run on a Cloudflare
     challenge that never clears (headed retry included) — and the repeated attempts
     got the publishing machine's residential IP blocked outright ("Sorry, you have
