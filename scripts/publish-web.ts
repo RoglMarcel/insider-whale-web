@@ -22,7 +22,7 @@ import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { app, safeStorage } from 'electron';
 import { runScrape } from '../electron/scraper';
-import { initDatabase, closeDatabase, getMostRecentSessionSignals } from '../electron/database';
+import { initDatabase, closeDatabase, getMostRecentSessionSignals, getLatestSignals } from '../electron/database';
 import { fetchVix } from '../electron/vix';
 import { authStatus, sourceUnlocked } from '../electron/auth';
 import { DEFAULT_SETTINGS, SCRAPER_SOURCES, LOGIN_PLATFORMS, type AppSettings, type ScraperSource } from '../src/types';
@@ -110,12 +110,22 @@ async function main(): Promise<void> {
     .filter((s) => s.score >= NOTABLE_MIN_SCORE && !prevTickers.has(s.ticker))
     .map((s) => s.ticker);
 
+  // Same active-union publish rule as the cloud runner (see scrape-web.ts).
+  let published = result.signals;
+  try {
+    const union = getLatestSignals();
+    if (union.length) published = union;
+  } catch {
+    /* fall back to this run's own output */
+  }
+
   const meta = {
     generatedAt: new Date().toISOString(),
     version: readVersion(),
     durationSec: secs,
     status: result.status,
     signalsFound: result.signalsFound,
+    publishedSignals: published.length,
     vix: vix ?? null,
     sourceHealth: result.sourceHealth ?? [],
     newHighConviction: result.newHighConviction,
@@ -125,14 +135,16 @@ async function main(): Promise<void> {
     source: 'desktop-publish',
     errors: result.errors.map((e) => `${e.source}: ${e.message}`),
   };
-  fs.writeFileSync(path.join(outDir, 'signals.json'), JSON.stringify(result.signals));
+  fs.writeFileSync(path.join(outDir, 'signals.json'), JSON.stringify(published));
   fs.writeFileSync(path.join(outDir, 'meta.json'), JSON.stringify(meta, null, 2));
   closeDatabase();
 
-  const optionsTickers = new Set(result.signals.filter((s) => (s.optionsActivity?.length ?? 0) > 0).map((s) => s.ticker));
+  const withOptions = published.filter((s) => (s.optionsActivity?.length ?? 0) > 0).length;
+  const combos = published.filter((s) => s.comboSignal || s.breakdown?.politicianComboTier).length;
   console.log(
-    `[publish-web] done in ${secs}s · ${result.signals.length} signals · ` +
-    `${optionsTickers.size} with options · ${result.newCombos.length} new combo(s) · status=${result.status}`,
+    `[publish-web] done in ${secs}s · scraped ${result.signals.length} · ` +
+    `published ${published.length} (active union) · ${withOptions} with options · ` +
+    `${combos} combo(s) · status=${result.status}`,
   );
 
   if (!DO_PUSH) {

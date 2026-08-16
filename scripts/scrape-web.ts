@@ -19,7 +19,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { app } from 'electron'; // aliased to scripts/electron-stub.ts (see the scrape:web npm script)
 import { runScrape } from '../electron/scraper';
-import { initDatabase, closeDatabase, getMostRecentSessionSignals } from '../electron/database';
+import { initDatabase, closeDatabase, getMostRecentSessionSignals, getLatestSignals } from '../electron/database';
 import { fetchVix } from '../electron/vix';
 import { DEFAULT_SETTINGS, SCRAPER_SOURCES, type AppSettings, type ScraperSource } from '../src/types';
 
@@ -123,12 +123,32 @@ async function main(): Promise<void> {
     .filter((s) => s.score >= NOTABLE_MIN_SCORE && !prevTickers.has(s.ticker))
     .map((s) => s.ticker);
 
+  /**
+   * Publish the ACTIVE UNION from the DB, not just this run's own output.
+   *
+   * The cloud run only scrapes 🟢 sources, so publishing `result.signals` alone
+   * dropped everything the desktop published from login-gated sources (finviz /
+   * marketbeat / barchart / optionstrat / insiderfinance) — and with the insider
+   * leg missing, their COMBOs disappeared too. `getLatestSignals()` returns the
+   * newest signal per ticker within the 4-day active window (same rule the desktop
+   * dashboard uses), so desktop-published tickers stay visible and expire on their
+   * own, while this run refreshes whatever it re-scraped.
+   */
+  let published = result.signals;
+  try {
+    const union = getLatestSignals();
+    if (union.length) published = union;
+  } catch (err) {
+    console.warn('[scrape-web] getLatestSignals failed — publishing this run only:', err);
+  }
+
   const meta = {
     generatedAt: new Date().toISOString(),
     version,
     durationSec: secs,
     status: result.status,
     signalsFound: result.signalsFound,
+    publishedSignals: published.length,
     vix: vix ?? null,
     sourceHealth: result.sourceHealth ?? [],
     newHighConviction: result.newHighConviction,
@@ -139,13 +159,14 @@ async function main(): Promise<void> {
     errors: result.errors.map((e) => `${e.source}: ${e.message}`),
   };
 
-  fs.writeFileSync(path.join(outDir, 'signals.json'), JSON.stringify(result.signals));
+  fs.writeFileSync(path.join(outDir, 'signals.json'), JSON.stringify(published));
   fs.writeFileSync(path.join(outDir, 'meta.json'), JSON.stringify(meta, null, 2));
 
+  const withOptions = published.filter((s) => (s.optionsActivity?.length ?? 0) > 0).length;
   console.log(
     `[scrape-web] done in ${secs}s · status=${result.status} · ` +
-    `${result.signals.length} signals · vix=${vix?.value ?? 'n/a'} · ` +
-    `${result.errors.length} issue(s)`,
+    `scraped ${result.signals.length} · published ${published.length} (active union) · ` +
+    `${withOptions} with options · vix=${vix?.value ?? 'n/a'} · ${result.errors.length} issue(s)`,
   );
   if (result.errors.length) {
     for (const e of result.errors.slice(0, 10)) console.log(`   ⚠ ${e.source}: ${e.message}`);

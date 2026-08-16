@@ -20,7 +20,27 @@ the project without rediscovering the same context.
 - Important: this local folder is currently not a git repository. Releases are
   built locally and uploaded to GitHub Releases.
 
-- **v1.1.7** (Current)
+- **v1.1.8** (Current)
+  - **Web publishes the ACTIVE UNION, not just the current run.** The cloud run only
+    scrapes 🟢 sources, so publishing `result.signals` alone dropped every ticker the
+    desktop had published from login-gated sources — and with the insider leg gone,
+    their COMBOs vanished (live site showed 0 combos while the DB held 3). Both
+    runners now write `getLatestSignals()` (newest signal per ticker inside the
+    4-day active window — the same rule the desktop dashboard uses), so desktop
+    tickers stay visible and expire on their own. Measured on a CI-equivalent run:
+    `scraped 275 → published 308`, +33 tickers, MSFT/CEG/BRK.B combos preserved.
+    `meta.json` now carries both `signalsFound` and `publishedSignals`.
+  - **Fix: Finviz ticker parsing (pre-existing data-corruption bug).** Finviz renders
+    a logo chip inside the ticker cell whose fallback letter is part of `textContent`,
+    so every ticker came through with a doubled first letter (`PPAL` for PAL, `IINTC`
+    for INTC) — 88 of 355 signals were junk, and it polluted the desktop app too.
+    `scrapeFinviz` now takes the ticker from the row's authoritative quote link
+    (`…?t=PAL`), keyed by cell text. Verified live: 200 rows, 0 malformed.
+  - **Purged 47 provably-duplicate rows** from the history DB (same insider+date+value
+    under both the doubled and the correct ticker). Real doubled-letter tickers
+    (QQQ, BBW, BBX, VVV, AAT, CCL…) were explicitly preserved; a pattern-only purge
+    would have deleted them. Remaining unprovable leftovers expire within 4 days.
+- **v1.1.7**
   - **Fix: `publish:web` skipped every login-gated source.** The script set userData
     *after* `app.whenReady()` (and defaulted to Electron's dev folder), but Windows
     `safeStorage` decrypts with an AES key stored in `<userData>/Local State` — so all

@@ -25,6 +25,46 @@ export async function scrapeFinviz(context: BrowserContext): Promise<RawInsiderT
     async (page) => {
       await page.waitForSelector('table', { timeout: 15_000 }).catch(() => undefined);
       const table = await extractFirstTable(page, TABLE_SELECTORS);
+
+      // Finviz renders a company logo chip inside the ticker cell whose fallback
+      // letter is part of textContent — so the cell reads "PPAL" for PAL (verified
+      // live: <span class="company-ticker" style="--logo-url:…/PAL.svg">). Read the
+      // ticker from the row's authoritative quote link (`…?t=PAL`) instead, keyed by
+      // the *rendered cell text* so it survives row-order differences.
+      const tickerByCell = await page.evaluate((selectors: string[]) => {
+        const norm = (s: string | null) => (s || '').replace(/\s+/g, ' ').trim();
+        const out: Record<string, string> = {};
+        for (const sel of selectors) {
+          const tbl = document.querySelector(sel);
+          if (!tbl) continue;
+          const rows = Array.from(tbl.querySelectorAll('tbody tr, tr'));
+          for (const tr of rows) {
+            const td = tr.querySelector('td');
+            if (!td) continue;
+            const cellText = norm(td.textContent);
+            if (!cellText) continue;
+            for (const a of Array.from(tr.querySelectorAll('a'))) {
+              const href = a.getAttribute('href') || '';
+              const m = /[?&]t=([A-Za-z0-9.\-]{1,12})(?:&|$)/.exec(href);
+              if (m) {
+                out[cellText] = m[1].toUpperCase();
+                break;
+              }
+            }
+          }
+          if (Object.keys(out).length) break;
+        }
+        return out;
+      }, TABLE_SELECTORS);
+
+      const idx = table.headers.findIndex((h) => /ticker|symbol|stock/i.test(h));
+      if (idx >= 0 && Object.keys(tickerByCell).length) {
+        for (const row of table.rows) {
+          const fromHref = tickerByCell[(row[idx] ?? '').trim()];
+          if (fromHref) row[idx] = fromHref;
+        }
+      }
+
       // Only keep rows that look like insider data (have an Owner/Relationship header).
       const trades = mapInsiderTable(table, 'finviz', URL);
       return trades;
