@@ -51,7 +51,7 @@ function TrackRecordModal({ record, onClose }: { record: InsiderTrackRecord; onC
           <div className="py-6 text-center text-sm text-secondary">{record.error}</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-xs">
+            <table className="w-full min-w-[420px] text-xs">
               <thead>
                 <tr className="text-left text-secondary border-none">
                   <th className="py-2 px-1 font-semibold bg-transparent text-[10px]" style={{ borderBottom: '1px solid var(--border-glass)' }}>Date</th>
@@ -144,7 +144,79 @@ export function InsiderTable({
       <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-secondary">
         Insider Trades ({trades.length})
       </h3>
-      <div className="overflow-x-auto rounded-xl" style={{ border: '1px solid var(--border-glass)' }}>
+      {/* Mobile: one card per trade. A 7-column table cannot fit 360px — it
+          previously overhung the viewport by ~280px and was unreachable, since
+          `body{overflow:hidden}` clips instead of scrolling (AUDIT B2/H7). */}
+      <div className="flex flex-col gap-2 md:hidden">
+        {sorted.map((t, i) => {
+          const cls = classifyTransaction(t.transactionType);
+          const color = tierColor(cls.tier);
+          const excluded = cls.tier === 'excluded';
+          const key = normalizeInsiderName(t.insiderName);
+          const rowId = `${key}-${i}`;
+          const price = t.price ?? (t.shares && t.value ? t.value / t.shares : undefined);
+          return (
+            <div
+              key={i}
+              className="rounded-xl p-3"
+              style={{ border: '1px solid var(--border-glass)', opacity: excluded ? 0.6 : 1 }}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="truncate text-[15px] font-semibold">{t.insiderName}</div>
+                  <div className="truncate text-[13px] text-secondary">{t.role || '—'}</div>
+                </div>
+                <span
+                  className="shrink-0 whitespace-nowrap rounded-md px-2 py-1 text-xs font-bold"
+                  style={{ color, background: `color-mix(in srgb, ${color} 14%, transparent)` }}
+                >
+                  {cls.label}
+                </span>
+              </div>
+              <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[13px]">
+                <div className="flex justify-between gap-2">
+                  <dt className="text-secondary">Date</dt>
+                  <dd className="tabular-nums">{formatDate(t.tradeDate) || '—'}</dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt className="text-secondary">Price</dt>
+                  <dd className="tabular-nums">{formatPrice(price)}</dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt className="text-secondary">Shares</dt>
+                  <dd className="tabular-nums">{formatNumber(t.shares)}</dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt className="text-secondary">Value</dt>
+                  <dd className="font-semibold tabular-nums">{formatUSD(t.value)}</dd>
+                </div>
+              </dl>
+              <div className="mt-2">
+                <TrackRecordCell
+                  record={trackRecords[key]}
+                  loading={loading}
+                  open={openInsider === rowId}
+                  onToggle={() => setOpenInsider(openInsider === rowId ? null : rowId)}
+                />
+              </div>
+              {t.sourceUrl && (
+                <a
+                  href={t.sourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="mt-2 inline-flex items-center text-[13px] font-semibold"
+                  style={{ minHeight: 44, color: 'var(--accent-blue)' }}
+                >
+                  View filing ↗
+                </a>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-xl md:block" style={{ border: '1px solid var(--border-glass)' }}>
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-secondary">

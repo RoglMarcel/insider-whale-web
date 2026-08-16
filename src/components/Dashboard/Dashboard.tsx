@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react';
 import { useSignals } from '@/hooks/useSignals';
 import { StatCards } from './StatCards';
 import { SignalGrid } from './SignalGrid';
-import { FilterBar } from './FilterBar';
+import { FilterBar, ActiveFilterChips } from './FilterBar';
+import { FilterSheet } from './FilterSheet';
 import { SearchIcon } from '@/components/UI/icons';
 import { api, isWeb } from '@/lib/ipc';
 
@@ -12,6 +13,12 @@ export function Dashboard() {
   const { filteredSignals, filter, setFilter } = useSignals();
   const searchQuery = filter.search ?? '';
   const [exporting, setExporting] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const activeFilterCount =
+    (filter.timeRange !== 'all' ? 1 : 0) +
+    (filter.type !== 'all' ? 1 : 0) +
+    (filter.conviction !== 'all' ? 1 : 0) +
+    (filter.bigPlayersOnly ? 1 : 0);
 
   const onExport = async () => {
     setExporting(true);
@@ -37,10 +44,10 @@ export function Dashboard() {
   const searched = sorted;
 
   return (
-    <div className="flex flex-col gap-6 animate-fade-in">
+    <div className="flex flex-col gap-3 animate-fade-in lg:gap-6">
       <StatCards />
-      
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between md:gap-4">
         <FilterBar />
         <div className="flex w-full items-center gap-2 md:w-auto">
           <div className="relative w-full md:max-w-xs">
@@ -49,12 +56,31 @@ export function Dashboard() {
             </span>
             <input
               type="text"
-              className="input pl-10 pr-4 py-2"
-              placeholder="Search ticker, company, or insider..."
+              className="input pl-10 pr-4"
+              style={{ minHeight: 44 }}
+              placeholder="Search ticker, company, insider…"
               value={searchQuery}
               onChange={(e) => setFilter({ search: e.target.value })}
             />
           </div>
+          {/* Mobile: one button opens every filter option at 44px per row. */}
+          <button
+            type="button"
+            className="btn shrink-0 md:hidden"
+            style={{ minHeight: 44 }}
+            onClick={() => setFilterOpen(true)}
+            aria-label="Open filters"
+          >
+            Filter
+            {activeFilterCount > 0 && (
+              <span
+                className="ml-0.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1 text-[11px] font-bold text-white"
+                style={{ background: 'var(--accent-blue)' }}
+              >
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
           {/* CSV export writes a file via the desktop shell — not available on the web build. */}
           {!isWeb && (
             <button
@@ -69,7 +95,11 @@ export function Dashboard() {
         </div>
       </div>
 
+      <ActiveFilterChips />
+
       <SignalGrid signals={searched} hasSearchQuery={!!searchQuery.trim()} />
+
+      <FilterSheet open={filterOpen} onClose={() => setFilterOpen(false)} />
     </div>
   );
 }

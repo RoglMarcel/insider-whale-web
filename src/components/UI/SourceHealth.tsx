@@ -25,32 +25,38 @@ export function SourceHealthBanner() {
   const names = dead.map((d) => d.label).join(', ');
   return (
     <div
-      className="mb-5 flex flex-wrap items-center gap-3 rounded-xl px-4 py-3 text-sm"
+      // Row layout squeezed the message into a ~120px column on a phone (1–2 words
+      // per line). Stack it: message first, actions on their own row.
+      className="mb-4 flex flex-col gap-3 rounded-xl px-4 py-3 text-sm md:mb-5 md:flex-row md:flex-wrap md:items-center"
       style={{
         background: 'color-mix(in srgb, var(--accent-red) 12%, transparent)',
         border: '1px solid color-mix(in srgb, var(--accent-red) 40%, transparent)',
       }}
     >
-      <span className="shrink-0" style={{ color: 'var(--accent-red)' }}>
-        <AlertIcon size={18} />
+      <span className="flex min-w-0 flex-1 items-start gap-3">
+        <span className="shrink-0 pt-0.5" style={{ color: 'var(--accent-red)' }}>
+          <AlertIcon size={18} />
+        </span>
+        <span className="min-w-0">
+          <span className="font-bold" style={{ color: 'var(--accent-red)' }}>
+            {dead.length} scraper source{dead.length === 1 ? '' : 's'} may be broken:
+          </span>{' '}
+          <span className="text-secondary">{names} returned zero rows for multiple consecutive scrapes.</span>
+        </span>
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="font-bold" style={{ color: 'var(--accent-red)' }}>
-          {dead.length} scraper source{dead.length === 1 ? '' : 's'} may be broken:
-        </span>{' '}
-        <span className="text-secondary">{names} returned zero rows for multiple consecutive scrapes.</span>
-      </span>
-      <button className="btn shrink-0" onClick={() => setView('settings')}>
-        View sources
-      </button>
-      <button
-        className="icon-btn shrink-0"
-        onClick={() => setDismissed(true)}
-        aria-label="Dismiss"
-        title="Dismiss for this session"
-      >
-        ✕
-      </button>
+      <div className="flex shrink-0 items-center gap-2">
+        <button className="btn flex-1 md:flex-none" style={{ minHeight: 44 }} onClick={() => setView('settings')}>
+          View sources
+        </button>
+        <button
+          className="icon-btn shrink-0"
+          onClick={() => setDismissed(true)}
+          aria-label="Dismiss"
+          title="Dismiss for this session"
+        >
+          ✕
+        </button>
+      </div>
     </div>
   );
 }

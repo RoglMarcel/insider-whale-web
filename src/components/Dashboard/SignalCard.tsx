@@ -18,7 +18,7 @@ const MAX_SANE_SHARE_PRICE = 1_000_000;
 
 function DetailRow({ label, value, isMono = false }: { label: string; value: string; isMono?: boolean }) {
   return (
-    <div className="flex items-center justify-between gap-2 text-xs leading-none h-4 min-w-0">
+    <div className="flex min-w-0 items-center justify-between gap-2 text-[13px] leading-none lg:text-xs">
       <span className="text-secondary shrink-0">{label}</span>
       <span className={`truncate font-semibold text-right flex-1 min-w-0 ${isMono ? 'font-mono-terminal' : ''}`} title={value}>
         {value}
@@ -31,7 +31,7 @@ function DetailRow({ label, value, isMono = false }: { label: string; value: str
 function Pill({ text, color, title }: { text: string; color: string; title?: string }) {
   return (
     <span
-      className="inline-flex max-w-full items-center gap-1 truncate rounded-md px-1.5 py-0.5 text-[10px] font-bold"
+      className="inline-flex max-w-full items-center gap-1 truncate rounded-md px-2 py-1 text-xs font-bold"
       style={{ color, background: `color-mix(in srgb, ${color} 14%, transparent)` }}
       title={title ?? text}
     >
@@ -133,7 +133,7 @@ export function SignalCard({ signal }: { signal: Signal }) {
       <GlassCard
         hover
         onClick={() => openSignal(signal.ticker)}
-        className="relative flex w-full min-w-0 flex-col gap-4 p-5"
+        className="relative flex w-full min-w-0 flex-col gap-3 p-4 lg:gap-4 lg:p-5"
         style={cardBorderStyle}
       >
         {/* Combo badge — a politician tier REPLACES the orange COMBO badge. */}
@@ -149,7 +149,7 @@ export function SignalCard({ signal }: { signal: Signal }) {
             <div className="text-xl font-extrabold leading-tight font-mono-terminal">{signal.ticker}</div>
             {signal.bigPlayer && (
               <span
-                className="inline-flex items-center gap-0.5 px-2 py-0.5 text-[10px] font-extrabold uppercase rounded select-none shadow-[0_0_12px_rgba(255,179,0,0.45)]"
+                className="inline-flex select-none items-center gap-0.5 rounded px-2 py-0.5 text-xs font-extrabold uppercase shadow-[0_0_12px_rgba(255,179,0,0.45)]"
                 style={{
                   background: 'linear-gradient(135deg, #FFE082 0%, #FFB300 50%, #FFA000 100%)',
                   color: '#000000',
@@ -162,14 +162,14 @@ export function SignalCard({ signal }: { signal: Signal }) {
               </span>
             )}
           </div>
-          <div className="truncate text-xs text-secondary" title={signal.companyName ?? ''}>
+          <div className="truncate text-[13px] text-secondary lg:text-xs" title={signal.companyName ?? ''}>
             {signal.companyName || '—'}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           {confidence != null && (
             <span
-              className="hidden select-none rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums sm:inline-flex"
+              className="inline-flex select-none rounded-md px-2 py-1 text-xs font-bold tabular-nums"
               style={{ color: confidenceColor(confidence), background: `color-mix(in srgb, ${confidenceColor(confidence)} 12%, transparent)` }}
               title={`Data confidence ${Math.round(confidence)}%: field completeness + cross-source corroboration + authoritative sourcing. Not a judgment of the signal itself.`}
             >
@@ -177,7 +177,7 @@ export function SignalCard({ signal }: { signal: Signal }) {
             </span>
           )}
           <button
-            className="icon-btn h-8 w-8"
+            className="icon-btn h-11 w-11 shrink-0 lg:h-9 lg:w-9"
             onClick={onStar}
             title={watched ? 'Remove from watchlist' : 'Add to watchlist'}
             style={watched ? { color: 'var(--accent-yellow)' } : undefined}
@@ -191,9 +191,9 @@ export function SignalCard({ signal }: { signal: Signal }) {
         <ScoreGauge score={signal.score} size={88} stroke={8} />
         <div className="flex h-[88px] min-w-0 flex-1 flex-col justify-between">
           <div className="flex shrink-0 flex-row flex-wrap items-center gap-1">
-            <ConvictionBadge level={signal.convictionLevel} className="px-1.5 py-0.5 text-[9px] shrink-0" />
-            <FreshnessBadge ageDays={ageDays} className="px-1.5 py-0.5 text-[9px] shrink-0" />
-            <EarningsChip days={signal.daysToEarnings} timing={signal.earningsTiming} className="px-1.5 py-0.5 text-[9px] shrink-0" />
+            <ConvictionBadge level={signal.convictionLevel} className="shrink-0 px-2 py-1 text-xs" />
+            <FreshnessBadge ageDays={ageDays} className="shrink-0 px-2 py-1 text-xs" />
+            <EarningsChip days={signal.daysToEarnings} timing={signal.earningsTiming} className="shrink-0 px-2 py-1 text-xs" />
             {hasPolitician && <PoliticianCountBadge count={politicianCount} className="shrink-0" />}
           </div>
           <DetailRow label="Role" value={displayRole} />

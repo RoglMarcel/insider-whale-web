@@ -256,23 +256,34 @@ export function SignalModal() {
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4"
       style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)' }}
       onClick={closeSignal}
     >
       <div
-        className="glass animate-scale-in flex max-h-[95vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl sm:max-h-[88vh]"
+        // Mobile: a bottom sheet that owns the full width and nearly the full
+        // height — a centred dialog wasted horizontal space on a 360px screen and
+        // squeezed body text into 1–2 word columns (AUDIT B2).
+        className="glass animate-scale-in flex max-h-[94svh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl sm:max-h-[88vh] sm:rounded-2xl"
+        style={{ paddingBottom: 'var(--sa-bottom)' }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center gap-4 px-6 py-5" style={{ borderBottom: '1px solid var(--border-glass)' }}>
-          {!chartOnly && signal && <ScoreGauge score={signal.score} size={72} stroke={7} />}
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-3">
-              <h2 className="text-2xl font-extrabold font-mono-terminal">{selectedTicker}</h2>
+        <div
+          // On a phone the gauge, the text column and two buttons fought over
+          // 360px, leaving the text ~90px wide and letting the watchlist button
+          // overlap it (AUDIT B2). Close stays pinned; the rest stacks.
+          className="relative flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:gap-4 sm:px-6 sm:py-5"
+          style={{ borderBottom: '1px solid var(--border-glass)' }}
+        >
+          <div className="flex items-center gap-3 pr-12 sm:contents">
+            {!chartOnly && signal && <ScoreGauge score={signal.score} size={64} stroke={7} />}
+            <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <h2 className="text-xl font-extrabold font-mono-terminal sm:text-2xl">{selectedTicker}</h2>
               {!chartOnly && signal?.bigPlayer && (
                 <span
-                  className="inline-flex items-center gap-0.5 px-2 py-0.5 text-[10px] font-extrabold uppercase rounded select-none shadow-[0_0_12px_rgba(255,179,0,0.45)]"
+                  className="inline-flex select-none items-center gap-0.5 rounded px-2 py-0.5 text-xs font-extrabold uppercase shadow-[0_0_12px_rgba(255,179,0,0.45)]"
                   style={{
                     background: 'linear-gradient(135deg, #FFE082 0%, #FFB300 50%, #FFA000 100%)',
                     color: '#000000',
@@ -299,7 +310,7 @@ export function SignalModal() {
               {!chartOnly && signal?.sector ? ` · ${signal.sector}` : ''}
             </p>
             {!chartOnly && signal && (
-              <p className="mt-0.5 flex flex-wrap items-center gap-3 text-xs text-secondary">
+              <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-secondary sm:text-xs">
                 <span className="inline-flex items-center gap-1">
                   <UsersIcon size={13} /> {signal.insiderCount} insiders
                 </span>
@@ -311,17 +322,23 @@ export function SignalModal() {
                 )}
               </p>
             )}
+            </div>
           </div>
 
           <button
-            className="btn"
+            className="btn w-full sm:w-auto"
+            style={{ minHeight: 44, ...(watched ? { color: 'var(--accent-yellow)' } : {}) }}
             onClick={() => void toggleWatch(selectedTicker)}
-            style={watched ? { color: 'var(--accent-yellow)' } : undefined}
           >
             <StarIcon size={16} filled={watched} />
             {watched ? 'Watching' : 'Add to Watchlist'}
           </button>
-          <button className="icon-btn" onClick={closeSignal} aria-label="Close">
+          {/* Absolute on mobile so it never competes for the header's width. */}
+          <button
+            className="icon-btn absolute right-4 top-4 sm:static"
+            onClick={closeSignal}
+            aria-label="Close"
+          >
             <XIcon size={18} />
           </button>
         </div>
