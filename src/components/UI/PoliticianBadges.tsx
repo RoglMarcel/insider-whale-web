@@ -64,7 +64,7 @@ export function PoliticianCountBadge({ count, className = '' }: { count: number;
   if (count <= 0) return null;
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[9px] font-bold ${className}`}
+      className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-bold ${className}`}
       style={{ color: 'var(--accent-purple)', background: 'color-mix(in srgb, var(--accent-purple) 16%, transparent)' }}
       title={`${count} member${count === 1 ? '' : 's'} of Congress traded this ticker`}
     >

@@ -78,7 +78,7 @@ export function InsiderAccuracyPanel({
                 <div className="flex flex-wrap items-center gap-1">
                   {ins.role && (
                     <span
-                      className="rounded-md px-1.5 py-0.5 text-[11px]"
+                      className="rounded-md px-1.5 py-0.5 text-xs"
                       style={{ background: 'var(--bg-glass)', color: 'var(--text-secondary)' }}
                     >
                       {ins.role}
@@ -86,7 +86,7 @@ export function InsiderAccuracyPanel({
                   )}
                   {rec?.pattern === 'routine' && (
                     <span
-                      className="rounded-md px-1.5 py-0.5 text-[11px]"
+                      className="rounded-md px-1.5 py-0.5 text-xs"
                       title="Calendar-clustered buyer — same-month purchases across years are scheduled/habitual and historically carry little information."
                       style={{ background: 'var(--bg-glass)', color: 'var(--text-secondary)' }}
                     >
@@ -95,7 +95,7 @@ export function InsiderAccuracyPanel({
                   )}
                   {rec?.pattern === 'opportunistic' && (
                     <span
-                      className="rounded-md px-1.5 py-0.5 text-[11px] font-semibold"
+                      className="rounded-md px-1.5 py-0.5 text-xs font-semibold"
                       title="First-ever open-market buy on record — pattern-breaking purchases historically carry the alpha."
                       style={{
                         color: 'var(--accent-green)',
@@ -145,7 +145,7 @@ export function InsiderAccuracyPanel({
         </div>
       )}
       {loaded.some((x) => x.rec && x.rec.totalTrades > 0) && (
-        <p className="mt-2 text-[11px] leading-snug text-secondary">
+        <p className="mt-2 text-xs leading-snug text-secondary">
           Outcomes are split/dividend-adjusted and measured against the S&P 500 over ~3 months. Buys on
           tickers later delisted have no price data and are excluded, so win rates skew optimistic.
         </p>

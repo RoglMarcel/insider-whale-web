@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '@/store/useStore';
-import { isElectron, isWeb } from '@/lib/ipc';
+import { api, isElectron, isWeb } from '@/lib/ipc';
 import { Layout } from '@/components/Layout/Layout';
 import { Dashboard } from '@/components/Dashboard/Dashboard';
 import { WatchlistView } from '@/components/Watchlist/WatchlistView';
@@ -56,10 +56,17 @@ export default function App() {
           console.error('Failed to get app version:', err);
         }
       } else {
-        // Fallback for non-electron preview
+        // Web: "what's new" only makes sense for someone who has ALREADY seen an
+        // earlier build. A first-time visitor never "updated", so ambushing them
+        // with a changelog is wrong — and the version must come from the published
+        // meta.json, not a hardcoded one (it read "new in 1.0.21" at v1.1.16).
+        const ver = await api.app.getVersion().catch(() => '');
+        if (ver) setAppVersion(ver);
         const lastSeen = localStorage.getItem('last_seen_version');
-        if (lastSeen !== '1.0.21') {
-          setAppVersion('1.0.21');
+        if (!lastSeen) {
+          // Silently remember this visit so the next real deploy can announce itself.
+          localStorage.setItem('last_seen_version', ver || 'web');
+        } else if (ver && lastSeen !== ver) {
           setShowWelcome(true);
         }
       }
@@ -68,7 +75,7 @@ export default function App() {
   }, []);
 
   const handleCloseWelcome = () => {
-    localStorage.setItem('last_seen_version', appVersion || '1.0.21');
+    localStorage.setItem('last_seen_version', appVersion || 'web');
     setShowWelcome(false);
   };
 

@@ -129,7 +129,8 @@ export function NewsView() {
           </div>
           <button
             onClick={() => setView('settings')}
-            className="mt-2 rounded-xl bg-[var(--accent-blue)] px-6 py-2.5 text-xs font-bold text-white hover:bg-[var(--accent-blue)]/85 active:scale-95 transition-all shadow-[0_0_15px_color-mix(in_srgb,var(--accent-blue)_30%,transparent)]"
+            style={{ minHeight: 44 }}
+            className="mt-2 rounded-xl bg-[var(--accent-blue)] px-6 text-sm font-bold text-white hover:bg-[var(--accent-blue)]/85 active:scale-95 transition-all shadow-[0_0_15px_color-mix(in_srgb,var(--accent-blue)_30%,transparent)]"
           >
             Go to Settings
           </button>

@@ -114,8 +114,8 @@ function TrackRecordCell({
           e.stopPropagation();
           onToggle();
         }}
-        className="font-semibold tabular-nums hover:underline"
-        style={{ color }}
+        className="inline-flex items-center font-semibold tabular-nums hover:underline"
+        style={{ color, minHeight: 44 }}
         title={`Beat the S&P 500 on ${record.profitable3m} of ${record.totalTrades} buys (~3-month). Click for history.`}
       >
         {record.profitable3m}/{record.totalTrades} ✓ ({pct}%)

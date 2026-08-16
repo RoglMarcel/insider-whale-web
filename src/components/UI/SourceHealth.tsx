@@ -70,7 +70,7 @@ export function SourceHealthPanel() {
     <GlassCard className="px-4 py-3">
       <div className="mb-2 flex items-baseline justify-between gap-2">
         <h3 className="text-xs font-bold uppercase tracking-wide text-secondary">Source Health</h3>
-        <span className="text-[10px] text-secondary">last · median · status</span>
+        <span className="text-xs text-secondary">last · median · status</span>
       </div>
       {!hasData ? (
         <div className="py-1 text-xs text-secondary">No scrape sessions recorded yet.</div>

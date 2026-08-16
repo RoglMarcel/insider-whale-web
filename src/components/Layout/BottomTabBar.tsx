@@ -70,7 +70,7 @@ export function BottomTabBar() {
                 </span>
               )}
             </span>
-            <span className="text-[11px]" style={{ fontWeight: active ? 700 : 500 }}>
+            <span className="text-xs" style={{ fontWeight: active ? 700 : 500 }}>
               {tab.label}
             </span>
           </button>

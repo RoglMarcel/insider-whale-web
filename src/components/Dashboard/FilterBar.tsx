@@ -92,7 +92,7 @@ export function ActiveFilterChips() {
           onClick={c.clear}
           className="inline-flex items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold"
           style={{
-            minHeight: 32,
+            minHeight: 44,
             background: 'color-mix(in srgb, var(--accent-blue) 14%, transparent)',
             color: 'var(--accent-blue)',
             border: '1px solid color-mix(in srgb, var(--accent-blue) 30%, transparent)',

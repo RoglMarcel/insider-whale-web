@@ -33,7 +33,7 @@ function StatCard({
         {icon}
       </div>
       <div className="min-w-0">
-        <div className="truncate text-[11px] font-medium uppercase tracking-wide text-secondary lg:text-xs">
+        <div className="truncate text-xs font-medium uppercase tracking-wide text-secondary">
           {label}
         </div>
         <div

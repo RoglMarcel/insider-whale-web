@@ -15,6 +15,7 @@ import { OptionsFlow } from './OptionsFlow';
 import { ValuationSection } from './ValuationSection';
 import { XIcon, StarIcon, UsersIcon } from '@/components/UI/icons';
 import { formatUSD, formatDate, accuracyColor, formatPercent } from '@/lib/format';
+import { useSwipeToDismiss } from '@/hooks/useSwipeToDismiss';
 
 function getTradingViewSymbol(ticker: string): string {
   const base = ticker.replace('$', '').split('-')[0].trim().toUpperCase();
@@ -59,7 +60,7 @@ function TradingViewChart({ ticker, theme }: { ticker: string; theme: string }) 
 function InfoCell({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="rounded-xl px-3 py-2" style={{ background: 'var(--bg-glass)', border: '1px solid var(--border-glass)' }}>
-      <div className="text-[11px] uppercase tracking-wide text-secondary">{label}</div>
+      <div className="text-xs uppercase tracking-wide text-secondary">{label}</div>
       <div className="text-sm font-semibold">{children}</div>
     </div>
   );
@@ -79,6 +80,9 @@ export function SignalModal() {
   const [records, setRecords] = useState<Record<string, InsiderTrackRecord>>({});
   const [trLoading, setTrLoading] = useState(false);
   const fetchedRef = useRef<string | null>(null);
+  // Same gesture the Sheet primitive uses (shared hook), so the detail closes by
+  // swipe as well as Escape / tap-outside / Back.
+  const { offset: dragY, dragging, handlers: swipe } = useSwipeToDismiss(() => closeSignal());
 
   const [localEarningsDate, setLocalEarningsDate] = useState<string | null>(null);
   const [localDaysToEarnings, setLocalDaysToEarnings] = useState<number | null>(null);
@@ -265,9 +269,19 @@ export function SignalModal() {
         // height — a centred dialog wasted horizontal space on a 360px screen and
         // squeezed body text into 1–2 word columns (AUDIT B2).
         className="glass animate-scale-in flex max-h-[94svh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl sm:max-h-[88vh] sm:rounded-2xl"
-        style={{ paddingBottom: 'var(--sa-bottom)' }}
+        style={{
+          paddingBottom: 'var(--sa-bottom)',
+          transform: dragY ? `translateY(${dragY}px)` : undefined,
+          transition: dragging ? 'none' : 'transform 280ms cubic-bezier(0.32,0.72,0,1)',
+        }}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Drag handle — the swipe surface on mobile; the sheet also closes via
+            Escape, tap-outside and the Back gesture. */}
+        <div className="flex shrink-0 cursor-grab touch-none flex-col items-center pb-1 pt-2.5 sm:hidden" {...swipe}>
+          <span className="h-1 w-10 rounded-full" style={{ background: 'var(--border-active)' }} />
+        </div>
+
         {/* Header */}
         <div
           // On a phone the gauge, the text column and two buttons fought over

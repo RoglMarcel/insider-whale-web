@@ -64,7 +64,7 @@ function PlatformRow({ platform }: { platform: LoginPlatform }) {
             {platform.label}
             {platform.sourceKey && (
               <span
-                className="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase"
+                className="rounded px-1.5 py-0.5 text-xs font-bold uppercase"
                 style={{ color: 'var(--accent-yellow)', background: 'color-mix(in srgb, var(--accent-yellow) 16%, transparent)' }}
               >
                 Login required to scrape
@@ -79,7 +79,7 @@ function PlatformRow({ platform }: { platform: LoginPlatform }) {
 
         <div className="flex shrink-0 items-center gap-2">
           {isWeb ? (
-            <span className="text-[11px] text-secondary">
+            <span className="text-xs text-secondary">
               {loggedIn ? 'Session active (CI)' : 'Desktop / CI only'}
             </span>
           ) : loggedIn ? (

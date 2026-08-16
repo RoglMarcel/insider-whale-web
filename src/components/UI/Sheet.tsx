@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { useSwipeToDismiss } from '@/hooks/useSwipeToDismiss';
 
 /**
  * Bottom sheet — the mobile counterpart to a centred dialog (DESIGN.md §7/§9).
@@ -26,8 +27,7 @@ export function Sheet({
   maxHeight?: string;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const [dragY, setDragY] = useState(0);
-  const dragStart = useRef<number | null>(null);
+  const { offset: dragY, dragging, handlers, reset } = useSwipeToDismiss(onClose);
 
   // Escape + focus trap
   useEffect(() => {
@@ -80,24 +80,13 @@ export function Sheet({
   }, [open, onClose]);
 
   useEffect(() => {
-    if (open) setDragY(0);
+    if (open) reset();
+    // `reset` is stable enough for this guard; re-running on every render would
+    // cancel an in-flight drag.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   if (!open) return null;
-
-  const onPointerDown = (e: React.PointerEvent) => {
-    dragStart.current = e.clientY;
-  };
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (dragStart.current == null) return;
-    setDragY(Math.max(0, e.clientY - dragStart.current));
-  };
-  const endDrag = () => {
-    if (dragStart.current == null) return;
-    dragStart.current = null;
-    if (dragY > 120) onClose();
-    else setDragY(0);
-  };
 
   return (
     <div
@@ -116,7 +105,7 @@ export function Sheet({
           border: '1px solid var(--border-glass)',
           maxHeight,
           transform: `translateY(${dragY}px)`,
-          transition: dragStart.current == null ? 'transform 280ms cubic-bezier(0.32,0.72,0,1)' : 'none',
+          transition: dragging ? 'none' : 'transform 280ms cubic-bezier(0.32,0.72,0,1)',
           paddingBottom: 'var(--sa-bottom)',
         }}
         onClick={(e) => e.stopPropagation()}
@@ -124,10 +113,7 @@ export function Sheet({
         {/* Drag handle — also the swipe surface. */}
         <div
           className="flex shrink-0 cursor-grab touch-none flex-col items-center pb-1 pt-2.5"
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={endDrag}
-          onPointerCancel={endDrag}
+          {...handlers}
         >
           <span className="h-1 w-10 rounded-full" style={{ background: 'var(--border-active)' }} />
         </div>

@@ -74,7 +74,7 @@ export function Dashboard() {
             Filter
             {activeFilterCount > 0 && (
               <span
-                className="ml-0.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1 text-[11px] font-bold text-white"
+                className="ml-0.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1 text-xs font-bold text-white"
                 style={{ background: 'var(--accent-blue)' }}
               >
                 {activeFilterCount}
