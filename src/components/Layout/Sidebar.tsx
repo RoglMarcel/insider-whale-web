@@ -36,7 +36,7 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
 
   return (
     <aside
-      className={`glass fixed inset-y-3 left-3 z-50 flex w-60 flex-col rounded-2xl p-4 transition-transform duration-300 lg:static lg:inset-auto lg:m-3 lg:mr-0 lg:shrink-0 lg:translate-x-0 lg:transition-none ${
+      className={`glass fixed inset-y-3 left-3 z-50 hidden w-60 flex-col rounded-2xl p-4 transition-transform duration-300 md:flex lg:static lg:inset-auto lg:m-3 lg:mr-0 lg:shrink-0 lg:translate-x-0 lg:transition-none ${
         open ? 'translate-x-0' : '-translate-x-[120%]'
       }`}
     >

@@ -52,14 +52,20 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
   }, [bellOpen]);
 
   return (
-    <header className="flex items-center gap-2 px-4 py-4 select-none lg:gap-4 lg:px-8 lg:py-5" style={{ WebkitAppRegion: 'drag' } as any}>
-      {/* Hamburger — opens the nav drawer on mobile (hidden on lg+) */}
+    <header
+      className="flex items-center gap-2 px-4 py-3 select-none lg:gap-4 lg:px-8 lg:py-5"
+      // Drag regions only mean something in an Electron frame; in the browser they
+      // are inert and can swallow pointer interaction.
+      style={isWeb ? undefined : ({ WebkitAppRegion: 'drag' } as any)}
+    >
+      {/* Hamburger — drawer only exists in the md–lg band; below md the bottom tab
+          bar navigates directly, so the trigger would be dead weight. */}
       <button
         type="button"
-        className="icon-btn shrink-0 lg:hidden"
+        className="icon-btn hidden shrink-0 md:inline-flex lg:hidden"
         aria-label="Open menu"
         onClick={() => onMenuClick?.()}
-        style={{ WebkitAppRegion: 'no-drag' } as any}
+        style={isWeb ? undefined : ({ WebkitAppRegion: 'no-drag' } as any)}
       >
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
           <path d="M3 6h18M3 12h18M3 18h18" />
@@ -68,7 +74,8 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
 
       <div className="min-w-0 flex-1">
         <h1 className="truncate text-xl font-extrabold tracking-tight lg:text-2xl">{meta.title}</h1>
-        <p className="truncate text-xs text-secondary lg:text-sm">{meta.subtitle}</p>
+        {/* The subtitle only ever truncated on a phone; it earns its line from md up. */}
+        <p className="hidden truncate text-xs text-secondary md:block lg:text-sm">{meta.subtitle}</p>
       </div>
 
       {/* Live scrape phase */}
@@ -84,14 +91,16 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
         </div>
       )}
 
-      {/* Last scrape */}
-      <div className="hidden text-right sm:block">
-        <div className="text-xs uppercase tracking-wide text-secondary">Last scrape</div>
-        <div className="text-sm font-semibold">{timeAgo(lastScrapeAt)}</div>
+      {/* Data freshness. On the hosted build this is the ONLY cue for how old the
+          data is (the client never scrapes and the Refresh button is hidden), so
+          it must survive on a phone — previously it was `hidden sm:block`. */}
+      <div className="shrink-0 text-right">
+        <div className="hidden text-xs uppercase tracking-wide text-secondary sm:block">Last scrape</div>
+        <div className="text-xs font-semibold tabular-nums sm:text-sm">{timeAgo(lastScrapeAt)}</div>
       </div>
 
       {/* Interactive controls */}
-      <div className="flex items-center gap-2 lg:gap-4" style={{ WebkitAppRegion: 'no-drag' } as any}>
+      <div className="flex items-center gap-2 lg:gap-4" style={isWeb ? undefined : ({ WebkitAppRegion: 'no-drag' } as any)}>
         {/* Notification bell — HIGH conviction list */}
         <div className="relative" ref={bellRef}>
           <button

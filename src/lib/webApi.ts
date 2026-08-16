@@ -1,4 +1,11 @@
-import { filterSignals, type InsiderTrackerAPI, type Signal, type VixQuote, type WatchlistItem } from '@/types';
+import {
+  filterSignals,
+  type InsiderTrackerAPI,
+  type ScrapeLogEntry,
+  type Signal,
+  type VixQuote,
+  type WatchlistItem,
+} from '@/types';
 import { mockApi } from './mockApi';
 
 /**
@@ -17,6 +24,8 @@ interface Meta {
   generatedAt?: string;
   version?: string;
   vix?: VixQuote | null;
+  /** Recent scrape sessions, published by the runner (see scripts/scrape-web.ts). */
+  runs?: ScrapeLogEntry[];
 }
 
 let signalsCache: { at: number; data: Signal[] } | null = null;
@@ -107,8 +116,10 @@ export const webApi: InsiderTrackerAPI = {
     },
   },
   history: {
-    // No fake scrape logs on the web; the real ones live in the desktop DB.
-    getScrapeLogs: async () => [],
+    // Real sessions, published in meta.json by the runner — this is what makes the
+    // hosted History view (and Source Health, which needs a rolling window across
+    // runs) show actual data instead of three empty cards.
+    getScrapeLogs: async () => (await loadMeta()).runs ?? [],
   },
   app: {
     ...mockApi.app,

@@ -6,6 +6,7 @@ import { CheckIcon, AlertIcon } from '@/components/UI/icons';
 import { formatDateTime, formatDate } from '@/lib/format';
 import { PerformancePanel } from './PerformancePanel';
 import { SourceHealthPanel } from '@/components/UI/SourceHealth';
+import { isWeb } from '@/lib/ipc';
 
 function statusColor(status: string): string {
   if (status === 'success') return 'var(--accent-green)';
@@ -20,8 +21,10 @@ export function HistoryView() {
   return (
     <div className="animate-fade-in flex flex-col gap-6">
 
-      {/* Signal calibration dashboard */}
-      <PerformancePanel />
+      {/* Signal calibration dashboard. Desktop only: the calibration replays the
+          local SQLite history and its "Compute" action has no counterpart on the
+          hosted build, where it would return a "desktop app only" note. */}
+      {!isWeb && <PerformancePanel />}
 
       {/* Per-source scrape health */}
       <SourceHealthPanel />

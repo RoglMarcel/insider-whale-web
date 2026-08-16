@@ -1,5 +1,5 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700;800&display=swap');
-
+/* Fonts are requested from index.html (parser-discoverable, single request).
+   An @import here could only start AFTER this stylesheet finished downloading. */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -26,6 +26,30 @@
   --blob-1: rgba(0, 122, 255, 0.12);
   --blob-2: rgba(52, 199, 89, 0.10);
   --blob-3: rgba(175, 82, 222, 0.08);
+
+  /* Mobile shell tokens (DESIGN.md §2, §6). Safe-area insets resolve to 0 on
+     devices/browsers without a notch, so these are safe everywhere. */
+  --sa-top: env(safe-area-inset-top, 0px);
+  --sa-bottom: env(safe-area-inset-bottom, 0px);
+  --sa-left: env(safe-area-inset-left, 0px);
+  --sa-right: env(safe-area-inset-right, 0px);
+  --page-x: 16px;
+  --page-bottom: 16px;
+  --tabbar-h: 56px;
+}
+
+/* Desktop keeps its original gutters (px-8 / pb-8) and has no tab bar, so the
+   shell tokens resolve to the pre-existing values and ≥1024px is unchanged. */
+@media (min-width: 1024px) {
+  :root {
+    --page-x: 32px;
+  }
+}
+@media (min-width: 768px) {
+  :root {
+    --tabbar-h: 0px;
+    --page-bottom: 32px;
+  }
 }
 
 [data-theme='dark'] {
@@ -58,6 +82,9 @@ html,
 body,
 #root {
   height: 100%;
+  /* 100vh on mobile is the viewport WITH the URL bar hidden, so a fixed shell is
+     cut off while the bar is showing. svh is the smallest stable height. */
+  height: 100svh;
   margin: 0;
   padding: 0;
 }
@@ -70,6 +97,37 @@ body {
   -moz-osx-font-smoothing: grayscale;
   overflow: hidden;
   letter-spacing: -0.011em;
+  /* Grey flash on tap is a browser default that reads as a rendering glitch. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Removes the 300 ms click delay and blocks double-tap zoom on controls. */
+button,
+a,
+[role='button'],
+[role='switch'],
+label {
+  touch-action: manipulation;
+}
+
+/* iOS zooms into any focused field below 16px and never zooms back out. */
+@media (max-width: 1023px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -116,11 +174,19 @@ h1, h2, h3, h4, h5, h6 {
       border-color 0.18s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  .glass-card-hover:hover {
-    transform: translateY(-1.5px);
+  @media (hover: hover) and (pointer: fine) {
+    .glass-card-hover:hover {
+      transform: translateY(-1.5px);
+      background: var(--bg-glass-hover);
+      border-color: var(--border-active);
+      box-shadow: var(--shadow-glass-hover);
+    }
+  }
+
+  /* Touch equivalent: a press must acknowledge itself. */
+  .glass-card-hover:active {
+    transform: scale(0.985);
     background: var(--bg-glass-hover);
-    border-color: var(--border-active);
-    box-shadow: var(--shadow-glass-hover);
   }
 
   .text-secondary {
@@ -136,10 +202,13 @@ h1, h2, h3, h4, h5, h6 {
     cursor: pointer;
   }
 
-  .btn:hover {
-    background: var(--bg-glass-hover);
-    border-color: var(--border-active);
+  @media (hover: hover) and (pointer: fine) {
+    .btn:hover {
+      background: var(--bg-glass-hover);
+      border-color: var(--border-active);
+    }
   }
+  .btn:active { transform: scale(0.97); }
 
   .btn:disabled {
     opacity: 0.45;
@@ -153,9 +222,11 @@ h1, h2, h3, h4, h5, h6 {
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.2);
   }
 
-  .btn-primary:hover {
-    background: var(--accent-blue);
-    filter: brightness(1.08);
+  @media (hover: hover) and (pointer: fine) {
+    .btn-primary:hover {
+      background: var(--accent-blue);
+      filter: brightness(1.08);
+    }
   }
 
   .icon-btn {
@@ -166,11 +237,14 @@ h1, h2, h3, h4, h5, h6 {
     cursor: pointer;
   }
 
-  .icon-btn:hover {
-    background: var(--bg-glass-hover);
-    border-color: var(--border-active);
-    transform: translateY(-0.5px);
+  @media (hover: hover) and (pointer: fine) {
+    .icon-btn:hover {
+      background: var(--bg-glass-hover);
+      border-color: var(--border-active);
+      transform: translateY(-0.5px);
+    }
   }
+  .icon-btn:active { transform: scale(0.94); }
 
   .sidebar-item {
     @apply flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150;
@@ -178,9 +252,11 @@ h1, h2, h3, h4, h5, h6 {
     cursor: pointer;
   }
 
-  .sidebar-item:hover {
-    background: rgba(255, 255, 255, 0.08);
-    color: var(--text-primary);
+  @media (hover: hover) and (pointer: fine) {
+    .sidebar-item:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-primary);
+    }
   }
 
   .sidebar-item-active {
@@ -274,8 +350,10 @@ tr {
   transition: background-color 0.12s ease;
 }
 
-tr:hover td {
-  background-color: color-mix(in srgb, var(--text-primary) 2.5%, transparent) !important;
+@media (hover: hover) and (pointer: fine) {
+  tr:hover td {
+    background-color: color-mix(in srgb, var(--text-primary) 2.5%, transparent) !important;
+  }
 }
 
 /* Feature 4 — combo signal pulse ring */
@@ -343,4 +421,37 @@ tr:hover td {
   background-size: 800px 100%;
   animation: shimmer 1.4s infinite linear;
   border-radius: 6px;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Mobile shell (DESIGN.md). Everything here is scoped below the desktop
+   breakpoint, so the ≥1024px layout is untouched.
+   ────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 1023px) {
+  /* 36px fails the 44px touch minimum; the icon inside keeps its size. */
+  .icon-btn {
+    height: 44px;
+    width: 44px;
+  }
+
+  /* Dark panels are already opaque (--bg-glass: #111115); the blur only costs
+     GPU time while scrolling hundreds of cards. Keep it for fixed chrome only. */
+  .glass-card {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  /* Tables inside cards must never dictate the page width. */
+  th,
+  td {
+    padding: 10px 8px !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass,
+  .glass-card {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }

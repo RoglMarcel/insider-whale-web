@@ -19,7 +19,13 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { app } from 'electron'; // aliased to scripts/electron-stub.ts (see the scrape:web npm script)
 import { runScrape } from '../electron/scraper';
-import { initDatabase, closeDatabase, getMostRecentSessionSignals, getLatestSignals } from '../electron/database';
+import {
+  initDatabase,
+  closeDatabase,
+  getMostRecentSessionSignals,
+  getLatestSignals,
+  getScrapeLogs,
+} from '../electron/database';
 import { fetchVix } from '../electron/vix';
 import { DEFAULT_SETTINGS, SCRAPER_SOURCES, type AppSettings, type ScraperSource } from '../src/types';
 
@@ -155,6 +161,10 @@ async function main(): Promise<void> {
     newCombos: result.newCombos,
     newNotable,
     scoreSurges: result.scoreSurges ?? [],
+    // Last runs, straight from the DB in the shape the UI already expects
+    // (ScrapeLogEntry[]). Without these the hosted History view is three empty
+    // cards, and Source Health has no rolling window to compute a median from.
+    runs: safeRuns(),
     // Keep the payload small — surface only the error messages, not stacks.
     errors: result.errors.map((e) => `${e.source}: ${e.message}`),
   };
@@ -177,6 +187,15 @@ async function main(): Promise<void> {
   // Exit non-zero only on a HARD failure (persist error / nothing ran), so a
   // partial scrape (one flaky source) still publishes the good signals.
   process.exit(result.status === 'failed' ? 1 : 0);
+}
+
+/** Recent scrape sessions for the hosted History view; never fails the run. */
+function safeRuns(): ReturnType<typeof getScrapeLogs> {
+  try {
+    return getScrapeLogs(12);
+  } catch {
+    return [];
+  }
 }
 
 function readVersion(): string {

@@ -22,7 +22,13 @@ import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { app, safeStorage } from 'electron';
 import { runScrape } from '../electron/scraper';
-import { initDatabase, closeDatabase, getMostRecentSessionSignals, getLatestSignals } from '../electron/database';
+import {
+  initDatabase,
+  closeDatabase,
+  getMostRecentSessionSignals,
+  getLatestSignals,
+  getScrapeLogs,
+} from '../electron/database';
 import { fetchVix } from '../electron/vix';
 import { authStatus, sourceUnlocked } from '../electron/auth';
 import { DEFAULT_SETTINGS, SCRAPER_SOURCES, LOGIN_PLATFORMS, type AppSettings, type ScraperSource } from '../src/types';
@@ -140,6 +146,8 @@ async function main(): Promise<void> {
     newCombos: result.newCombos,
     newNotable,
     scoreSurges: result.scoreSurges ?? [],
+    // Same shape as the cloud runner — see scrape-web.ts.
+    runs: (() => { try { return getScrapeLogs(12); } catch { return []; } })(),
     source: 'desktop-publish',
     errors: result.errors.map((e) => `${e.source}: ${e.message}`),
   };
