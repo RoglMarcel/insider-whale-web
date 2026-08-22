@@ -21,6 +21,7 @@ import {
   DEFAULT_SETTINGS,
   filterSignals,
   isBigPlayer,
+  normalizeInsiderName,
 } from '../src/types';
 
 let db: Database.Database | null = null;
@@ -76,7 +77,7 @@ function backupDatabaseBeforeMigration(dbPath: string): void {
   }
 }
 
-const SCHEMA = `
+export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS signals (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ticker TEXT NOT NULL,
@@ -219,6 +220,29 @@ CREATE TABLE IF NOT EXISTS insider_flow (
   PRIMARY KEY (ticker, flow_date, source)
 );
 CREATE INDEX IF NOT EXISTS idx_insider_flow_date ON insider_flow(flow_date);
+
+-- Persisted insider trades. Every scraper is a "latest filings" feed with its own
+-- short window (OpenInsider's is 7 days), so before this table a trade existed for
+-- the app only while its source page still listed it: after the window rolled past,
+-- the aggregate was rebuilt with zero trades and the signal collapsed to score 0 —
+-- while insider_flow (90d) kept showing its dollar value, contradicting itself.
+-- Trades now accumulate here and aggregates are built from a trailing window, so
+-- source coverage gaps and one-off scraper failures no longer erase real signals.
+-- Keyed on the exact value so two genuinely different same-day buys by one insider
+-- stay separate; cross-source rounding is collapsed by dedupTrades() at read time.
+CREATE TABLE IF NOT EXISTS insider_trades (
+  ticker TEXT NOT NULL,
+  insider_key TEXT NOT NULL,     -- normalizeInsiderName(insiderName)
+  trade_date TEXT NOT NULL,      -- YYYY-MM-DD
+  value_cents INTEGER NOT NULL,  -- round(value * 100) — integer key, no float compare
+  source TEXT NOT NULL,
+  source_rank INTEGER NOT NULL,  -- lower = more authoritative (see TRADE_SOURCE_RANK)
+  payload TEXT NOT NULL,         -- JSON RawInsiderTrade
+  first_seen DATETIME,
+  last_seen DATETIME,
+  PRIMARY KEY (ticker, insider_key, trade_date, value_cents)
+);
+CREATE INDEX IF NOT EXISTS idx_insider_trades_date ON insider_trades(trade_date);
 
 CREATE TABLE IF NOT EXISTS valuation_cache (
   ticker TEXT PRIMARY KEY,
@@ -389,12 +413,31 @@ export function initDatabase(dbPath: string): Database.Database {
   db.pragma('foreign_keys = ON');
   db.exec(SCHEMA);
   runMigrations(db);
+  // Seed the trade window from signal history the first time `insider_trades`
+  // exists, so the first run after this lands isn't scored against an empty
+  // window. Idempotent and best-effort — a failure here must not block startup.
+  try {
+    backfillInsiderTradesFromSignals();
+  } catch (err) {
+    console.error('[db] insider-trade backfill failed (non-fatal):', err);
+  }
   return db;
 }
 
 function getDb(): Database.Database {
   if (!db) throw new Error('Database not initialized — call initDatabase() first.');
   return db;
+}
+
+/**
+ * Consistent snapshot of the live DB into `destPath`, via SQLite's online-backup
+ * API. Copying the .db file directly is NOT equivalent: the app runs in WAL
+ * mode, so the newest commits live in the -wal sidecar and a plain file copy
+ * silently yields stale data. Going through the app's own open handle also
+ * avoids a second writer on the live file.
+ */
+export async function snapshotDatabase(destPath: string): Promise<void> {
+  await getDb().backup(destPath);
 }
 
 export function closeDatabase(): void {
@@ -1447,6 +1490,127 @@ export function getNetInsiderFlow(ticker: string, days = 90): InsiderFlowSummary
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Persisted insider trades — the pipeline's memory (see the insider_trades DDL)
+// ──────────────────────────────────────────────────────────────────────────
+
+/** Write preference when two sources report the same trade. Lower wins. */
+const TRADE_SOURCE_RANK: Record<string, number> = {
+  edgar: 0,
+  openinsider: 1,
+  secform4: 2,
+  // Curated/editorial feeds report rounded amounts and no transaction date, so
+  // they must never overwrite a stored payload from a per-filing exact source.
+  ceowatcher: 9,
+};
+const DEFAULT_TRADE_SOURCE_RANK = 5;
+
+function tradeSourceRank(source: string): number {
+  return TRADE_SOURCE_RANK[source] ?? DEFAULT_TRADE_SOURCE_RANK;
+}
+
+/**
+ * Persist scraped trades. Idempotent: re-seeing a trade only refreshes
+ * `last_seen`, and a more authoritative source overwrites the stored payload
+ * (OpenInsider/EDGAR rows carry the filing + insider-history URLs that
+ * aggregator rows lack). Returns how many were new.
+ */
+export function upsertInsiderTrades(trades: RawInsiderTrade[]): number {
+  if (!trades.length) return 0;
+  const stmt = getDb().prepare(
+    `INSERT INTO insider_trades
+       (ticker, insider_key, trade_date, value_cents, source, source_rank, payload, first_seen, last_seen)
+     VALUES (@ticker, @insider_key, @trade_date, @value_cents, @source, @source_rank, @payload, @now, @now)
+     ON CONFLICT(ticker, insider_key, trade_date, value_cents) DO UPDATE SET
+       last_seen   = excluded.last_seen,
+       payload     = CASE WHEN excluded.source_rank < source_rank THEN excluded.payload ELSE payload END,
+       source      = CASE WHEN excluded.source_rank < source_rank THEN excluded.source  ELSE source  END,
+       source_rank = MIN(source_rank, excluded.source_rank)`,
+  );
+  const now = new Date().toISOString();
+  const countRows = () =>
+    (getDb().prepare(`SELECT COUNT(*) AS n FROM insider_trades`).get() as { n: number }).n;
+  const before = countRows();
+  const tx = getDb().transaction((items: RawInsiderTrade[]) => {
+    for (const t of items) {
+      const ticker = (t.ticker ?? '').toUpperCase();
+      const insiderKey = normalizeInsiderName(t.insiderName ?? '');
+      // A trade with no ticker, no identifiable insider or no parseable date has
+      // no stable key — storing it would create an unbounded pile of near-dupes.
+      if (!ticker || !insiderKey || !/^\d{4}-\d{2}-\d{2}$/.test(t.tradeDate ?? '')) continue;
+      if (!Number.isFinite(t.value) || t.value <= 0) continue;
+      stmt.run({
+        ticker,
+        insider_key: insiderKey,
+        trade_date: t.tradeDate,
+        value_cents: Math.round(t.value * 100),
+        source: t.source,
+        source_rank: tradeSourceRank(t.source),
+        payload: JSON.stringify(t),
+        now,
+      });
+    }
+  });
+  tx(trades);
+  // `changes` reports 1 for the INSERT *and* the DO UPDATE branch, so the only
+  // honest "new" count is the row-count delta.
+  return countRows() - before;
+}
+
+/**
+ * Trades whose TRADE date falls in the trailing window. This is what aggregates
+ * are built from — not just the current scrape — so a signal outlives the
+ * source page that first reported it.
+ */
+export function getRecentInsiderTrades(days = 30): RawInsiderTrade[] {
+  const cutoff = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+  const rows = getDb()
+    .prepare(`SELECT payload FROM insider_trades WHERE trade_date >= ? ORDER BY trade_date DESC`)
+    .all(cutoff) as { payload: string }[];
+  const out: RawInsiderTrade[] = [];
+  for (const r of rows) {
+    try {
+      const t = JSON.parse(r.payload) as RawInsiderTrade;
+      if (t && t.ticker) out.push(t);
+    } catch {
+      /* a corrupt payload must not take the whole window down */
+    }
+  }
+  return out;
+}
+
+/**
+ * One-time seed of `insider_trades` from the `signals` history, so the window is
+ * populated on the first run after this table lands instead of starting empty
+ * (which would leave every in-flight signal at score 0 until its trade happened
+ * to be re-scraped). Idempotent — safe to call on every startup.
+ */
+export function backfillInsiderTradesFromSignals(days = 30): number {
+  const existing = (
+    getDb().prepare(`SELECT COUNT(*) AS n FROM insider_trades`).get() as { n: number }
+  ).n;
+  if (existing > 0) return 0; // already seeded — the live pipeline owns it from here
+  const cutoff = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+  const rows = getDb()
+    .prepare(
+      `SELECT raw_trades FROM signals
+       WHERE raw_trades IS NOT NULL AND raw_trades != '[]' AND trade_date >= ?`,
+    )
+    .all(cutoff) as { raw_trades: string }[];
+  const trades: RawInsiderTrade[] = [];
+  for (const r of rows) {
+    try {
+      const arr = JSON.parse(r.raw_trades) as RawInsiderTrade[];
+      if (Array.isArray(arr)) trades.push(...arr);
+    } catch {
+      /* skip unparseable history rows */
+    }
+  }
+  const n = upsertInsiderTrades(trades);
+  if (n > 0) console.log(`[db] backfilled ${n} insider trade(s) from signal history`);
+  return n;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Valuation cache persistence — backs the in-memory cache so app restarts
 // don't re-burn the providers' free-view limits (~5 stocks/month on the
 // ValueInvesting.io free tier).
@@ -1592,6 +1756,7 @@ export function pruneOldData(retentionDays = 365): void {
     getDb().prepare(`DELETE FROM scrape_log WHERE started_at < ?`).run(cutoff);
     getDb().prepare(`DELETE FROM valuation_cache WHERE fetched_at < ?`).run(valuationCutoff);
     getDb().prepare(`DELETE FROM insider_flow WHERE flow_date < ?`).run(flowCutoff);
+    getDb().prepare(`DELETE FROM insider_trades WHERE trade_date < ?`).run(flowCutoff);
     getDb().prepare(`DELETE FROM politician_trades WHERE trade_date < ?`).run(flowCutoff);
   });
   tx();

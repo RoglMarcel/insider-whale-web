@@ -7,6 +7,7 @@ import { useStore } from '@/store/useStore';
 const STATUS_META: Record<SourceHealthEntry['status'], { dot: string; label: string; color: string }> = {
   healthy: { dot: '✅', label: 'OK', color: 'var(--accent-green)' },
   degraded: { dot: '⚠️', label: 'Low', color: 'var(--accent-yellow)' },
+  flapping: { dot: '🟠', label: 'Flaky', color: 'var(--accent-yellow)' },
   dead: { dot: '🔴', label: 'Dead', color: 'var(--accent-red)' },
   unknown: { dot: '○', label: '—', color: 'var(--text-secondary)' },
 };
@@ -99,11 +100,15 @@ export function SourceHealthPanel() {
                   title={
                     e.status === 'dead' && e.consecutiveZeroRuns > 0
                       ? `${meta.label} (${e.consecutiveZeroRuns} zero runs)`
-                      : meta.label
+                      : e.status === 'flapping'
+                        ? `Intermittent: ${e.zeroRunsInWindow} of the last ${e.runsInWindow} runs returned zero rows. ` +
+                          `Every one of those drops the signals this source carries.`
+                        : meta.label
                   }
                 >
                   {meta.dot}
                   {e.status === 'dead' && e.consecutiveZeroRuns > 0 ? ` ${e.consecutiveZeroRuns}` : ''}
+                  {e.status === 'flapping' ? ` ${e.zeroRunsInWindow}/${e.runsInWindow}` : ''}
                 </span>
               </div>
             );

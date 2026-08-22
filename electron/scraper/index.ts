@@ -39,6 +39,8 @@ import {
   upsertTickerMeta,
   upsertInsiderFlow,
   getNetInsiderFlow,
+  upsertInsiderTrades,
+  getRecentInsiderTrades,
   getRecentSourceBreakdowns,
   getAlertRules,
   getWatchlistTickers,
@@ -62,6 +64,7 @@ import { scrapeMarketBeat } from './marketbeat';
 import { scrapeGuruFocus } from './gurufocus';
 import { scrapeInsiderMonitor } from './insidermonitor';
 import { scrapeQuiverQuant } from './quiverquant';
+import { scrapeCeoWatcher } from './ceowatcher';
 import { scrapeBarchart } from './barchart';
 import { scrapeOptionStrat } from './optionstrat';
 import { scrapeInsiderFinance } from './insiderfinance';
@@ -134,6 +137,7 @@ const INSIDER_SCRAPERS: Partial<Record<string, InsiderScraper>> = {
   gurufocus: scrapeGuruFocus,
   insidermonitor: scrapeInsiderMonitor,
   quiverquant: scrapeQuiverQuant,
+  ceowatcher: scrapeCeoWatcher,
 };
 
 const OPTIONS_SCRAPERS: Partial<Record<string, OptionsScraper>> = {
@@ -172,6 +176,14 @@ const SCORE_SURGE_DELTA = 25;
  * same name, becomes a combo.
  */
 const MIN_OPTIONS_PREMIUM = 250_000;
+/**
+ * Trailing TRADE-date window that aggregates are built from (see the
+ * `insider_trades` DDL). 30 days is not arbitrary: it is exactly the window
+ * `getClusterMultiplier` counts distinct insiders over, and the freshness curve
+ * has already bottomed out at its floor by ~17 days, so nothing inside this
+ * window can score off a stale date without being discounted for it.
+ */
+const TRADE_WINDOW_DAYS = 30;
 
 // ──────────────────────────────────────────────────────────────────────────
 // Live status (also readable synchronously by the IPC status handler)
@@ -253,7 +265,24 @@ async function mapLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<v
 /** Sources whose rows are per-filing exact (in preference order, best first). */
 const AUTHORITATIVE_TRADE_SOURCES: readonly string[] = ['edgar', 'openinsider'];
 /** Estimate-based aggregators — never supply $ volume when an authoritative row exists. */
-const ESTIMATE_TRADE_SOURCES: ReadonlySet<string> = new Set(['quiverquant']);
+const ESTIMATE_TRADE_SOURCES: ReadonlySet<string> = new Set(['quiverquant', 'ceowatcher']);
+/**
+ * Sources that report a trade WITHOUT its real transaction date — a publish
+ * date stands in (CEOWatcher captions state the amount but never the date).
+ * Such a row can never collide on the exact ticker|insider|tradeDate dedup key,
+ * so it needs the date-fuzzy reconciliation pass in dedupTrades below.
+ */
+const UNDATED_TRADE_SOURCES: ReadonlySet<string> = new Set(['ceowatcher']);
+/** How far an undated row may sit from an authoritative one and still be the same event. */
+const UNDATED_MATCH_WINDOW_DAYS = 10;
+
+/** Absolute day distance between two YYYY-MM-DD strings (both read as UTC, so no TZ skew). */
+function dayDistance(a: string, b: string): number {
+  const pa = Date.parse(`${a}T00:00:00Z`);
+  const pb = Date.parse(`${b}T00:00:00Z`);
+  if (Number.isNaN(pa) || Number.isNaN(pb)) return Infinity;
+  return Math.abs(pa - pb) / 86_400_000;
+}
 
 /** Same trade across sources whose dollar values round/agree within 5%. */
 function valuesClose(a: number, b: number): boolean {
@@ -272,7 +301,7 @@ function valuesClose(a: number, b: number): boolean {
  * When EDGAR/OpenInsider is present for a key, estimate sources (Quiver) are dropped
  * entirely so their estimated $ never set displayed/scored dollar volume.
  */
-function dedupTrades(trades: RawInsiderTrade[]): RawInsiderTrade[] {
+export function dedupTrades(trades: RawInsiderTrade[]): RawInsiderTrade[] {
   const groups = new Map<string, RawInsiderTrade[]>();
   for (const t of trades) {
     const key = `${t.ticker}|${normalizeInsiderName(t.insiderName)}|${t.tradeDate}`;
@@ -323,7 +352,31 @@ function dedupTrades(trades: RawInsiderTrade[]): RawInsiderTrade[] {
     }
     out.push(...kept);
   }
-  return out;
+
+  // Date-fuzzy reconciliation for undated sources. Everything above keys on an
+  // EXACT trade date, which an undated row (publish date as proxy) can never
+  // match — so without this pass CEOWatcher's rounded dollars would be ADDED to
+  // the authoritative row's, double-counting one Form 4 into both dollar volume
+  // and the distinct-insider cluster count. Matched on the same person, or, when
+  // the caption named only a title, on the same money for the same ticker.
+  // Note the dropped row still counts toward `sourceCount` (computed pre-dedup),
+  // so the corroboration keeps raising confidence without inflating the trade.
+  const undated = out.filter((t) => UNDATED_TRADE_SOURCES.has(t.source));
+  if (!undated.length) return out;
+  const precise = out.filter((t) => !UNDATED_TRADE_SOURCES.has(t.source));
+  if (!precise.length) return out;
+  return out.filter((t) => {
+    if (!UNDATED_TRADE_SOURCES.has(t.source)) return true;
+    const key = normalizeInsiderName(t.insiderName);
+    const named = key && key !== 'unknown';
+    const covered = precise.some(
+      (p) =>
+        p.ticker === t.ticker &&
+        dayDistance(p.tradeDate, t.tradeDate) <= UNDATED_MATCH_WINDOW_DAYS &&
+        (named ? normalizeInsiderName(p.insiderName) === key : valuesClose(p.value, t.value)),
+    );
+    return !covered;
+  });
 }
 
 /**
@@ -781,6 +834,33 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
       setStatus({ completedSources: [...completed] });
     });
 
+    // ── Persist this scrape's trades, then rebuild the working set from the
+    // trailing window (see TRADE_WINDOW_DAYS). Every source is a "latest
+    // filings" feed with its own short horizon, so without this a trade exists
+    // only while its source page still lists it — and a single failed scrape
+    // silently zeroes out every signal that source was carrying.
+    // `allTrades` itself is deliberately NOT reassigned: the metrics
+    // consistency check below compares per-source counts against exactly the
+    // rows this run scraped.
+    let mergedTrades: RawInsiderTrade[] = allTrades;
+    try {
+      const newTrades = upsertInsiderTrades(allTrades);
+      const windowTrades = getRecentInsiderTrades(TRADE_WINDOW_DAYS);
+      // The window is a superset of this run's trades once persisted, but fall
+      // back to the live rows if the read came back empty for any reason.
+      mergedTrades = windowTrades.length ? windowTrades : allTrades;
+      console.log(
+        `[scraper] insider trades: ${allTrades.length} scraped (${newTrades} new), ` +
+          `${mergedTrades.length} in the ${TRADE_WINDOW_DAYS}d window`,
+      );
+    } catch (err) {
+      console.error('[scraper] insider-trade persistence failed — falling back to live rows:', err);
+      errors.push({
+        source: 'insider-trades',
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     // Sell-side intelligence — collect same-company sale flow + Form 144
     // notices into insider_flow. Context/display only; failures never block
     // the signal pipeline.
@@ -793,10 +873,12 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
       }
       const sales = salesRows ?? [];
       const form144 = form144Rows ?? [];
-      // Buy side from this scrape's own deduped purchases so the ratio has
-      // both legs (dedup first — cross-source copies must not inflate it).
+      // Buy side from the persisted trade window so the ratio has both legs
+      // (dedup first — cross-source copies must not inflate it). Reading the
+      // window rather than just this run's rows also lets a scrape that missed
+      // a source heal the buy side instead of leaving a hole in it.
       const buyByKey = new Map<string, number>();
-      for (const t of dedupTrades(allTrades)) {
+      for (const t of dedupTrades(mergedTrades)) {
         if (classifyTransaction(t.transactionType).modifier <= 0) continue;
         if (!/^\d{4}-\d{2}-\d{2}$/.test(t.tradeDate)) continue;
         const key = `${t.ticker}|${t.tradeDate}`;
@@ -888,7 +970,7 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
     // Settings → role-category filters: drop trades whose insider category the
     // user disabled (missing keys default to allowed, matching the Settings UI).
     const roleAllowed = (role: string) => settings.roleFilters[getRankWeight(role).category] !== false;
-    const filteredTrades = allTrades.filter((t) => roleAllowed(t.role));
+    const filteredTrades = mergedTrades.filter((t) => roleAllowed(t.role));
 
     // Build candidate aggregates, then enrich with earnings (Feature 5).
     aggregates = buildAggregates(filteredTrades, mergedOptions, settings.minDollarVolume);

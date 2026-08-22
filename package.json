@@ -13,6 +13,7 @@
     "build:web": "vite build --config vite.config.web.ts",
     "scrape:web": "esbuild scripts/scrape-web.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --external:playwright --alias:electron=./scripts/electron-stub.ts --outfile=tmp/scrape-web.cjs && node tmp/scrape-web.cjs",
     "label:outcomes": "esbuild scripts/label-outcomes.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --alias:electron=./scripts/electron-stub.ts --outfile=tmp/label-outcomes.cjs && node tmp/label-outcomes.cjs",
+    "publish:data": "esbuild scripts/publish-data.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --alias:electron=./scripts/electron-stub.ts --outfile=tmp/publish-data.cjs && node tmp/publish-data.cjs",
     "publish:web": "esbuild scripts/publish-web.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --external:playwright --external:electron --outfile=tmp/publish-web.cjs && electron tmp/publish-web.cjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",

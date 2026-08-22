@@ -208,6 +208,40 @@ export function SettingsPanel() {
 
       <ShadowScoring />
 
+      {/* Desktop -> web terminal sync */}
+      <SectionCard title="Web publish">
+        <Row
+          label="Publish scrapes to the web terminal"
+          hint="After every scrape, push this run's signals to the site's repo and let CI redeploy"
+        >
+          <Toggle
+            checked={settings.webPublishEnabled}
+            onChange={(v) => save({ webPublishEnabled: v })}
+          />
+        </Row>
+        <div className="py-2.5">
+          <div className="text-sm font-medium">Repo path</div>
+          <div className="mb-2 text-xs text-secondary">
+            Absolute path to your checkout of the website repo (the folder containing{' '}
+            <code>data/insider-tracker.db</code>). Required for the installed app, which runs from
+            Program Files and cannot find the repo on its own.
+          </div>
+          <input
+            type="text"
+            spellCheck={false}
+            placeholder="C:\Users\you\Desktop\Insider"
+            className="w-full rounded-lg px-3 py-2 text-sm"
+            style={{
+              background: 'var(--bg-glass)',
+              border: '1px solid var(--border-glass)',
+              color: 'var(--text-primary)',
+            }}
+            value={settings.webPublishRepoPath}
+            onChange={(e) => save({ webPublishRepoPath: e.target.value })}
+          />
+        </div>
+      </SectionCard>
+
       {/* Danger zone */}
       <SectionCard title="Data">
         <Row label="Headless browser" hint="Hide the scraping browser window (recommended)">

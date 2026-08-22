@@ -35,6 +35,8 @@ export const IPC = {
   dbClear: 'db:clear',
   appGetLastScrape: 'app:getLastScrape',
   appSignalsUpdated: 'app:signals-updated',
+  /** Result of the post-scrape push to the web terminal (see electron/webPublish.ts). */
+  webPublishStatus: 'app:web-publish-status',
   appOpenTicker: 'app:open-ticker',
   appGetVersion: 'app:getVersion',
   newsGetAll: 'news:getAll',

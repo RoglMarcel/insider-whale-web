@@ -42,6 +42,9 @@ const WEB_SOURCES: Record<ScraperSource, boolean> = {
   marketbeat: false,
   gurufocus: false,
   quiverquant: false,
+  // Instagram renders client-side and rate-limits datacenter IPs hard; the
+  // caption route needs no login, so this is worth a block-test before enabling.
+  ceowatcher: false,
   barchart: false,
   optionstrat: false,
   insiderfinance: false,

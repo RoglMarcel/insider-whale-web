@@ -22,6 +22,7 @@ export type ScraperSource =
   | 'gurufocus'
   | 'insidermonitor'
   | 'quiverquant'
+  | 'ceowatcher'
   | 'barchart'
   | 'optionstrat'
   | 'insiderfinance'
@@ -586,6 +587,12 @@ export interface SourceHealthIssue {
   consecutiveZeroRuns: number;
   /** Rolling median row count for this source over the inspected window. */
   rollingMedian: number;
+  /** Total zero-row runs in the inspected window (not necessarily consecutive). */
+  zeroRunsInWindow?: number;
+  /** Runs inspected, so a caller can render "3 of 11 runs". */
+  runsInWindow?: number;
+  /** `dead` = zero run after run; `flapping` = intermittent but recovering. */
+  kind?: 'dead' | 'flapping';
 }
 
 /**
@@ -594,6 +601,12 @@ export interface SourceHealthIssue {
  * producing zero, run after run. A source is flagged when it has a healthy
  * history (median > 0 over ≥ 4 participating runs) but returned 0 rows in the
  * 2+ most recent consecutive runs. Chronically-empty sources are never flagged.
+ *
+ * A source can also fail INTERMITTENTLY — zero rows on one run, healthy on the
+ * next — which the consecutive-runs rule can never catch, because the streak
+ * resets every time. That pattern is not cosmetic: each zero run drops every
+ * signal the source was carrying, so it is reported as `flapping` once a
+ * healthy source has ≥ 2 zero runs across the inspected window.
  *
  * @param runsNewestFirst per-run `sourceBreakdown` maps, most recent first.
  */
@@ -618,14 +631,29 @@ export function computeSourceHealth(
       if (c === 0) consecutiveZeroRuns++;
       else break;
     }
-    if (consecutiveZeroRuns < 2) continue;
-    // (a) Healthy history then zero — need ≥4 participating runs (stable median).
-    // (b) Hard-fail sentinel (−1) twice in a row — flag immediately (not silent empty).
-    const recentHardFails = counts.slice(0, consecutiveZeroRuns).filter((c) => c < 0).length;
-    const healthyThenDead = counts.length >= 4 && rollingMedian > 0;
-    const hardFailDead = recentHardFails >= 2;
-    if (healthyThenDead || hardFailDead) {
-      issues.push({ source: key, consecutiveZeroRuns, rollingMedian: Math.max(rollingMedian, 0) });
+    const zeroRunsInWindow = norm.filter((c) => c === 0).length;
+    const base = {
+      source: key,
+      consecutiveZeroRuns,
+      rollingMedian: Math.max(rollingMedian, 0),
+      zeroRunsInWindow,
+      runsInWindow: counts.length,
+    };
+    if (consecutiveZeroRuns >= 2) {
+      // (a) Healthy history then zero — need ≥4 participating runs (stable median).
+      // (b) Hard-fail sentinel (−1) twice in a row — flag immediately (not silent empty).
+      const recentHardFails = counts.slice(0, consecutiveZeroRuns).filter((c) => c < 0).length;
+      const healthyThenDead = counts.length >= 4 && rollingMedian > 0;
+      const hardFailDead = recentHardFails >= 2;
+      if (healthyThenDead || hardFailDead) {
+        issues.push({ ...base, kind: 'dead' });
+        continue;
+      }
+    }
+    // Intermittent: recovers between runs, so the streak never reaches 2, but
+    // every zero run still blanks the signals this source carries.
+    if (counts.length >= 6 && rollingMedian > 0 && zeroRunsInWindow >= 2) {
+      issues.push({ ...base, kind: 'flapping' });
     }
   }
   return issues;
@@ -696,6 +724,17 @@ export interface AppSettings {
   sources: Record<ScraperSource, boolean>;
   /** Run Chromium headless (true in production by default). */
   headless: boolean;
+  /**
+   * Push each desktop scrape's signals into the web terminal's repo DB and let
+   * CI redeploy the site. Off means the run stays on this machine only.
+   */
+  webPublishEnabled: boolean;
+  /**
+   * Absolute path to the repo checkout that backs the website. Required for the
+   * PACKAGED app, which runs from Program Files and cannot infer it; when
+   * running from source the working directory is used instead.
+   */
+  webPublishRepoPath: string;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -857,7 +896,12 @@ export function isLateFiling(tradeDate?: string | null, filingDate?: string | nu
  * bucket and a uniformly faster decay would have punished them.
  */
 export function getFreshnessMultiplier(ageDays: number | null, decayRate = 0.115, floor = 0.15): number {
-  if (ageDays == null || ageDays < 1) return 1.0;
+  // Unknown age is NOT fresh. Returning 1.0 here handed a full-strength
+  // multiplier to signals whose dates failed to parse, while a real, correctly
+  // dated 10-day-old buy was discounted to ~0.32 — i.e. missing data outscored
+  // present data. An undateable signal is treated as maximally stale instead.
+  if (ageDays == null) return floor;
+  if (ageDays < 1) return 1.0;
   // Smooth exponential (half-life ≈ 6 days) instead of step cliffs, so a
   // signal no longer loses 30–50% of its insider leg overnight crossing a
   // bucket boundary.
@@ -1024,6 +1068,7 @@ export const SCRAPER_SOURCES: readonly SourceMeta[] = [
   { key: 'gurufocus', label: 'GuruFocus', kind: 'insider', url: 'https://www.gurufocus.com/insider/summary' },
   { key: 'insidermonitor', label: 'Insider Monitor', kind: 'insider', url: 'http://www.insider-monitor.com/insider_stock_purchases.html' },
   { key: 'quiverquant', label: 'Quiver Insiders', kind: 'insider', url: 'https://www.quiverquant.com/insiders/' },
+  { key: 'ceowatcher', label: 'CEOWatcher (IG)', kind: 'insider', url: 'https://www.instagram.com/ceowatcher/' },
   { key: 'barchart', label: 'Barchart Options', kind: 'options', url: 'https://www.barchart.com/options/unusual-activity/stocks' },
   { key: 'optionstrat', label: 'OptionStrat Flow', kind: 'options', url: 'https://optionstrat.com/flow', authOptional: true },
   { key: 'insiderfinance', label: 'InsiderFinance Flow', kind: 'options', url: 'https://www.insiderfinance.io/flow', authOptional: true },
@@ -1154,6 +1199,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   scheduleTimes: { marketOpen: true, midday: true, close: true },
   notificationThreshold: 80,
   minDollarVolume: 50_000,
+  webPublishEnabled: true,
+  // Empty = fall back to the working directory (works when run from source).
+  webPublishRepoPath: '',
   roleFilters: {
     exec: true,
     cfo: true,
@@ -1171,6 +1219,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     gurufocus: true,
     insidermonitor: true,
     quiverquant: true,
+    ceowatcher: true,
     barchart: true,
     optionstrat: false,
     insiderfinance: false,

@@ -488,6 +488,7 @@ export function SignalModal() {
                 insiderFlow={signal.insiderFlow}
                 stats={signal.stats}
                 politicianTrades={signal.politicianTrades}
+                rawTrades={signal.rawTrades}
               />
               <InsiderAccuracyPanel insiders={insiders} records={records} loading={trLoading} />
               <InsiderTable trades={signal.rawTrades} trackRecords={records} loading={trLoading} />

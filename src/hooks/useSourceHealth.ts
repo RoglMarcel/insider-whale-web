@@ -11,7 +11,11 @@ export interface SourceHealthEntry {
   median: number;
   /** Consecutive most-recent zero-row runs. */
   consecutiveZeroRuns: number;
-  status: 'healthy' | 'degraded' | 'dead' | 'unknown';
+  /** Zero-row runs anywhere in the window, and how many runs that window holds. */
+  zeroRunsInWindow: number;
+  runsInWindow: number;
+  /** `flapping` = intermittently returns zero rows but recovers; not dead, still lossy. */
+  status: 'healthy' | 'degraded' | 'dead' | 'flapping' | 'unknown';
 }
 
 /**
@@ -19,7 +23,12 @@ export interface SourceHealthEntry {
  * (`sourceBreakdown` per run) using the same pure `computeSourceHealth` the
  * main process uses for its notifications — no extra IPC round-trip.
  */
-export function useSourceHealth(): { entries: SourceHealthEntry[]; dead: SourceHealthEntry[]; issues: SourceHealthIssue[] } {
+export function useSourceHealth(): {
+  entries: SourceHealthEntry[];
+  dead: SourceHealthEntry[];
+  flapping: SourceHealthEntry[];
+  issues: SourceHealthIssue[];
+} {
   const scrapeLogs = useStore((s) => s.scrapeLogs);
 
   return useMemo(() => {
@@ -42,7 +51,16 @@ export function useSourceHealth(): { entries: SourceHealthEntry[]; dead: SourceH
         .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
       const label = src.label;
       if (counts.length === 0) {
-        return { key: src.key, label, lastRows: null, median: 0, consecutiveZeroRuns: 0, status: 'unknown' };
+        return {
+          key: src.key,
+          label,
+          lastRows: null,
+          median: 0,
+          consecutiveZeroRuns: 0,
+          zeroRunsInWindow: 0,
+          runsInWindow: 0,
+          status: 'unknown',
+        };
       }
       // Normalize hard-fail sentinel (-1) to 0 for display/median.
       const norm = counts.map((c) => (c < 0 ? 0 : c));
@@ -51,13 +69,27 @@ export function useSourceHealth(): { entries: SourceHealthEntry[]; dead: SourceH
       const lastRows = counts[0] < 0 ? null : counts[0];
       const issue = issueBySource.get(src.key);
       let status: SourceHealthEntry['status'];
-      if (issue || counts[0] < 0) status = 'dead';
+      // Flapping is checked first: an intermittently-failing source has an issue
+      // but is NOT dead, and reporting it as dead would fire the red "broken"
+      // banner on a source that is still producing rows most runs.
+      if (issue?.kind === 'flapping' && counts[0] >= 0) status = 'flapping';
+      else if (issue || counts[0] < 0) status = 'dead';
       else if (median > 0 && norm[0] === 0) status = 'degraded';
       else status = 'healthy';
-      return { key: src.key, label, lastRows, median, consecutiveZeroRuns: issue?.consecutiveZeroRuns ?? 0, status };
+      return {
+        key: src.key,
+        label,
+        lastRows,
+        median,
+        consecutiveZeroRuns: issue?.consecutiveZeroRuns ?? 0,
+        zeroRunsInWindow: issue?.zeroRunsInWindow ?? norm.filter((c) => c === 0).length,
+        runsInWindow: issue?.runsInWindow ?? counts.length,
+        status,
+      };
     });
 
     const dead = entries.filter((e) => e.status === 'dead');
-    return { entries, dead, issues };
+    const flapping = entries.filter((e) => e.status === 'flapping');
+    return { entries, dead, flapping, issues };
   }, [scrapeLogs]);
 }

@@ -43,6 +43,23 @@ jobs:
         with:
           fetch-depth: 0          # full history so the persist-step push is clean
 
+      # Fast path for a desktop publish. The desktop app pushes its own scrape
+      # into data/insider-tracker.db and marks the commit; those rows are richer
+      # than a runner can produce (login-gated options flow needs a real
+      # machine), so re-scraping here would burn minutes to publish something
+      # WEAKER than what was just pushed. Detect the marker and skip the scrape.
+      - name: Detect desktop publish
+        id: mode
+        run: |
+          MSG=$(git log -1 --pretty=%s)
+          echo "commit subject: $MSG"
+          if printf '%s' "$MSG" | grep -qF '[desktop-publish]'; then
+            echo "desktop=true" >> "$GITHUB_OUTPUT"
+            echo "-> desktop publish detected: skipping the cloud scrape."
+          else
+            echo "desktop=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -59,10 +76,14 @@ jobs:
       - name: Build native SQLite for Node
         run: npm rebuild better-sqlite3 --build-from-source
 
+      # Only the scraping path needs a browser; the desktop fast path just reads
+      # SQLite and writes JSON, so skip a ~1-minute download it will never use.
       - name: Install Chromium for Playwright
+        if: steps.mode.outputs.desktop != 'true'
         run: npx playwright install --with-deps chromium
 
       - name: Scrape → public/data/*.json
+        if: steps.mode.outputs.desktop != 'true'
         env:
           # Optional: JSON map of login-gated session cookies (see README
           # "Login-gated sources"). Empty if the secret is not set → 🟢 sources only.
@@ -71,9 +92,17 @@ jobs:
           export APP_VERSION="$(node -p "require('./package.json').version")"
           npm run scrape:web
 
+      # Same two JSON files, straight out of the pushed DB — no scraping.
+      - name: Publish desktop data → public/data/*.json
+        if: steps.mode.outputs.desktop == 'true'
+        run: |
+          export APP_VERSION="$(node -p "require('./package.json').version")"
+          npm run publish:data
+
       # Label ripened signals with realized SPY-relative alpha. This is what makes
       # the scoring model measurable over time; it only fills gaps, so it is cheap.
       - name: Label ripened outcomes (training data)
+        if: steps.mode.outputs.desktop != 'true'
         run: npm run label:outcomes || echo "labeling failed — continuing (never blocks the site)"
 
       # Optional phone push: set the repo secret NTFY_TOPIC (any hard-to-guess

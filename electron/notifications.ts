@@ -219,10 +219,21 @@ export function notifySourceHealth(issues: SourceHealthIssue[] | undefined): voi
   const fresh = issues.filter((i) => !healthNotified.has(i.source));
   if (!fresh.length) return;
   for (const i of fresh) healthNotified.add(i.source);
+  // A flapping source is not dead — it returns rows on most runs and zero on
+  // some — so it needs its own wording and its own numbers. Reporting it with
+  // the dead-source phrasing produced "0 rows for 0 runs", because
+  // consecutiveZeroRuns is 0 by definition for an intermittent failure.
+  const anyDead = fresh.some((i) => i.kind !== 'flapping');
   const n = new Notification({
-    title: `⚠ ${fresh.length} scraper source(s) may be broken`,
+    title: anyDead
+      ? `⚠ ${fresh.length} scraper source(s) may be broken`
+      : `⚠ ${fresh.length} scraper source(s) failing intermittently`,
     body: fresh
-      .map((i) => `${i.source}: 0 rows for ${i.consecutiveZeroRuns} runs (median ${i.rollingMedian})`)
+      .map((i) =>
+        i.kind === 'flapping'
+          ? `${i.source}: 0 rows in ${i.zeroRunsInWindow ?? '?'} of the last ${i.runsInWindow ?? '?'} runs (median ${i.rollingMedian})`
+          : `${i.source}: 0 rows for ${i.consecutiveZeroRuns} runs (median ${i.rollingMedian})`,
+      )
       .join(' · ')
       .slice(0, 200),
     silent: false,

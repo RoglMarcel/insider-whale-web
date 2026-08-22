@@ -48,6 +48,7 @@ import {
 } from './database';
 import { computePerformanceReport } from './performance';
 import { runScrape, getScrapeStatus, fetchStockAnalysisEarnings } from './scraper';
+import { publishToWeb } from './webPublish';
 import { launchBrowser, createContext } from './scraper/browser';
 import { fetchValuation } from './scraper/valuation';
 import { scrapeFinvizEarnings } from './scraper/finviz';
@@ -200,6 +201,31 @@ async function triggerScrape(): Promise<ScrapeResult> {
   notifyAlertHits(result.alertHits, mainWindow);
   notifyFilingEvents(result.filingEvents, mainWindow);
   broadcast(IPC.appSignalsUpdated, getLatestSignals());
+
+  // Push the run to the web terminal. Deliberately NOT awaited into the scrape's
+  // own result: publishing talks to git and the network, and a scrape that
+  // already succeeded locally must not be reported as failed because a push did
+  // not land. Errors are surfaced to the UI instead.
+  if (settings.webPublishEnabled) {
+    void publishToWeb({ repoPath: settings.webPublishRepoPath || undefined })
+      .then((res) => {
+        if (res.pushed) {
+          console.log('[main] web publish: pushed', res.copied);
+        } else if (res.skipped) {
+          console.log(`[main] web publish skipped: ${res.skipped}`);
+        } else if (res.error) {
+          console.error(`[main] web publish failed: ${res.error}`);
+        }
+        broadcast(IPC.webPublishStatus, res);
+      })
+      .catch((err) => {
+        console.error('[main] web publish threw:', err);
+        broadcast(IPC.webPublishStatus, {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+  }
   return result;
 }
 

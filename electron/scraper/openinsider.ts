@@ -6,16 +6,31 @@ import { colIndex, cell, parseMoney, parseShares, parseDate, cleanTicker, cleanT
 /**
  * OpenInsider — SEC Form 4 filings. Highest priority, most reliable source.
  * Uses the screener (same tinytable layout as the fixed feeds) with explicit
- * filters: xp=1 purchases only, xs=0 no sales, vl=25 value ≥ $25k, fd=7 filed
- * in the last 7 days, cnt=500 rows — ~5× the coverage of the fixed 25k page.
+ * filters: xp=1 purchases only, xs=0 no sales, vl=25 value ≥ $25k, fd=14 filed
+ * in the last 14 days, cnt=500 rows.
  * Also captures each insider's history-page URL (`/insider/<slug>/<cik>`) so
  * Feature 6 can look up their track record later.
+ *
+ * WINDOW: this used to be fd=7, which made 7 days the effective memory of the
+ * ENTIRE pipeline — every other enabled source is a "latest filings" feed too,
+ * and EDGAR's getcurrent atom covers only minutes. A real $1M CEO buy therefore
+ * vanished from its own signal on day 7 while the 90-day insider_flow panel kept
+ * showing its dollars. Trades are now persisted (see `insider_trades`), so the
+ * window is redundancy margin, not the retention mechanism: it only has to cover
+ * the gap between successful scrapes. 14 days gives 2× headroom over the 3×-daily
+ * schedule and survives a multi-day CI outage.
+ *
+ * CEILING: cnt=500 is the binding constraint, not fd. Measured 2026-08-21 —
+ * fd=7 → 184 rows, fd=14 → 422, fd=21 → 500 (capped, silently truncating the
+ * oldest filings). Do not widen fd past 14 without paginating (&page=2…n);
+ * `capReached` below warns if the cap is ever hit.
  *
  * NOTE: http:// is deliberate — openinsider.com refuses connections on port
  * 443 (verified live), so https simply fails.
  */
+const ROW_LIMIT = 500;
 const URLS = [
-  'http://openinsider.com/screener?s=&o=&pl=&ph=&ll=&lh=&fd=7&fdr=&td=0&tdr=&daysago=&xp=1&xs=0&vl=25&vh=&ocl=&och=&sic1=-1&sicl=100&sich=9999&grp=0&nfl=&nfh=&nil=&nih=&nol=&noh=&v2l=&v2h=&oc2l=&oc2h=&sortcol=1&cnt=500&page=1',
+  'http://openinsider.com/screener?s=&o=&pl=&ph=&ll=&lh=&fd=14&fdr=&td=0&tdr=&daysago=&xp=1&xs=0&vl=25&vh=&ocl=&och=&sic1=-1&sicl=100&sich=9999&grp=0&nfl=&nfh=&nil=&nih=&nol=&noh=&v2l=&v2h=&oc2l=&oc2h=&sortcol=1&cnt=500&page=1',
 ];
 
 interface RawRow {
@@ -75,6 +90,12 @@ function mapRows(headers: string[], rows: RawRow[], url: string): RawInsiderTrad
 export async function scrapeOpenInsider(context: BrowserContext): Promise<RawInsiderTrade[]> {
   const all: RawInsiderTrade[] = [];
   for (const url of URLS) {
+    // Deliberately NOT wrapped in `.catch(() => [])`: this is the pipeline's
+    // widest source (~200 rows/run), so an empty result is never a legitimate
+    // "nothing to report" — it means the fetch or the parse broke. Swallowing it
+    // reported a healthy 0 rows, which the orchestrator logged as success and
+    // the health monitor ignored, silently zeroing every signal this source was
+    // carrying. Let it throw so the orchestrator records the −1 failure sentinel.
     const trades = await withPage(context, url, async (page) => {
       await page.waitForSelector('table.tinytable', { timeout: 15_000 }).catch(() => undefined);
       const data = await page.evaluate(() => {
@@ -116,8 +137,24 @@ export async function scrapeOpenInsider(context: BrowserContext): Promise<RawIns
             : `http://openinsider.com${r.filingUrl}`
           : '',
       }));
-      return mapRows(data.headers, resolved, url);
-    }).catch(() => [] as RawInsiderTrade[]);
+      // The screener silently truncates at cnt, dropping the OLDEST filings —
+      // exactly the ones the window exists to cover. Surfacing it beats
+      // discovering it as another mystery gap months later.
+      if (data.rows.length >= ROW_LIMIT) {
+        console.warn(
+          `[openinsider] hit the cnt=${ROW_LIMIT} row cap (${data.rows.length} rows) — ` +
+            `the oldest filings in the window are being truncated; narrow fd or add pagination`,
+        );
+      }
+      const mapped = mapRows(data.headers, resolved, url);
+      if (!mapped.length) {
+        throw new Error(
+          `OpenInsider returned no usable rows (${data.rows.length} raw row(s), ` +
+            `${data.headers.length} header(s)) — page shape changed or the request was blocked`,
+        );
+      }
+      return mapped;
+    });
     all.push(...trades);
     await randomDelay();
   }

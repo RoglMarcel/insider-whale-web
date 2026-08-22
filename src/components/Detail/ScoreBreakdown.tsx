@@ -4,6 +4,8 @@ import {
   type EquityStatsSummary,
   type PoliticianTrade,
   type PoliticianComboTier,
+  type RawInsiderTrade,
+  classifyTransaction,
   daysBetween,
   MAX_INSIDER_TIMING_MULT,
   MAX_OPTIONS_SCORE_TOTAL,
@@ -79,33 +81,49 @@ export function ScoreBreakdown({
   insiderFlow,
   stats,
   politicianTrades,
+  rawTrades,
 }: {
   breakdown: Breakdown;
   insiderFlow?: InsiderFlowSummary | null;
   stats?: EquityStatsSummary | null;
   politicianTrades?: PoliticianTrade[] | null;
+  rawTrades?: RawInsiderTrade[] | null;
 }) {
   const b = breakdown;
   const fresh = freshnessMeta(b.signalAgeDays);
 
+  // "No insider data" and "bad insider data" are different facts and must not
+  // render the same. With zero scoring-eligible trades the insider leg is
+  // undefined, not zero-rated — showing "0 / 10" and "× 0.00" read as a verdict
+  // on the ticker when it was really an absence of input. Derived from the
+  // trades themselves (via the shared classifier) so historical signals, whose
+  // stored breakdowns predate this, render correctly too.
+  const hasInsiderLeg = (rawTrades ?? []).some((t) => classifyTransaction(t.transactionType).modifier > 0);
+  const NA = '—';
+
   const factors: FactorRow[] = [
-    { label: 'Insider Rank', display: `${b.rankWeight} / 10`, fill: b.rankWeight / 10, color: 'var(--accent-blue)' },
+    {
+      label: 'Insider Rank',
+      display: hasInsiderLeg ? `${b.rankWeight} / 10` : NA,
+      fill: hasInsiderLeg ? b.rankWeight / 10 : 0,
+      color: 'var(--accent-blue)',
+    },
     {
       label: 'Dollar Volume',
-      display: `${b.dollarVolumePoints} / 20 pts`,
-      fill: b.dollarVolumePoints / 20,
+      display: hasInsiderLeg ? `${b.dollarVolumePoints} / 20 pts` : NA,
+      fill: hasInsiderLeg ? b.dollarVolumePoints / 20 : 0,
       color: 'var(--accent-blue)',
     },
     {
       label: 'Transaction Quality',
-      display: `× ${b.typeModifier.toFixed(2)}`,
-      fill: b.typeModifier,
+      display: hasInsiderLeg ? `× ${b.typeModifier.toFixed(2)}` : NA,
+      fill: hasInsiderLeg ? b.typeModifier : 0,
       color: 'var(--accent-purple)',
     },
     {
       label: 'Cluster Bonus',
-      display: `× ${b.clusterMultiplier.toFixed(1)}`,
-      fill: b.clusterMultiplier / 3,
+      display: hasInsiderLeg ? `× ${b.clusterMultiplier.toFixed(1)}` : NA,
+      fill: hasInsiderLeg ? b.clusterMultiplier / 3 : 0,
       color: 'var(--accent-purple)',
     },
     {
@@ -127,6 +145,10 @@ export function ScoreBreakdown({
       color: fresh.color,
     },
   ];
+
+  const insiderLegNote = hasInsiderLeg
+    ? null
+    : 'No scoring-eligible insider trade on this signal — the insider factors are unmeasured, not zero-rated.';
 
   if (b.vixMultiplier > 1) {
     factors.push({ label: 'VIX Fear Boost', display: `× ${b.vixMultiplier.toFixed(2)}`, fill: 1, color: 'var(--accent-red)' });
@@ -172,6 +194,10 @@ export function ScoreBreakdown({
           </div>
         ))}
       </div>
+
+      {insiderLegNote && (
+        <div className="mt-3 text-xs text-secondary">{insiderLegNote}</div>
+      )}
 
       <div
         className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl px-4 py-3 text-sm"
