@@ -12,6 +12,7 @@ import {
   isBigPlayer,
   isBigPlayerByCap,
   isSourceUnlocked,
+  dropRate,
   sourceLabel,
   DEFAULT_FILTER,
   type Signal,
@@ -317,5 +318,23 @@ describe('source metadata helpers', () => {
     expect(sourceLabel('openinsider')).toBe('OpenInsider');
     expect(sourceLabel('capitoltrades')).toBe('Congressional Trades');
     expect(sourceLabel('made-up')).toBe('made-up');
+  });
+});
+
+describe('dropRate (data-quality monitor)', () => {
+  const stat = (over: Partial<import('../src/types').DataQualityStat> = {}) => ({
+    rows: 0, badTicker: 0, badDate: 0, noValue: 0, unknownType: 0, noRole: 0, ...over,
+  });
+  it('an empty run has no drop rate', () => {
+    expect(dropRate(stat())).toBe(0);
+  });
+  it('sums the three hard drop reasons', () => {
+    expect(dropRate(stat({ rows: 100, badTicker: 5, badDate: 3, noValue: 2 }))).toBeCloseTo(0.1, 10);
+  });
+  it('ignores the soft counters (unknown type / missing role are kept rows)', () => {
+    expect(dropRate(stat({ rows: 100, unknownType: 40, noRole: 60 }))).toBe(0);
+  });
+  it('is capped at 1 even if reasons overlap on the same row', () => {
+    expect(dropRate(stat({ rows: 10, badTicker: 10, badDate: 10, noValue: 10 }))).toBe(1);
   });
 });

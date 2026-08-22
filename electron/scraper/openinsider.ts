@@ -1,7 +1,7 @@
 import type { BrowserContext } from 'playwright';
 import type { RawInsiderTrade } from '../../src/types';
 import { withPage, randomDelay } from './browser';
-import { colIndex, cell, parseMoney, parseShares, parseDate, cleanTicker, cleanText, sanitizeTradeAmounts } from './util';
+import { colIndex, cell, parseMoney, parseShares, parseDate, cleanText, sanitizeTradeAmounts, isValidTicker, canonicalTicker } from './util';
 
 /**
  * OpenInsider — SEC Form 4 filings. Highest priority, most reliable source.
@@ -55,8 +55,9 @@ function mapRows(headers: string[], rows: RawRow[], url: string): RawInsiderTrad
 
   const out: RawInsiderTrade[] = [];
   for (const { cells, insiderUrl, sourceUrl } of rows) {
-    const ticker = cleanTicker(cell(cells, idx.ticker));
-    if (!ticker) continue;
+    const rawTicker = cell(cells, idx.ticker);
+    if (!isValidTicker(rawTicker)) continue;
+    const ticker = canonicalTicker(rawTicker);
     const shares = parseShares(cell(cells, idx.qty));
     let price = parseMoney(cell(cells, idx.price)) || undefined;
     let value = Math.abs(parseMoney(cell(cells, idx.value)));
@@ -73,7 +74,9 @@ function mapRows(headers: string[], rows: RawRow[], url: string): RawInsiderTrad
       companyName: cleanText(cell(cells, idx.company)) || undefined,
       insiderName: cleanText(cell(cells, idx.insider)) || 'Unknown',
       role: cleanText(cell(cells, idx.title)),
-      transactionType: cleanText(cell(cells, idx.type)) || 'P',
+      // Never defaulted to 'P' — an empty type cell must classify as Unknown,
+      // not as a full-weight open-market purchase.
+      transactionType: cleanText(cell(cells, idx.type)),
       tradeDate: parseDate(cell(cells, idx.tradeDate)),
       filingDate: parseDate(cell(cells, idx.filingDate)) || undefined,
       shares: sane.shares,

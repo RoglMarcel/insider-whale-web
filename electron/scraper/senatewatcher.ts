@@ -1,11 +1,11 @@
 import type { PoliticianTrade } from '../../src/types';
 import {
   amountToMidpoint,
-  cleanTicker,
   normalizeParty,
   normalizeTxType,
   toYmd,
 } from './capitoltrades';
+import { isValidTicker, canonicalTicker } from './util';
 
 /**
  * STOCK Act mirrors — House + Senate public dumps (GitHub / jsDelivr).
@@ -91,8 +91,9 @@ function mapWatcherRows(
   const seen = new Set<string>();
 
   for (const r of rows) {
-    const ticker = cleanTicker(r.ticker);
-    if (!ticker || ticker === '--' || ticker === 'N/A' || ticker === '-') continue;
+    // The ad-hoc sentinel list here is now the shared rule in util.ts.
+    if (!isValidTicker(r.ticker)) continue;
+    const ticker = canonicalTicker(r.ticker);
     const txType = normalizeTxType(r.type);
     if (!txType) continue;
     const tradeDate = toYmd(r.transaction_date);

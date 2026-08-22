@@ -1,7 +1,7 @@
 import type { BrowserContext } from 'playwright';
 import type { OptionsActivity } from '../../src/types';
 import { withPage, randomDelay } from './browser';
-import { extractFirstTable, colIndex, cell, parseShares, cleanTicker } from './util';
+import { extractFirstTable, colIndex, cell, parseShares, isValidTicker, canonicalTicker } from './util';
 
 /**
  * MarketBeat unusual options VOLUME (calls + puts pages). Public, no login —
@@ -41,7 +41,9 @@ export async function scrapeMarketBeatOptions(context: BrowserContext): Promise<
             .split('\n')
             .map((s) => s.trim())
             .filter(Boolean);
-          const ticker = cleanTicker(parts[0] ?? '');
+          const rawTicker = parts[0] ?? '';
+          if (!isValidTicker(rawTicker)) continue;
+          const ticker = canonicalTicker(rawTicker);
           if (!ticker) continue;
 
           const volume = parseShares(cell(row, idx.volume));

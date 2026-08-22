@@ -1,6 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
 import type { FilingEvent } from '../../src/types';
-import { cleanTicker, cleanText } from './util';
+import { cleanText, isValidTicker, canonicalTicker } from './util';
 import { getCikTickerMap } from './sellside';
 
 /**
@@ -59,7 +59,7 @@ export function parseActivistAtom(atomText: string, cikMap: ReadonlyMap<number, 
     const role = partyRole.toLowerCase();
     if (role.includes('subject')) {
       const ticker = cikMap.get(Number(cikStr));
-      if (ticker) g.ticker = cleanTicker(ticker);
+      if (isValidTicker(ticker)) g.ticker = canonicalTicker(ticker);
     } else if (role.includes('filed by') || role.includes('filer')) {
       g.filer = cleanText(name);
       // The filer might ALSO be a listed company (corporate raider) — only

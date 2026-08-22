@@ -1,7 +1,7 @@
 import type { BrowserContext } from 'playwright';
 import type { RawInsiderTrade } from '../../src/types';
 import { withPage } from './browser';
-import { extractFirstTable, colIndex, cell, parseMoney, parseShares, parseDate, cleanTicker, cleanText, sanitizeTradeAmounts } from './util';
+import { extractFirstTable, colIndex, cell, parseMoney, parseShares, parseDate, cleanTicker, cleanText, sanitizeTradeAmounts, isValidTicker, canonicalTicker } from './util';
 
 /**
  * Insider-Monitor — daily SEC Form 4 purchase digest. Static HTML, public, no
@@ -20,7 +20,12 @@ function mapTradeType(code: string): string {
   if (c === 'AB') return '10b5-1 Purchase';
   if (c === 'AS') return '10b5-1 Sale';
   if (c.startsWith('S')) return 'S - Sale';
-  return 'P - Purchase'; // 'B' and unknown acquisition codes
+  if (c.startsWith('B')) return 'P - Purchase';
+  // An UNKNOWN code is not a purchase. Returning 'P - Purchase' here gave every
+  // unrecognized code a full-weight open-market buy — the assumption
+  // classifyTransaction explicitly refuses to make. Pass it through so the
+  // shared classifier can decide (and land on Unknown / modifier 0).
+  return c;
 }
 
 export async function scrapeInsiderMonitor(context: BrowserContext): Promise<RawInsiderTrade[]> {
@@ -45,6 +50,7 @@ export async function scrapeInsiderMonitor(context: BrowserContext): Promise<Raw
       let lastCompany = '';
       for (const row of table.rows) {
         let ticker = cleanTicker(cell(row, idx.ticker));
+        // (validated below, after the grouped-row inheritance)
         let company = cleanText(cell(row, idx.company));
         // Grouped layout: continuation rows for the same insider leave the
         // symbol/company cells blank (&nbsp;) — inherit from the row above.

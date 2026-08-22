@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useStore } from '@/store/useStore';
-import { computeSourceHealth, SCRAPER_SOURCES, SIDE_PIPELINE_SOURCES, type SourceHealthIssue } from '@/types';
+import { computeSourceHealth, dropRate, SCRAPER_SOURCES, SIDE_PIPELINE_SOURCES, type SourceHealthIssue, type DataQualityStat } from '@/types';
 
 export interface SourceHealthEntry {
   key: string;
@@ -16,6 +16,14 @@ export interface SourceHealthEntry {
   runsInWindow: number;
   /** `flapping` = intermittently returns zero rows but recovers; not dead, still lossy. */
   status: 'healthy' | 'degraded' | 'dead' | 'flapping' | 'unknown';
+  /**
+   * Share of the most recent run's rows the pipeline could not use (0–1), or
+   * null when the run predates data-quality logging. A source can be "healthy"
+   * by row count and still be shedding most of what it returns.
+   */
+  dropRate: number | null;
+  /** Raw counters behind `dropRate`, for the tooltip. */
+  quality: DataQualityStat | null;
 }
 
 /**
@@ -33,9 +41,10 @@ export function useSourceHealth(): {
 
   return useMemo(() => {
     // Newest first; each run's per-source counts.
-    const runsNewestFirst = scrapeLogs
-      .filter((l) => l.sourceBreakdown && Object.keys(l.sourceBreakdown).length > 0)
-      .map((l) => l.sourceBreakdown as Record<string, number>);
+    const withBreakdown = scrapeLogs.filter((l) => l.sourceBreakdown && Object.keys(l.sourceBreakdown).length > 0);
+    const runsNewestFirst = withBreakdown.map((l) => l.sourceBreakdown as Record<string, number>);
+    // Most recent run that actually carries quality counters.
+    const latestQuality = withBreakdown.find((l) => l.dataQuality && Object.keys(l.dataQuality).length > 0)?.dataQuality ?? null;
 
     const allSources = [
       ...SCRAPER_SOURCES.map((s) => ({ key: s.key, label: s.label })),
@@ -50,6 +59,8 @@ export function useSourceHealth(): {
         .map((run) => run[src.key])
         .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
       const label = src.label;
+      const quality = latestQuality?.[src.key] ?? null;
+      const drop = quality && quality.rows > 0 ? dropRate(quality) : null;
       if (counts.length === 0) {
         return {
           key: src.key,
@@ -60,6 +71,8 @@ export function useSourceHealth(): {
           zeroRunsInWindow: 0,
           runsInWindow: 0,
           status: 'unknown',
+          dropRate: drop,
+          quality,
         };
       }
       // Normalize hard-fail sentinel (-1) to 0 for display/median.
@@ -85,6 +98,8 @@ export function useSourceHealth(): {
         zeroRunsInWindow: issue?.zeroRunsInWindow ?? norm.filter((c) => c === 0).length,
         runsInWindow: issue?.runsInWindow ?? counts.length,
         status,
+        dropRate: drop,
+        quality,
       };
     });
 

@@ -1,7 +1,7 @@
 import type { BrowserContext } from 'playwright';
 import type { RawInsiderTrade } from '../../src/types';
 import { withPage, randomDelay } from './browser';
-import { extractFirstTable } from './util';
+import { extractFirstTable, extractRowAttribute, canonicalTicker, isValidTicker } from './util';
 import { mapInsiderTable } from './insiderMap';
 
 /**
@@ -27,41 +27,36 @@ export async function scrapeFinviz(context: BrowserContext): Promise<RawInsiderT
       const table = await extractFirstTable(page, TABLE_SELECTORS);
 
       // Finviz renders a company logo chip inside the ticker cell whose fallback
-      // letter is part of textContent — so the cell reads "PPAL" for PAL (verified
-      // live: <span class="company-ticker" style="--logo-url:…/PAL.svg">). Read the
-      // ticker from the row's authoritative quote link (`…?t=PAL`) instead, keyed by
-      // the *rendered cell text* so it survives row-order differences.
-      const tickerByCell = await page.evaluate((selectors: string[]) => {
-        const norm = (s: string | null) => (s || '').replace(/\s+/g, ' ').trim();
-        const out: Record<string, string> = {};
-        for (const sel of selectors) {
-          const tbl = document.querySelector(sel);
-          if (!tbl) continue;
-          const rows = Array.from(tbl.querySelectorAll('tbody tr, tr'));
-          for (const tr of rows) {
-            const td = tr.querySelector('td');
-            if (!td) continue;
-            const cellText = norm(td.textContent);
-            if (!cellText) continue;
-            for (const a of Array.from(tr.querySelectorAll('a'))) {
-              const href = a.getAttribute('href') || '';
-              const m = /[?&]t=([A-Za-z0-9.\-]{1,12})(?:&|$)/.exec(href);
-              if (m) {
-                out[cellText] = m[1].toUpperCase();
-                break;
-              }
-            }
-          }
-          if (Object.keys(out).length) break;
-        }
-        return out;
-      }, TABLE_SELECTORS);
-
+      // letter is part of textContent — so the cell reads "PPAL" for PAL, and
+      // "BBRK-A" for BRK-A (verified live: <span class="company-ticker"
+      // style="--logo-url:…/PAL.svg">). The authoritative symbol is in the row's
+      // quote link (`…?t=PAL`).
+      //
+      // This used to be keyed on the rendered cell TEXT, which broke exactly for
+      // the multi-class symbols: `extractTable` builds cell text with
+      // `getDeepText` (which injects newlines around DIV/P) while the lookup map
+      // was built from `td.textContent` (which does not), so the two spellings
+      // diverged and the repair silently missed — BBRK-A, DDGICA, GGLIBA,
+      // GGLIBK, LLILAK and FFCNCA all reached the database that way. Reading the
+      // link POSITIONALLY, over the same selector and the same row filter, has
+      // no key to get wrong.
       const idx = table.headers.findIndex((h) => /ticker|symbol|stock/i.test(h));
-      if (idx >= 0 && Object.keys(tickerByCell).length) {
-        for (const row of table.rows) {
-          const fromHref = tickerByCell[(row[idx] ?? '').trim()];
-          if (fromHref) row[idx] = fromHref;
+      if (idx >= 0 && table.selector) {
+        const hrefTickers = await extractRowAttribute(
+          page,
+          table.selector,
+          '[?&]t=([A-Za-z0-9.\-]{1,12})(?:&|$)',
+        );
+        if (hrefTickers.length === table.rows.length) {
+          for (let i = 0; i < table.rows.length; i++) {
+            const fromHref = hrefTickers[i];
+            if (fromHref && isValidTicker(fromHref)) table.rows[i][idx] = canonicalTicker(fromHref);
+          }
+        } else {
+          console.warn(
+            `[finviz] row/link count mismatch (${hrefTickers.length} links vs ${table.rows.length} rows) — ` +
+              'skipping the ticker repair rather than mis-assigning symbols',
+          );
         }
       }
 

@@ -1,7 +1,7 @@
 import type { BrowserContext } from 'playwright';
 import { XMLParser } from 'fast-xml-parser';
 import { withPage } from './browser';
-import { extractFirstTable, colIndex, cell, parseMoney, parseDate, cleanTicker, cleanText } from './util';
+import { extractFirstTable, colIndex, cell, parseMoney, parseDate, cleanTicker, cleanText, isValidTicker, canonicalTicker } from './util';
 
 /**
  * Sell-side intelligence — the buy-only pipeline's missing other half. Two
@@ -56,8 +56,9 @@ async function scrapeSalesPage(context: BrowserContext, url: string): Promise<In
       // Aggregate to one row per ticker per trade day.
       const byKey = new Map<string, number>();
       for (const row of table.rows) {
-        const ticker = cleanTicker(cell(row, idx.ticker));
-        if (!ticker) continue;
+        const rawTicker = cell(row, idx.ticker);
+        if (!isValidTicker(rawTicker)) continue;
+        const ticker = canonicalTicker(rawTicker);
         // The screener is asked for sales only, but guard anyway.
         const type = cleanText(cell(row, idx.type)).toLowerCase();
         if (type && !type.includes('sale') && !type.startsWith('s')) continue;
@@ -178,7 +179,7 @@ export async function fetchEdgarForm144(): Promise<InsiderFlowRow[]> {
       const updated = typeof entry.updated === 'string' ? entry.updated : '';
       const flowDate = /^\d{4}-\d{2}-\d{2}/.test(updated) ? updated.slice(0, 10) : '';
       if (!flowDate) continue;
-      const key = `${cleanTicker(ticker)}|${flowDate}`;
+      const key = `${canonicalTicker(ticker)}|${flowDate}`;
       byKey.set(key, (byKey.get(key) ?? 0) + 1);
     }
 

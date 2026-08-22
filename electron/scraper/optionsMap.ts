@@ -8,6 +8,8 @@ import {
   parseDate,
   cleanTicker,
   cleanText,
+  isValidTicker,
+  canonicalTicker,
 } from './util';
 
 /**
@@ -101,8 +103,11 @@ export function mapOptionsTable(
 
   const out: OptionsActivity[] = [];
   for (const row of rows) {
-    const ticker = cleanTicker(cell(row, idx.ticker));
-    if (!ticker) continue;
+    // Shape gate — an InsiderFinance grid label ("NVDAEARNINGS") once became a
+    // $5.4M "call" and scored 17.3 on a ticker that does not exist.
+    const rawTicker = cell(row, idx.ticker);
+    if (!isValidTicker(rawTicker)) continue;
+    const ticker = canonicalTicker(rawTicker);
 
     const strategyText = cleanText(cell(row, idx.strategy));
     const stratInfo = strategyText ? parseStrategy(strategyText) : {};

@@ -1,7 +1,7 @@
 import type { BrowserContext } from 'playwright';
 import type { RawInsiderTrade } from '../../src/types';
 import { withPage, randomDelay } from './browser';
-import { parseMoney, parseShares, cleanTicker, cleanText, sanitizeTradeAmounts } from './util';
+import { parseMoney, parseShares, cleanText, sanitizeTradeAmounts, isValidTicker, canonicalTicker } from './util';
 
 /**
  * CEOWatcher (instagram.com/ceowatcher) — a curated insider-buy feed. Unlike
@@ -90,7 +90,8 @@ function buildTrade(input: {
   postDate: string;
   postUrl: string;
 }): RawInsiderTrade | null {
-  const ticker = cleanTicker(input.ticker);
+  if (!isValidTicker(input.ticker)) return null;
+  const ticker = canonicalTicker(input.ticker);
   if (!ticker) return null;
   const sane = sanitizeTradeAmounts(input.shares, input.price, input.value);
   if (!sane) return null;

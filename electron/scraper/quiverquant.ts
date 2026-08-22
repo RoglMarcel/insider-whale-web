@@ -1,7 +1,7 @@
 import type { BrowserContext } from 'playwright';
 import type { RawInsiderTrade } from '../../src/types';
 import { withPage, randomDelay } from './browser';
-import { extractFirstTable, colIndex, cell, parseMoney, parseShares, parseDate, cleanTicker, cleanText, sanitizeTradeAmounts } from './util';
+import { extractFirstTable, colIndex, cell, parseMoney, parseShares, parseDate, cleanText, sanitizeTradeAmounts, isValidTicker, canonicalTicker } from './util';
 
 /**
  * Start of a job title glued directly onto a surname. Anchored on the known
@@ -64,8 +64,11 @@ export async function scrapeQuiverQuant(context: BrowserContext): Promise<RawIns
 
       const out: RawInsiderTrade[] = [];
       for (const row of table.rows) {
-        const ticker = cleanTicker(cell(row, idx.ticker));
-        if (!ticker) continue;
+        // Quiver renders a bare dash for rows without a resolvable symbol; one
+        // such row carried a $6,000,000 trade into the database as ticker "-".
+        const rawTicker = cell(row, idx.ticker);
+        if (!isValidTicker(rawTicker)) continue;
+        const ticker = canonicalTicker(rawTicker);
 
         // "Name / Title" renders as "Surname Firstname-Title", with a trailing
         // dash and empty title for institutional filers — split at the LAST

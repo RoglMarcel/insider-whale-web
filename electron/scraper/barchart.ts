@@ -1,7 +1,7 @@
 import type { BrowserContext } from 'playwright';
 import type { OptionsActivity } from '../../src/types';
 import { withPage, randomDelay } from './browser';
-import { parseDate, cleanTicker } from './util';
+import { parseDate, isValidTicker, canonicalTicker } from './util';
 import { mapOptionsTable } from './optionsMap';
 
 /**
@@ -28,8 +28,9 @@ export function mapCoreApiRows(rows: any[]): OptionsActivity[] {
     const raw = r?.raw ?? r;
     const pick = (key: string) => raw?.[key] ?? r?.[key];
 
-    const ticker = cleanTicker(String(pick('baseSymbol') ?? ''));
-    if (!ticker) continue;
+    const rawTicker = String(pick('baseSymbol') ?? '');
+    if (!isValidTicker(rawTicker)) continue;
+    const ticker = canonicalTicker(rawTicker);
 
     const typeStr = String(pick('symbolType') ?? '').toLowerCase();
     const type: 'call' | 'put' = typeStr.includes('put') ? 'put' : 'call';

@@ -409,6 +409,36 @@ export interface WatchlistItem {
   signal?: Signal | null;
 }
 
+/**
+ * Per-source data-quality counters for one run. `sourceBreakdown` answers "how
+ * many rows did this source produce"; this answers "how many of them were
+ * usable". A source whose ticker column moves keeps producing rows and looks
+ * healthy in the breakdown while the pipeline silently throws every row away —
+ * that gap is exactly what these numbers make visible.
+ */
+export interface DataQualityStat {
+  /** Rows the source returned, before any gate. */
+  rows: number;
+  /** Dropped because the "ticker" was not a symbol (see isValidTicker). */
+  badTicker: number;
+  /** Rows whose trade date did not parse into YYYY-MM-DD. */
+  badDate: number;
+  /** Rows with no usable dollar value / premium. */
+  noValue: number;
+  /** Rows whose transaction type classified as Unknown (modifier 0). */
+  unknownType: number;
+  /** Rows with no insider role/title at all. */
+  noRole: number;
+}
+
+export type DataQualityReport = Record<string, DataQualityStat>;
+
+/** Share of a source's rows that the pipeline could not use (0–1). */
+export function dropRate(stat: DataQualityStat): number {
+  if (!stat || stat.rows <= 0) return 0;
+  return Math.min(1, (stat.badTicker + stat.badDate + stat.noValue) / stat.rows);
+}
+
 export interface ScrapeLogEntry {
   id?: number;
   startedAt: string;
@@ -419,6 +449,8 @@ export interface ScrapeLogEntry {
   /** Feature 8 — VIX captured at scrape time. */
   vixAtScrape?: number | null;
   sourceBreakdown?: Record<string, number> | null;
+  /** Per-source usability counters for this run (see DataQualityStat). */
+  dataQuality?: DataQualityReport | null;
 }
 
 // ──────────────────────────────────────────────────────────────────────────

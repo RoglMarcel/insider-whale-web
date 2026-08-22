@@ -11,6 +11,8 @@ import {
   type InsiderTrackRecord,
   type FilingEvent,
   type PoliticianTrade,
+  type DataQualityStat,
+  type DataQualityReport,
   SCRAPER_SOURCES,
   SIDE_PIPELINE_SOURCES,
   isBigPlayerByCap,
@@ -24,7 +26,8 @@ import {
   DEFAULT_SCORING_CONFIG,
 } from '../../src/types';
 import { launchBrowser, createContext, installChromium, type InsiderScraper, type OptionsScraper } from './browser';
-import { scoreTicker, isScoringEligible, getRankWeight } from '../scoring';
+import { sanitizeTickerRows } from './util';
+import { scoreTicker, isScoringEligible, getRankWeight, normalizeAggregateTrades } from '../scoring';
 import {
   insertSignals,
   finishScrapeLog,
@@ -178,6 +181,23 @@ const MIN_OPTIONS_PREMIUM = 250_000;
  */
 const TRADE_WINDOW_DAYS = 30;
 
+/**
+ * Count how many of a source's rows the pipeline can actually use. Every check
+ * mirrors a gate a row must pass later, so a rising number here is a scraper
+ * that is DRIFTING, not a market that is quiet — the distinction the
+ * `sourceBreakdown` row count alone cannot make.
+ */
+function recordTradeQuality(stat: DataQualityStat, rows: readonly RawInsiderTrade[], badTickers: number): void {
+  stat.rows += rows.length;
+  stat.badTicker += badTickers;
+  for (const t of rows) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(t.tradeDate ?? '')) stat.badDate++;
+    if (!(Number.isFinite(t.value) && t.value > 0)) stat.noValue++;
+    if (classifyTransaction(t.transactionType).modifier <= 0) stat.unknownType++;
+    if (!(t.role ?? '').trim()) stat.noRole++;
+  }
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // Live status (also readable synchronously by the IPC status handler)
 // ──────────────────────────────────────────────────────────────────────────
@@ -217,14 +237,29 @@ function mergeOptionsActivity(
   // Key on CONTRACT IDENTITY only (no volume/notional/sentiment): the same
   // contract re-scraped with intraday-updated volume must merge, not duplicate.
   // Current entries are inserted first, so the freshest snapshot wins.
+  //
+  // `source` is deliberately NOT part of the key. It used to be, so the same
+  // print reported by two providers survived twice and `scoreOptionsDetailed`
+  // counted it as two prints with geometric decay — 1.5× a single one. Measured
+  // in the live history: 17 of 1210 contracts (e.g. QQQ 735C 2026-08-17 from
+  // InsiderFinance at $120k and OptionStrat at $118k).
   const getOptionKey = (o: OptionsActivity) =>
-    `${o.ticker.toUpperCase()}|${o.type}|${o.strike ?? 0}|${o.expiry ?? ''}|${o.source}`;
+    `${o.ticker.toUpperCase()}|${o.type}|${o.strike ?? 0}|${o.expiry ?? ''}`;
+
+  const premium = (o: OptionsActivity) => o.premiumTotal ?? o.notional ?? 0;
+  const byKey = new Map<string, number>(); // key → index into `merged`
 
   for (const o of current) {
     const key = getOptionKey(o);
-    if (!seen.has(key)) {
+    const at = byKey.get(key);
+    if (at === undefined) {
+      byKey.set(key, merged.length);
       seen.add(key);
       merged.push(o);
+    } else if (premium(o) > premium(merged[at])) {
+      // Same contract from two providers in the SAME run: keep the fuller
+      // report rather than whichever scraper happened to finish first.
+      merged[at] = o;
     }
   }
 
@@ -232,6 +267,7 @@ function mergeOptionsActivity(
     const key = getOptionKey(o);
     if (!seen.has(key)) {
       seen.add(key);
+      byKey.set(key, merged.length);
       merged.push(o);
     }
   }
@@ -723,6 +759,14 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
     capitoltrades: 0,
   };
   const mainSourceCounts: Record<string, number> = {};
+  /**
+   * Per-source data-quality counters for this run. A scraper that returns rows
+   * the pipeline then throws away is indistinguishable, in `sourceBreakdown`,
+   * from a scraper that is working — this is what makes that visible.
+   */
+  const quality: Record<string, DataQualityStat> = {};
+  const qualityFor = (key: string): DataQualityStat =>
+    (quality[key] ??= { rows: 0, badTicker: 0, badDate: 0, noValue: 0, unknownType: 0, noRole: 0 });
 
   try {
     try {
@@ -767,7 +811,12 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
               mainSourceCounts[source.key] = -1;
               errors.push({ source: source.key, message: `Timed out after ${PER_SCRAPER_TIMEOUT_MS}ms` });
             } else {
-              allTrades.push(...result);
+              const { kept, rejected } = sanitizeTickerRows(result);
+              recordTradeQuality(qualityFor(source.key), result, rejected.length);
+              allTrades.push(...kept);
+              // Counted BEFORE the gate, so `sourceBreakdown` keeps meaning
+              // "rows this source produced" and the quality block reports what
+              // was dropped. Two different questions, two different numbers.
               mainSourceCounts[source.key] = result.length;
             }
           }
@@ -787,7 +836,12 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
               mainSourceCounts[source.key] = -1;
               errors.push({ source: source.key, message: `Timed out after ${PER_SCRAPER_TIMEOUT_MS}ms` });
             } else {
-              allOptions.push(...result);
+              const { kept, rejected } = sanitizeTickerRows(result);
+              const q = qualityFor(source.key);
+              q.rows += result.length;
+              q.badTicker += rejected.length;
+              for (const o of result) if (!((o.premiumTotal ?? o.notional ?? 0) > 0)) q.noValue++;
+              allOptions.push(...kept);
               mainSourceCounts[source.key] = result.length;
             }
           }
@@ -882,9 +936,13 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
     // Hard failure only if every layer fails; then health sees -1 and errors[].
     setStatus({ phase: 'Checking congressional trades…', currentSource: 'Congressional Trades' });
     try {
-      const { trades: politicianTrades, layer } = await scrapeCongressChain(context);
+      const { trades: rawPoliticianTrades, layer } = await scrapeCongressChain(context);
+      const { kept: politicianTrades, rejected: badPoliticianTickers } = sanitizeTickerRows(rawPoliticianTrades);
+      const q = qualityFor('capitoltrades');
+      q.rows += rawPoliticianTrades.length;
+      q.badTicker += badPoliticianTickers.length;
       newPoliticianTrades = upsertPoliticianTrades(politicianTrades);
-      sideCounts.capitoltrades = politicianTrades.length;
+      sideCounts.capitoltrades = rawPoliticianTrades.length;
       console.log(
         `[scraper] congressional trades via ${layer}: ${politicianTrades.length} scraped, ${newPoliticianTrades} new`,
       );
@@ -1164,6 +1222,9 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
     } catch {
       /* filing context is best-effort */
     }
+    // scoreTicker is pure, so the repaired amounts have to be written onto the
+    // aggregate explicitly — `agg.trades` is what gets persisted and rendered.
+    normalizeAggregateTrades(agg);
     const scored = scoreTicker(agg);
     // Always persist the legacy flat-bonus score for A/B of the soft-mult model.
     // Optional shadowConfig knobs still produce an alternate score when set —
@@ -1297,12 +1358,26 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
     console.error('[scrape-metrics] consistency check failed:', err);
   }
 
+  // Data-quality summary — logged and printed, so a source that silently starts
+  // returning unusable rows shows up as a number instead of as a mystery.
+  const dataQuality: DataQualityReport = quality;
+  for (const [key, q] of Object.entries(dataQuality)) {
+    const dropped = q.badTicker + q.badDate + q.noValue;
+    if (q.rows > 0 && dropped / q.rows >= 0.2) {
+      console.warn(
+        `[data-quality] ${key}: ${dropped}/${q.rows} rows unusable ` +
+          `(ticker ${q.badTicker}, date ${q.badDate}, value ${q.noValue}, unknown type ${q.unknownType})`,
+      );
+    }
+  }
+
   finishScrapeLog(logId, {
     signalsFound,
     status,
     sourcesScraped: completed,
     vixAtScrape: vix ?? null,
     sourceBreakdown,
+    dataQuality,
   });
 
   // Custom alert rules — crossing-style evaluation of the new session vs the

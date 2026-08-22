@@ -18,6 +18,7 @@ import {
   type FilingEvent,
   type ScoringConfig,
   type PoliticianTrade,
+  type DataQualityReport,
   DEFAULT_SETTINGS,
   filterSignals,
   isBigPlayer,
@@ -335,6 +336,8 @@ export function runMigrations(database: Database.Database): void {
     ['scrape_log', 'vix_at_scrape', 'REAL'],
     // Source breakdown
     ['scrape_log', 'source_breakdown', 'TEXT'],
+    // Per-source data-quality counters (see DataQualityStat)
+    ['scrape_log', 'data_quality', 'TEXT'],
     // Track record error
     ['insider_track_records', 'error', 'TEXT'],
     // Calendar-pattern classification (routine vs opportunistic)
@@ -725,12 +728,14 @@ export function finishScrapeLog(
     sourcesScraped: string[];
     vixAtScrape?: number | null;
     sourceBreakdown?: Record<string, number> | null;
+    dataQuality?: DataQualityReport | null;
   },
 ): void {
   getDb()
     .prepare(
       `UPDATE scrape_log
-       SET finished_at = ?, signals_found = ?, status = ?, sources_scraped = ?, vix_at_scrape = ?, source_breakdown = ?
+       SET finished_at = ?, signals_found = ?, status = ?, sources_scraped = ?, vix_at_scrape = ?,
+           source_breakdown = ?, data_quality = ?
        WHERE id = ?`,
     )
     .run(
@@ -740,6 +745,7 @@ export function finishScrapeLog(
       JSON.stringify(data.sourcesScraped),
       data.vixAtScrape ?? null,
       data.sourceBreakdown ? JSON.stringify(data.sourceBreakdown) : null,
+      data.dataQuality ? JSON.stringify(data.dataQuality) : null,
       id,
     );
 }
@@ -756,6 +762,7 @@ export function getScrapeLogs(limit = 50): ScrapeLogEntry[] {
     status: string | null;
     vix_at_scrape: number | null;
     source_breakdown: string | null;
+    data_quality: string | null;
   }[];
   return rows.map((r) => ({
     id: r.id,
@@ -766,6 +773,7 @@ export function getScrapeLogs(limit = 50): ScrapeLogEntry[] {
     status: (r.status as ScrapeLogEntry['status']) ?? 'partial',
     vixAtScrape: r.vix_at_scrape,
     sourceBreakdown: safeParse<Record<string, number>>(r.source_breakdown, {}),
+    dataQuality: safeParse<DataQualityReport | null>(r.data_quality, null),
   }));
 }
 

@@ -9,6 +9,8 @@ import {
   cleanTicker,
   cleanText,
   sanitizeTradeAmounts,
+  isValidTicker,
+  canonicalTicker,
 } from './util';
 
 /** Pull a ticker out of text like "Apple Inc. (NASDAQ:AAPL)" or "(AAPL)". */
@@ -53,7 +55,12 @@ export function mapInsiderTable(
     let ticker = cleanTicker(cell(row, idx.ticker));
     let insiderName = cleanText(cell(row, idx.insider)) || 'Unknown';
     let role = cleanText(cell(row, idx.title));
-    let transactionType = cleanText(cell(row, idx.type)) || 'P';
+    // NOT defaulted to 'P'. `extractFirstTable` falls back to "any table on the
+    // page", so a renamed header column made `idx.type` = −1 and EVERY row was
+    // then scored as a full-weight open-market purchase — the exact assumption
+    // classifyTransaction documents it will never make. An empty type now stays
+    // empty and classifies as Unknown (modifier 0).
+    let transactionType = cleanText(cell(row, idx.type));
     let tradeDateVal = cell(row, idx.tradeDate);
 
     // SECForm4 special parsing for merged cells
@@ -64,8 +71,9 @@ export function mapInsiderTable(
       const typePart = dateParts[1] || '';
       // Pass the raw type text through — binarizing everything non-sale to 'P'
       // scored grants/exercises as full-strength open-market buys; the shared
-      // classifyTransaction handles the descriptive strings correctly.
-      transactionType = typePart || 'P';
+      // classifyTransaction handles the descriptive strings correctly. An empty
+      // cell stays empty (Unknown), it is not assumed to be a purchase.
+      transactionType = typePart;
 
       const insiderCell = cell(row, idx.insider);
       const insiderParts = insiderCell.split('\n').map(s => s.trim()).filter(Boolean);
@@ -89,7 +97,11 @@ export function mapInsiderTable(
     }
 
     if (!ticker) ticker = extractTickerFromText(companyCell);
-    if (!ticker || ticker.length < 1) continue;
+    // Shape gate. Without it, sentinel and label cells became "tickers": a bare
+    // dash from Quiver carried a $6M trade, and Finviz's doubled-first-letter
+    // rendering produced DDGICA / GGLIBA / LLILAK alongside the real symbols.
+    if (!isValidTicker(ticker)) continue;
+    ticker = canonicalTicker(ticker);
 
     const shares = parseShares(cell(row, idx.qty));
     let price = parseMoney(cell(row, idx.price)) || undefined;

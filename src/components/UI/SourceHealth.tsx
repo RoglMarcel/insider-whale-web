@@ -97,6 +97,31 @@ export function SourceHealthPanel() {
                 <span className="w-8 shrink-0 text-right tabular-nums text-secondary">
                   {e.status === 'unknown' ? '—' : e.median}
                 </span>
+                {/* Unusable share of the last run's rows. A source can look
+                    healthy by row count while the pipeline discards nearly
+                    everything it returns — that is what this column shows. */}
+                <span
+                  className="w-10 shrink-0 text-right tabular-nums"
+                  style={{
+                    color:
+                      e.dropRate == null
+                        ? 'var(--text-secondary)'
+                        : e.dropRate >= 0.2
+                          ? 'var(--accent-red)'
+                          : e.dropRate > 0
+                            ? 'var(--accent-yellow)'
+                            : 'var(--text-secondary)',
+                  }}
+                  title={
+                    e.quality
+                      ? `${Math.round((e.dropRate ?? 0) * 100)}% of ${e.quality.rows} row(s) unusable — ` +
+                        `ticker ${e.quality.badTicker}, date ${e.quality.badDate}, value ${e.quality.noValue}, ` +
+                        `unknown type ${e.quality.unknownType}, no role ${e.quality.noRole}`
+                      : t('srcH.noQuality')
+                  }
+                >
+                  {e.dropRate == null ? '—' : `${Math.round(e.dropRate * 100)}%`}
+                </span>
                 <span
                   className="w-14 shrink-0 text-right font-semibold tabular-nums"
                   style={{ color: meta.color }}

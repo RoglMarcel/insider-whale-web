@@ -249,6 +249,13 @@ export interface ExtractedTable {
   headers: string[];
   rows: string[][];
   rowUrls?: (string | null)[];
+  /**
+   * The selector that actually matched. A caller that needs to read something
+   * else off the SAME rows (e.g. the authoritative ticker from a row's quote
+   * link) must use this, or it may address a different table than the one whose
+   * rows it is patching.
+   */
+  selector?: string;
 }
 
 /** Pull headers + body rows from the first matching table on the page. */
@@ -366,12 +373,54 @@ export async function extractFirstTable(page: Page, selectors: string[]): Promis
   for (const sel of selectors) {
     try {
       const t = await extractTable(page, sel);
-      if (t.rows.length) return t;
+      if (t.rows.length) return { ...t, selector: sel };
     } catch {
       /* try next selector */
     }
   }
   return { headers: [], rows: [] };
+}
+
+/**
+ * Read one attribute-derived value PER ROW of an already-extracted table, using
+ * the same selector and the same "rows that contain a <td>" rule as
+ * `extractTable`, so the result is index-aligned with `table.rows`.
+ *
+ * This exists because keying such a lookup on the rendered CELL TEXT is unsafe:
+ * `extractTable` builds its text via `getDeepText`, which inserts newlines
+ * around DIV/P, while `td.textContent` does not — so the two spellings of the
+ * same cell can differ and the lookup silently misses. That is how Finviz's
+ * doubled-first-letter tickers (BRK-A → BBRK-A) survived the repair.
+ */
+export async function extractRowAttribute(
+  page: Page,
+  selector: string,
+  pattern: string,
+): Promise<(string | null)[]> {
+  return page.evaluate(
+    ({ sel, pat }: { sel: string; pat: string }) => {
+      const table = document.querySelector(sel);
+      if (!table) return [] as (string | null)[];
+      const bodyRowEls = table.querySelectorAll('tbody tr');
+      const rowEls = bodyRowEls.length ? bodyRowEls : table.querySelectorAll('tr');
+      const re = new RegExp(pat);
+      const out: (string | null)[] = [];
+      rowEls.forEach((tr) => {
+        if (!tr.querySelectorAll('td').length) return; // same filter as extractTable
+        let found: string | null = null;
+        for (const a of Array.from(tr.querySelectorAll('a'))) {
+          const m = re.exec(a.getAttribute('href') || '');
+          if (m && m[1]) {
+            found = m[1];
+            break;
+          }
+        }
+        out.push(found);
+      });
+      return out;
+    },
+    { sel: selector, pat: pattern },
+  );
 }
 
 /** Find the index of the column whose header matches any alias (substring, case-insensitive). */

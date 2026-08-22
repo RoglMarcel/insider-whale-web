@@ -1,7 +1,7 @@
 import type { BrowserContext } from 'playwright';
 import { XMLParser } from 'fast-xml-parser';
 import type { RawInsiderTrade } from '../../src/types';
-import { cleanTicker, cleanText } from './util';
+import { cleanText, isValidTicker, canonicalTicker } from './util';
 
 /**
  * SEC EDGAR — Form 4 straight from the authoritative source. Discovery via the
@@ -100,8 +100,9 @@ export function mapOwnershipDocument(doc: any, ref: FilingRef): RawInsiderTrade[
   if (!od) return [];
 
   const issuer = asArray(od.issuer)[0];
-  const ticker = cleanTicker(strVal(issuer?.issuerTradingSymbol));
-  if (!ticker || ticker === 'NONE') return [];
+  const rawTicker = strVal(issuer?.issuerTradingSymbol);
+  if (!isValidTicker(rawTicker) || rawTicker.toUpperCase() === 'NONE') return [];
+  const ticker = canonicalTicker(rawTicker);
   const companyName = cleanText(strVal(issuer?.issuerName)) || undefined;
 
   const owner = asArray(od.reportingOwner)[0];

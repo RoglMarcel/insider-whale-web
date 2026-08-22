@@ -1,6 +1,7 @@
 import type { BrowserContext } from 'playwright';
 import type { PoliticianTrade } from '../../src/types';
 import { withPage } from './browser';
+import { isValidTicker, canonicalTicker } from './util';
 
 /**
  * Capitol Trades — congressional (House + Senate) STOCK Act disclosures.
@@ -93,12 +94,15 @@ export function toYmd(raw: unknown): string {
   return '';
 }
 
+/**
+ * Capitol Trades writes symbols as `AAPL:US`, so the exchange suffix is stripped
+ * before the shared rules apply. Returns '' when the cell is not a symbol at all
+ * — the feed also carries bond and fund rows whose "ticker" is a description
+ * ("3 Month Maturity", "GLAS Funds", "TE1"), and those used to become signals.
+ */
 export function cleanTicker(raw: unknown): string {
-  return String(raw ?? '')
-    .toUpperCase()
-    .split(':')[0]
-    .trim()
-    .replace(/[^A-Z0-9.\-]/g, '');
+  const base = String(raw ?? '').toUpperCase().split(':')[0].trim();
+  return isValidTicker(base) ? canonicalTicker(base) : '';
 }
 
 function daysBetweenYmd(from: string, to: string): number {
@@ -435,7 +439,7 @@ export async function scrapeQuiverCongressEmbed(lookbackDays = 90): Promise<Poli
   for (const row of rows) {
     if (!Array.isArray(row) || row.length < 10) continue;
     const ticker = cleanTicker(row[0]);
-    if (!ticker || ticker === '-') continue;
+    if (!ticker) continue;
     const txType = normalizeTxType(row[3]);
     if (!txType) continue;
     const amountMidpoint = amountToMidpoint(undefined, undefined, String(row[4] ?? ''));
