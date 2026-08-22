@@ -978,6 +978,7 @@ export function scoreTicker(agg: TickerAggregate, config: ScoringConfig = DEFAUL
     freshnessMultiplier,
     vixMultiplier,
     trackRecordMultiplier,
+    valuationMultiplier,
     // Live: points contributed by soft mult (0 if gated); legacy flat kept in notes/shadow.
     comboBonus: liveBonusPoints,
     optionsBonus: opts.score,

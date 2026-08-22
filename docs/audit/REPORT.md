@@ -109,7 +109,7 @@ und der stille `'P'`-Default für eine fehlende Transaktionstyp-Spalte.
   **Bucket-Monotonie** als Zahl, macht einen **zeitlichen** Out-of-Sample-Split und
   sagt in einer Lesehilfe, was die Zahlen *nicht* belegen.
 - **Faktor-Aktivität** wird ausgewiesen: VIX 0,0 %, Valuation 0,0 %,
-  Korroboration 0,0 % — ausdrücklich als „nicht widerlegt, nie testbar".
+  Korroboration 0,0 % — ausdrücklich als „nicht widerlegt, nie testbar". **Korrektur: der Valuation-Wert war ein Messartefakt, siehe §9.**
 - `performance.ts` behielt je Ticker-Tag den **höchsten** Score über mehrere Läufe
   desselben Tages statt des ersten — Selektionsbias zugunsten des gemessenen
   Modells. Jetzt der erste.
@@ -208,7 +208,7 @@ gemessen besser würde.
   unterscheidbar, in allen drei Horizonten.
 - **VIX, Valuation und die Korroborationsmultiplikatoren sind nie aktiv gewesen**
   (0,0 % über 10.541 Signale). Sie sind **nicht widerlegt** — sie waren nie
-  testbar. Keiner wurde entfernt oder umparametriert.
+  testbar. Keiner wurde entfernt oder umparametriert. **Für Valuation trifft das nicht zu — der Faktor HAT gefeuert, siehe §9.**
 - **Alle Schwellen bleiben unbelegt**: 1/1,5/2/3 beim Cluster, 1,8/1,5/1,3 beim
   Insider-Timing, 2,0/1,6/1,3 beim Options-Timing, die Prämienleiter, die
   Committee-Multiplikatoren, das 14-Tage-Combofenster, die 250k-Schwelle. Sie sind
@@ -304,3 +304,84 @@ Unit-Tests, also durch genau das, was diesem Projekt vorher gefehlt hat.
 4. **Die nächste echte Ertragsquelle ist Datenabdeckung, nicht Gewichtung:**
    `marketCap` fehlt bei 34 % der Signale, drei Faktoren waren nie aktiv, und bis
    heute wurde jedes fünfte Signal auf einen nicht existierenden Ticker gebucht.
+
+---
+
+## 9. Nachtrag (2026-08-23) — Re-Scoring der gelabelten Historie
+
+Anlass: `signal_outcomes.score` ist zum Signalzeitpunkt eingefroren, die
+Freshness-Regel hat sich danach geändert (`null → 1,0` wurde zu `null → Floor`),
+und 50–63 % der gespeicherten Breakdowns tragen genau diese Form. Der Verdacht
+war, dass die gesamte IC-Auswertung ein überholtes Modell misst.
+
+**Umgesetzt:** `npm run rescore:history` (`scripts/rescore-history.ts`, read-only).
+Es baut den Komposit-Score aus den gespeicherten Komponenten neu auf, **beweist die
+Rekonstruktion zuerst gegen die gespeicherten Werte** und tauscht erst dann die
+Freshness-Regel. `scoreTicker` wird bewusst NICHT erneut ausgeführt: `marketCap`,
+`vix` und `bestAccuracy3m` wurden nie persistiert — ein „Replay" müsste sie
+erfinden.
+
+### 9.1 Der Verdacht war richtig gedacht und empirisch gegenstandslos
+
+| Horizont | Zeilen | rekonstruiert | von der Regel betroffen | Score geändert | Tier gewechselt |
+|---|---:|---:|---:|---:|---:|
+| 5 d | 2115 | 100,0 % | 1086 (51,3 %) | **0** | 0 |
+| 10 d | 1442 | 100,0 % | 794 (55,1 %) | **0** | 0 |
+| 20 d | 917 | 100,0 % | 480 (52,3 %) | **0** | 0 |
+
+Grund: von den 794 betroffenen 10-Tage-Zeilen haben **0** einen Insider-Leg
+(`insiderRaw > 0`) und **0** einen Options-Score. `signalAgeDays` ist genau dann
+`null`, wenn es weder einen wertbaren Insider-Trade noch Optionsfluss zum Datieren
+gibt — das sind exakt die inhaltsleeren Zeilen aus §1. Die Freshness multipliziert
+dort eine Null.
+
+**Der IC ist unverändert**, in allen drei Horizonten und in beiden Partitionen.
+Damit ist ein Vorbehalt gegen die Messung nicht mehr offen, sondern beziffert:
+0 von 4.474 Zeilen.
+
+### 9.2 Dabei gefunden: der Breakdown konnte seinen eigenen Score nicht reproduzieren
+
+11 Zeilen je Horizont (alle `VWAV`) bestanden die Rekonstruktion zunächst nicht —
+das Residuum lag um exakt den Faktor 0,9000 daneben. Ursache: der
+`valuationMultiplier` wird auf den **Komposit** angewandt, war aber **kein Feld in
+`ScoreBreakdown`**. Er ging also in `rawScore` ein, ohne irgendwo aufgezeichnet zu
+werden.
+
+Zwei Folgen:
+
+1. **„Valuation 0,0 % aktiv" war ein Messartefakt, keine Messung.**
+   `getFactorActivity` liest `valuationMultiplier` aus dem Breakdown — ein Feld,
+   das nie geschrieben wurde und darum immer den Default 1 lieferte. Der Faktor
+   war nicht inaktiv, er war unsichtbar. Aus den Residuen zurückgewonnen: je 11
+   Zeilen mit den Werten **0,9 · 1,08 · 1,15** — alle drei nicht-neutralen
+   Ausgaben von `getValuationMultiplier`. Anders als bei VIX, dessen 0,0 % eine
+   echte Messung an einem tatsächlich persistierten Feld ist, war diese Zahl
+   gegenstandslos. §2 und §5 sind entsprechend markiert.
+2. **Die gespeicherte Historie war stellenweise nicht reproduzierbar** — genau die
+   Eigenschaft, auf der jede spätere Neuauswertung aufbaut.
+
+**Behoben:** `valuationMultiplier` ist jetzt Pflichtfeld in `ScoreBreakdown` und
+wird von `scoreTicker` geschrieben (vier weitere Konstruktionsstellen angepasst).
+Da `upsidePct` derzeit nirgends gesetzt wird, ist der Wert heute überall 1,0 —
+**kein Score ändert sich**, `verify:scoring` und die Golden-Datei bleiben
+unverändert. Neue Invariante in `tests/invariants.test.ts`: *der Breakdown muss
+seinen eigenen `rawScore` reproduzieren können*, über den gesamten Zufalls-Sweep
+und über alle Valuation-Zustände. Genau diese Invariante hätte den Defekt sofort
+gefunden. Die Rekonstruktionsquote liegt danach bei **100,0 %**.
+
+### 9.3 Was das für die Beweislage ändert
+
+An den Zahlen nichts — und das ist das Ergebnis. Der IC bleibt, wo er war; der
+20-Tage-Befund auf der Gesamtmenge bleibt der einzige, der die Clusterbereinigung
+überlebt, und er verschwindet weiterhin, sobald die inhaltsleeren Zeilen
+ausgeschlossen werden. Was sich ändert, ist die Belastbarkeit: die Messung misst
+nachweislich das laufende Modell, und die gespeicherte Historie ist lückenlos
+rekonstruierbar.
+
+Unverändert offen bleibt §8.3: der Datensatz ist EIN Marktregime. Hinzu kommt ein
+Punkt, den das Re-Scoring nicht löst — die Clusterbereinigung korrigiert die
+Abhängigkeit **nach Ticker**, nicht die **zeitliche** Überlappung. Bei einem
+Labelfenster von rund 37 Tagen passen ~1,85 nicht überlappende 20-Tage-Fenster
+hinein; für die marktweite Komponente ist das effektive n näher an 2 als an 330.
+Ein zweidimensionales Clustering (Ticker × Woche) wäre der nächste ehrliche
+Schritt an der Statistik.

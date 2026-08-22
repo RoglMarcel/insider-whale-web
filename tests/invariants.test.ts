@@ -396,3 +396,39 @@ describe('INVARIANT — computeConfidence stays in [0, 100]', () => {
     }
   });
 });
+
+/**
+ * The breakdown is not decoration — it is the ONLY record of how a score was
+ * reached, and `signal_outcomes` keeps nothing else. If a factor scales the
+ * composite but is not a breakdown field, the stored history silently stops
+ * being reproducible: that is exactly how `valuationMultiplier` went missing,
+ * and it stayed invisible until a re-score tried to rebuild an old row and
+ * landed 10% off. Anything that multiplies the composite has to appear here.
+ *
+ * Restricted to aggregates without options, because the options leg decays on
+ * its own clock and that clock is deliberately not a breakdown field.
+ */
+describe('INVARIANT — the breakdown can reproduce its own rawScore', () => {
+  it('holds for insider-only aggregates in every valuation state', () => {
+    for (const up of [undefined, -60, -30, -25, 0, 15, 20, 50]) {
+      for (const agg of allAggregates()) {
+        if (agg.options.length) continue;
+        const b = scoreTicker({ ...agg, upsidePct: up }).breakdown;
+        const insiderRaw =
+          b.rankWeight * b.dollarVolumePoints * b.typeModifier * b.clusterMultiplier * b.timingMultiplier * b.vixMultiplier;
+        const expected =
+          insiderRaw * b.freshnessMultiplier * b.trackRecordMultiplier * b.valuationMultiplier + (b.politicianScore ?? 0);
+        const tol = 1e-9 * Math.max(1, Math.abs(b.rawScore));
+        expect(Math.abs(b.rawScore - expected), `upsidePct=${up} ticker=${agg.ticker}`).toBeLessThanOrEqual(tol);
+      }
+    }
+  });
+
+  it('records the valuation multiplier instead of folding it in silently', () => {
+    const base = aggregate({ trades: [trade({ role: 'Chief Executive Officer', value: 800_000, tradeDate: ymd(0) })] });
+    expect(scoreTicker({ ...base, upsidePct: 50 }).breakdown.valuationMultiplier).toBe(1.15);
+    expect(scoreTicker({ ...base, upsidePct: 20 }).breakdown.valuationMultiplier).toBe(1.08);
+    expect(scoreTicker({ ...base, upsidePct: -60 }).breakdown.valuationMultiplier).toBe(0.9);
+    expect(scoreTicker(base).breakdown.valuationMultiplier).toBe(1);
+  });
+});

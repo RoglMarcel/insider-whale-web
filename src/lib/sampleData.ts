@@ -106,6 +106,7 @@ function buildSignal(o: SampleOpts): Signal {
     freshnessMultiplier: freshness,
     vixMultiplier: 1,
     trackRecordMultiplier: 1,
+    valuationMultiplier: 1,
     comboBonus: o.combo ? 30 : 0,
     optionsBonus: optionsScore,
     signalAgeDays: o.ageDays,

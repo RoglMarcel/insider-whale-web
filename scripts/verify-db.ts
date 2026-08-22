@@ -30,7 +30,7 @@ function check(name: string, cond: boolean, detail = '') {
 const breakdown: ScoreBreakdown = {
   rankWeight: 10, dollarVolumePoints: 14, typeModifier: 1, clusterMultiplier: 2, timingMultiplier: 1.8,
   optionsScore: 15, optionsTimingMultiplier: 2, freshnessMultiplier: 1, vixMultiplier: 1.15,
-  trackRecordMultiplier: 1, comboBonus: 30, optionsBonus: 15, signalAgeDays: 0, rawScore: 900,
+  trackRecordMultiplier: 1, valuationMultiplier: 1, comboBonus: 30, optionsBonus: 15, signalAgeDays: 0, rawScore: 900,
   maxPossibleRaw: 2126, normalizedScore: 88, notes: ['combo'],
 };
 

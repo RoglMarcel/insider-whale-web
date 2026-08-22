@@ -513,6 +513,7 @@ const EMPTY_BREAKDOWN: ScoreBreakdown = {
   freshnessMultiplier: 1,
   vixMultiplier: 1,
   trackRecordMultiplier: 1,
+  valuationMultiplier: 1,
   comboBonus: 0,
   optionsBonus: 0,
   signalAgeDays: null,

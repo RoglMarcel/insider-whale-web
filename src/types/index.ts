@@ -132,6 +132,13 @@ export interface ScoreBreakdown {
   vixMultiplier: number;
   /** Feature 6 — best-insider track-record multiplier (0.85–1.2). */
   trackRecordMultiplier: number;
+  /**
+   * Feature 10 - fair-value multiplier (0.9-1.15). It is applied to the
+   * COMPOSITE, so a breakdown without it cannot reproduce its own rawScore.
+   * Historical rows written while a fair-value provider was live omit it; the
+   * re-score derives it from the residual for exactly that reason.
+   */
+  valuationMultiplier: number;
   /** Feature 4 — flat combo bonus added post-normalization (0 or 30). */
   comboBonus: number;
   /** Back-compat alias of optionsScore for older UI paths. */
