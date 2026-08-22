@@ -323,7 +323,7 @@ describe('source metadata helpers', () => {
 
 describe('dropRate (data-quality monitor)', () => {
   const stat = (over: Partial<import('../src/types').DataQualityStat> = {}) => ({
-    rows: 0, badTicker: 0, badDate: 0, noValue: 0, unknownType: 0, noRole: 0, ...over,
+    rows: 0, badTicker: 0, repairedTicker: 0, badDate: 0, noValue: 0, unknownType: 0, noRole: 0, ...over,
   });
   it('an empty run has no drop rate', () => {
     expect(dropRate(stat())).toBe(0);

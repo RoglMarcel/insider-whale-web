@@ -421,6 +421,8 @@ export interface DataQualityStat {
   rows: number;
   /** Dropped because the "ticker" was not a symbol (see isValidTicker). */
   badTicker: number;
+  /** Symbols whose doubled first letter was repaired against the SEC registry. */
+  repairedTicker: number;
   /** Rows whose trade date did not parse into YYYY-MM-DD. */
   badDate: number;
   /** Rows with no usable dollar value / premium. */
@@ -437,6 +439,12 @@ export type DataQualityReport = Record<string, DataQualityStat>;
 export function dropRate(stat: DataQualityStat): number {
   if (!stat || stat.rows <= 0) return 0;
   return Math.min(1, (stat.badTicker + stat.badDate + stat.noValue) / stat.rows);
+}
+
+/** Share of a source's rows whose symbol had to be repaired (0–1). */
+export function repairRate(stat: DataQualityStat): number {
+  if (!stat || stat.rows <= 0) return 0;
+  return Math.min(1, (stat.repairedTicker ?? 0) / stat.rows);
 }
 
 export interface ScrapeLogEntry {

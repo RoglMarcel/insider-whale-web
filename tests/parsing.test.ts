@@ -10,6 +10,7 @@ import {
   canonicalTicker,
   yahooTicker,
   sanitizeTickerRows,
+  repairDoubledTicker,
   MAX_SANE_TRADE_VALUE,
   MAX_SANE_SHARE_PRICE,
   MAX_SANE_SHARES,
@@ -187,5 +188,59 @@ describe('sanitizeTradeAmounts', () => {
   it('negative inputs are treated as absent, never as negative money', () => {
     const out = sanitizeTradeAmounts(-100, -5, -1000);
     expect(out === null || out.value > 0).toBe(true);
+  });
+});
+
+describe('repairDoubledTicker (Finviz logo-glyph corruption)', () => {
+  // The real SEC registry state for the symbols this rule has to separate.
+  const REGISTERED = new Set([
+    'AAPL', 'AAT', 'BBBY', 'BBW', 'CC', 'CCC', 'CCHH', 'CCL', 'EEFT', 'FFIN',
+    'KKR', 'LLY', 'MMED', 'QQQ', 'RRBI', 'SSTI', 'UUU', 'UUUU', 'VVV', 'WW', 'WWW',
+    'ACDC', 'ALK', 'ALTO', 'AMH', 'ARE', 'ASND', 'DGICA', 'BRK.A', 'BRK.B', 'CORZ', 'ET', 'ETN',
+  ]);
+  const isRegistered = (t: string) => REGISTERED.has(t);
+
+  it('leaves genuinely doubled symbols alone', () => {
+    for (const t of ['AAPL', 'AAT', 'BBBY', 'QQQ', 'LLY', 'KKR', 'CCL', 'VVV', 'WWW']) {
+      expect(repairDoubledTicker(t, isRegistered)).toBe(t);
+    }
+  });
+  it('repairs a corrupted symbol whose de-doubled form is registered', () => {
+    expect(repairDoubledTicker('AAAT', isRegistered)).toBe('AAT');
+    expect(repairDoubledTicker('AACDC', isRegistered)).toBe('ACDC');
+    expect(repairDoubledTicker('AALK', isRegistered)).toBe('ALK');
+    expect(repairDoubledTicker('AARE', isRegistered)).toBe('ARE');
+    expect(repairDoubledTicker('DDGICA', isRegistered)).toBe('DGICA');
+    expect(repairDoubledTicker('CCORZ', isRegistered)).toBe('CORZ');
+    expect(repairDoubledTicker('EET', isRegistered)).toBe('ET');
+    expect(repairDoubledTicker('EETN', isRegistered)).toBe('ETN');
+  });
+  it('repairs share classes through the canonical form', () => {
+    expect(repairDoubledTicker('BBRK-A', isRegistered)).toBe('BRK.A');
+    expect(repairDoubledTicker('BBRK-B', isRegistered)).toBe('BRK.B');
+  });
+  it('leaves the symbol alone when NEITHER form is registered', () => {
+    expect(repairDoubledTicker('AAXIA', isRegistered)).toBe('AAXIA');
+  });
+  it('never touches a symbol without a doubled first letter', () => {
+    for (const t of ['NVDA', 'MSFT', 'BRK.B', 'A']) {
+      expect(repairDoubledTicker(t, isRegistered)).toBe(canonicalTicker(t));
+    }
+  });
+  it('changes nothing when the registry is empty (never guess)', () => {
+    const none = () => false;
+    for (const t of ['AAAT', 'AACDC', 'AAPL']) expect(repairDoubledTicker(t, none)).toBe(t);
+  });
+  it('sanitizeTickerRows applies the repair and counts it', () => {
+    const rows = [{ ticker: 'AALK' }, { ticker: 'AAPL' }, { ticker: 'NVDA' }, { ticker: '-' }];
+    const out = sanitizeTickerRows(rows, isRegistered);
+    expect(out.kept.map((r) => r.ticker)).toEqual(['ALK', 'AAPL', 'NVDA']);
+    expect(out.repaired).toBe(1);
+    expect(out.rejected).toEqual(['-']);
+  });
+  it('sanitizeTickerRows without an oracle repairs nothing', () => {
+    const out = sanitizeTickerRows([{ ticker: 'AALK' }]);
+    expect(out.kept.map((r) => r.ticker)).toEqual(['AALK']);
+    expect(out.repaired).toBe(0);
   });
 });

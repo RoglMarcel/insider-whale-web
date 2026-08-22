@@ -69,7 +69,7 @@ import { scrapeBarchart } from './barchart';
 import { scrapeOptionStrat } from './optionstrat';
 import { scrapeInsiderFinance } from './insiderfinance';
 import { scrapeMarketBeatOptions } from './marketbeatoptions';
-import { scrapeOpenInsiderSales, fetchEdgarForm144, getTickerNameMap, type InsiderFlowRow } from './sellside';
+import { scrapeOpenInsiderSales, fetchEdgarForm144, getTickerNameMap, getRegisteredTickers, type InsiderFlowRow } from './sellside';
 import { fetchActivistFilings } from './activist';
 import {
   scrapeCapitolTradesApi,
@@ -766,7 +766,7 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
    */
   const quality: Record<string, DataQualityStat> = {};
   const qualityFor = (key: string): DataQualityStat =>
-    (quality[key] ??= { rows: 0, badTicker: 0, badDate: 0, noValue: 0, unknownType: 0, noRole: 0 });
+    (quality[key] ??= { rows: 0, badTicker: 0, repairedTicker: 0, badDate: 0, noValue: 0, unknownType: 0, noRole: 0 });
 
   try {
     try {
@@ -784,6 +784,20 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
       }
     }
     const context = await createContext(browser, loadMergedStorageState());
+
+    // SEC symbol registry — the oracle for repairing doubled first letters (see
+    // repairDoubledTicker). Fetched once per run, cached 24h inside sellside.ts,
+    // and best-effort: with no registry, no ticker is ever "repaired".
+    let registered: Set<string> = new Set();
+    try {
+      registered = await withTimeout(getRegisteredTickers(), 20_000, new Set<string>());
+    } catch {
+      /* best-effort — an empty set simply disables the repair */
+    }
+    const isRegistered = (t: string) => registered.has(t);
+    if (registered.size === 0) {
+      console.warn('[scraper] SEC symbol registry unavailable — doubled-ticker repair disabled this run');
+    }
 
     // Sources are independent (each opens its own page on the shared context,
     // different domains), so run a small pool instead of strictly sequential —
@@ -811,8 +825,13 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
               mainSourceCounts[source.key] = -1;
               errors.push({ source: source.key, message: `Timed out after ${PER_SCRAPER_TIMEOUT_MS}ms` });
             } else {
-              const { kept, rejected } = sanitizeTickerRows(result);
-              recordTradeQuality(qualityFor(source.key), result, rejected.length);
+              const { kept, rejected, repaired } = sanitizeTickerRows(
+                result,
+                registered.size ? isRegistered : undefined,
+              );
+              const q = qualityFor(source.key);
+              recordTradeQuality(q, result, rejected.length);
+              q.repairedTicker += repaired;
               allTrades.push(...kept);
               // Counted BEFORE the gate, so `sourceBreakdown` keeps meaning
               // "rows this source produced" and the quality block reports what
@@ -836,10 +855,14 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
               mainSourceCounts[source.key] = -1;
               errors.push({ source: source.key, message: `Timed out after ${PER_SCRAPER_TIMEOUT_MS}ms` });
             } else {
-              const { kept, rejected } = sanitizeTickerRows(result);
+              const { kept, rejected, repaired } = sanitizeTickerRows(
+                result,
+                registered.size ? isRegistered : undefined,
+              );
               const q = qualityFor(source.key);
               q.rows += result.length;
               q.badTicker += rejected.length;
+              q.repairedTicker += repaired;
               for (const o of result) if (!((o.premiumTotal ?? o.notional ?? 0) > 0)) q.noValue++;
               allOptions.push(...kept);
               mainSourceCounts[source.key] = result.length;
@@ -937,10 +960,14 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
     setStatus({ phase: 'Checking congressional trades…', currentSource: 'Congressional Trades' });
     try {
       const { trades: rawPoliticianTrades, layer } = await scrapeCongressChain(context);
-      const { kept: politicianTrades, rejected: badPoliticianTickers } = sanitizeTickerRows(rawPoliticianTrades);
+      const { kept: politicianTrades, rejected: badPoliticianTickers, repaired } = sanitizeTickerRows(
+        rawPoliticianTrades,
+        registered.size ? isRegistered : undefined,
+      );
       const q = qualityFor('capitoltrades');
       q.rows += rawPoliticianTrades.length;
       q.badTicker += badPoliticianTickers.length;
+      q.repairedTicker += repaired;
       newPoliticianTrades = upsertPoliticianTrades(politicianTrades);
       sideCounts.capitoltrades = rawPoliticianTrades.length;
       console.log(
@@ -1204,7 +1231,7 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
   } catch {
     /* shadow scoring is best-effort */
   }
-  const signals: Signal[] = aggregates.map((agg) => {
+  let signals: Signal[] = aggregates.map((agg) => {
     agg.vix = vix;
     agg.bestAccuracy3m = lookupBestAccuracy(agg);
     // Sell-side context: only attach when there is actual flow on record so
@@ -1265,6 +1292,30 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
       politicianTrades: agg.politicianTrades ?? [],
     };
   });
+  /**
+   * A "signal" with nothing in it is not a signal.
+   *
+   * `buildAggregates` gates on an insider buy OR a whale-sized options print,
+   * but the congressional merge below it pushes an aggregate for EVERY ticker
+   * with any congressional buy in 90 days — and the live politician score
+   * returns 0 for a lone print. The result was a stored row with no eligible
+   * insider trade, no options and no score contribution: 3,946 of 10,541 rows
+   * (37%) in the live database, mega-cap-heavy, occupying the entire bottom of
+   * the score range and dragging the whole calibration with them.
+   *
+   * A ticker still surfaces on a single congressional print as soon as anything
+   * else corroborates it (a cluster, an insider buy, options flow) — that is
+   * exactly when `politicianScore` becomes non-zero.
+   */
+  const hasSignalContent = (s: Signal): boolean =>
+    (s.breakdown?.rankWeight ?? 0) > 0 ||
+    (s.optionsActivity?.length ?? 0) > 0 ||
+    (s.politicianScore ?? 0) > 0;
+  const contentless = signals.filter((s) => !hasSignalContent(s)).length;
+  if (contentless > 0) {
+    console.log(`[scraper] dropped ${contentless} content-free aggregate(s) (no insider leg, no options, no politician score)`);
+  }
+  signals = signals.filter(hasSignalContent);
   signals.sort((a, b) => b.score - a.score);
 
   // Persist — surface DB failures (e.g. schema mismatch) instead of silently
@@ -1367,6 +1418,14 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
       console.warn(
         `[data-quality] ${key}: ${dropped}/${q.rows} rows unusable ` +
           `(ticker ${q.badTicker}, date ${q.badDate}, value ${q.noValue}, unknown type ${q.unknownType})`,
+      );
+    }
+    // A repair rate this high means the SOURCE is corrupting symbols, not that
+    // the registry is being clever — it should be fixed upstream, not papered over.
+    if (q.rows > 0 && q.repairedTicker / q.rows >= 0.05) {
+      console.warn(
+        `[data-quality] ${key}: repaired ${q.repairedTicker}/${q.rows} doubled-first-letter ticker(s) — ` +
+          'the source is rendering a logo glyph into the symbol cell',
       );
     }
   }

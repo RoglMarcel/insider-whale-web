@@ -1,7 +1,7 @@
 import type { BrowserContext } from 'playwright';
 import { XMLParser } from 'fast-xml-parser';
 import { withPage } from './browser';
-import { extractFirstTable, colIndex, cell, parseMoney, parseDate, cleanTicker, cleanText, isValidTicker, canonicalTicker } from './util';
+import { extractFirstTable, colIndex, cell, parseMoney, parseDate, cleanText, isValidTicker, canonicalTicker } from './util';
 
 /**
  * Sell-side intelligence — the buy-only pipeline's missing other half. Two
@@ -140,6 +140,18 @@ export async function getCikTickerMap(): Promise<Map<number, string>> {
 /** TICKER → registered company name, from the SEC's company_tickers.json. */
 export async function getTickerNameMap(): Promise<Map<string, string>> {
   return (await loadSecTickerFile()).names;
+}
+
+/**
+ * Every symbol the SEC lists, in canonical (dot) form — the oracle behind
+ * `repairDoubledTicker`. Empty when the file could not be fetched, which the
+ * caller must treat as "do not repair anything".
+ */
+export async function getRegisteredTickers(): Promise<Set<string>> {
+  const { names } = await loadSecTickerFile();
+  const out = new Set<string>();
+  for (const t of names.keys()) out.add(canonicalTicker(t));
+  return out;
 }
 
 function asArray<T>(v: T | T[] | undefined | null): T[] {

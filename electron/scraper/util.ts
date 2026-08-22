@@ -154,6 +154,30 @@ export function yahooTicker(raw?: string | null): string {
 }
 
 /**
+ * Repair a symbol whose FIRST LETTER was doubled by a source that renders a logo
+ * chip inside the ticker cell (Finviz: the chip's fallback letter is part of
+ * `textContent`, so `ALK` reads as `AALK`).
+ *
+ * The pattern alone cannot decide this — `AAPL`, `AAT`, `BBBY`, `QQQ`, `LLY`,
+ * `KKR` and 15 other real symbols start with a doubled letter. The SEC's
+ * registry is the oracle, and the rule is the one already used for the v1.1.12
+ * cleanup: repair only when the symbol as read is NOT registered AND its
+ * de-doubled form IS. Ambiguous cases are left alone; with no registry at hand
+ * nothing is changed at all — a wrong "repair" is worse than the corruption.
+ *
+ * Measured on the live database: 143 of 689 tickers (20.8%) were corrupted this
+ * way, all from Finviz, while all 21 genuinely doubled symbols are spared.
+ */
+export function repairDoubledTicker(ticker: string, isRegistered: (t: string) => boolean): string {
+  const t = canonicalTicker(ticker);
+  // Backreference: the first two characters must be the SAME letter.
+  if (!/^([A-Z])\1/.test(t)) return t;
+  if (isRegistered(t)) return t;
+  const dedoubled = t.slice(1);
+  return dedoubled.length >= 1 && isRegistered(dedoubled) ? dedoubled : t;
+}
+
+/**
  * Canonicalize every row's ticker and drop the ones that are not symbols at all.
  * Returns the rejects so a run can REPORT how much it threw away instead of
  * discarding it silently — a scraper whose ticker column moves would otherwise
@@ -161,18 +185,28 @@ export function yahooTicker(raw?: string | null): string {
  */
 export function sanitizeTickerRows<T extends { ticker: string }>(
   rows: readonly T[],
-): { kept: T[]; rejected: string[] } {
+  /** Optional SEC-registry oracle; when given, doubled first letters are repaired. */
+  isRegistered?: (t: string) => boolean,
+): { kept: T[]; rejected: string[]; repaired: number } {
   const kept: T[] = [];
   const rejected: string[] = [];
+  let repaired = 0;
   for (const row of rows) {
-    const ticker = canonicalTicker(row.ticker);
+    let ticker = canonicalTicker(row.ticker);
     if (!isValidTicker(ticker)) {
       rejected.push(String(row.ticker ?? ''));
       continue;
     }
+    if (isRegistered) {
+      const fixed = repairDoubledTicker(ticker, isRegistered);
+      if (fixed !== ticker) {
+        repaired++;
+        ticker = fixed;
+      }
+    }
     kept.push(ticker === row.ticker ? row : { ...row, ticker });
   }
-  return { kept, rejected };
+  return { kept, rejected, repaired };
 }
 
 export function parseDate(raw?: string | null): string {
