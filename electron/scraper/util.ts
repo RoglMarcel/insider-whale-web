@@ -116,9 +116,21 @@ export function sanitizeTradeAmounts(
  */
 const TICKER_SHAPE = /^[A-Z]{1,5}([.\-][A-Z]{1,2})?$/;
 
+/**
+ * "No value" markers that survive character cleaning and would otherwise become
+ * a plausible-looking symbol — most importantly `N/A`, which `cleanTicker`
+ * reduces to the two perfectly valid-looking letters `NA`. Checked against the
+ * RAW cell, before cleaning, because that is the only point where the
+ * information is still there. (senatewatcher/capitoltrades each carried their
+ * own ad-hoc version of this check; this is the shared one.)
+ */
+const TICKER_SENTINEL = /^(n\/?a|none|null|undefined|nil|tbd|unknown|[-–—.]{1,3})$/i;
+
 /** True if `raw` looks like a real equity symbol (see TICKER_SHAPE). */
 export function isValidTicker(raw?: string | null): boolean {
-  return TICKER_SHAPE.test(canonicalTicker(raw));
+  const s = String(raw ?? '').trim();
+  if (!s || TICKER_SENTINEL.test(s)) return false;
+  return TICKER_SHAPE.test(canonicalTicker(s));
 }
 
 /**

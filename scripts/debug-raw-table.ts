@@ -15,7 +15,7 @@ async function main() {
 
   const tableHtml = await page.evaluate(() => {
     const table = document.querySelector('table.tinytable');
-    if (!table) return 'Table not found';
+    if (!table) return { thead: 'Table not found', firstRow: 'Table not found' };
     const thead = table.querySelector('thead')?.outerHTML || 'No thead';
     const firstRow = table.querySelector('tbody tr')?.outerHTML || 'No rows';
     return { thead, firstRow };

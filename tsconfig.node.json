@@ -20,5 +20,11 @@
 
     "types": ["node"]
   },
-  "include": ["electron", "vite.config.ts"]
+  /*
+   * `scripts` and `tests` were NOT covered before: the typecheck claimed to
+   * check the repo while ~5000 lines of runner, backtest and verification code
+   * (including verify-scoring.ts and analyze-score.ts) were never seen by tsc.
+   * Adding them surfaced 18 real type errors.
+   */
+  "include": ["electron", "scripts", "tests", "vite.config.ts", "vite.config.web.ts", "vitest.config.ts"]
 }

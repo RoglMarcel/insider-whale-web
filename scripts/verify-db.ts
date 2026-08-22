@@ -73,14 +73,14 @@ try {
   check('migrated columns round-trip', !!nvda && nvda.lateFiling === true && nvda.comboSignal === true);
   check('earnings round-trip', !!nvda && nvda.earningsTiming === 'AMC' && nvda.daysToEarnings === 6);
   check('extended breakdown round-trip', !!nvda && nvda.breakdown.comboBonus === 30 && nvda.breakdown.vixMultiplier === 1.15);
-  check('insiderUrl round-trip', !!nvda && nvda.rawTrades[0].insiderUrl?.includes('/insider/'));
+  check('insiderUrl round-trip', !!nvda && !!nvda.rawTrades[0].insiderUrl?.includes('/insider/'));
   check('3 latest signals', getLatestSignals().length === 3);
 
   // Feature 7 — filtered query.
-  check('filter 24h → 1 (NVDA only)', getFilteredSignals({ timeRange: '24h', type: 'all', conviction: 'all' }).length === 1);
-  check('filter week → excludes 20d-old', getFilteredSignals({ timeRange: 'week', type: 'all', conviction: 'all' }).every((s) => s.ticker !== 'OLD'));
-  check('filter combo → NVDA only', getFilteredSignals({ timeRange: 'all', type: 'combo', conviction: 'all' }).length === 1);
-  check('filter HIGH → NVDA only', getFilteredSignals({ timeRange: 'all', type: 'all', conviction: 'HIGH' }).length === 1);
+  check('filter 24h → 1 (NVDA only)', getFilteredSignals({ timeRange: '24h', type: 'all', conviction: 'all', bigPlayersOnly: false }).length === 1);
+  check('filter week → excludes 20d-old', getFilteredSignals({ timeRange: 'week', type: 'all', conviction: 'all', bigPlayersOnly: false }).every((s) => s.ticker !== 'OLD'));
+  check('filter combo → NVDA only', getFilteredSignals({ timeRange: 'all', type: 'combo', conviction: 'all', bigPlayersOnly: false }).length === 1);
+  check('filter HIGH → NVDA only', getFilteredSignals({ timeRange: 'all', type: 'all', conviction: 'HIGH', bigPlayersOnly: false }).length === 1);
 
   // Feature 8 — scrape log VIX.
   const logId = startScrapeLog(['openinsider']);

@@ -46,6 +46,7 @@ app.whenReady().then(async () => {
     gurufocus: true,
     insidermonitor: true,
     quiverquant: true,
+      ceowatcher: true,
     barchart: true,
     optionstrat: true,
     insiderfinance: true,
