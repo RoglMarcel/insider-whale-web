@@ -21,7 +21,6 @@ export const IPC = {
   watchlistGetAll: 'watchlist:getAll',
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
-  valuationFetch: 'valuation:fetch',
   earningsFetch: 'earnings:fetch',
   historyGetScrapeLogs: 'history:getScrapeLogs',
   performanceGetLatest: 'performance:getLatest',

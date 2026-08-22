@@ -5,7 +5,6 @@ import type {
   AppSettings,
   ScrapeStatus,
   ScrapeLogEntry,
-  ValuationResult,
   SignalFilter,
   VixQuote,
   InsiderTrackRecord,
@@ -107,7 +106,6 @@ interface StoreState {
   removeWatch: (ticker: string) => Promise<void>;
   saveSettings: (partial: Partial<AppSettings>) => Promise<void>;
   clearDatabase: () => Promise<void>;
-  fetchValuation: (ticker: string) => Promise<ValuationResult>;
   fetchTrackRecord: (name: string, role?: string, url?: string) => Promise<InsiderTrackRecord | null>;
   loadAuthStatus: () => Promise<void>;
   startLogin: (platform: string) => Promise<{ ok: boolean; message?: string }>;
@@ -280,7 +278,6 @@ export const useStore = create<StoreState>((set, get) => ({
     set({ lastScrapeAt: await api.app.getLastScrape() });
   },
 
-  fetchValuation: (ticker) => api.valuation.fetch(ticker),
 
   fetchTrackRecord: (name, role, url) => api.insider.getTrackRecord(name, role, url),
 

@@ -363,6 +363,13 @@ export function getTrackRecordMultiplier(
  * Feature 10 — fold fair-value upside into conviction: an insider buying a name
  * independent models call deeply undervalued is a stronger signal; an overvalued
  * one is tempered. `upsidePct` is (fairValue − price)/price × 100.
+ *
+ * DORMANT: both fair-value providers were removed, so `upsidePct` is always
+ * undefined and this returns a neutral 1.0 for every signal. It is deliberately
+ * NOT deleted — it is one of the twelve components the backtest framework
+ * tracks (scripts/backtest-components.ts), and ripping it out would change the
+ * composite formula rather than just switching off an input. Wire a new
+ * provider to `TickerAggregate.upsidePct` and it becomes live again.
  */
 export function getValuationMultiplier(upsidePct: number | undefined): number {
   if (upsidePct == null || !Number.isFinite(upsidePct)) return 1.0;

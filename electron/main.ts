@@ -7,7 +7,6 @@ import { autoUpdater } from 'electron-updater';
 import type {
   AppSettings,
   ScrapeResult,
-  ValuationResult,
   SignalFilter,
   InsiderTrackRecord,
   SignalPerformance,
@@ -50,7 +49,6 @@ import { computePerformanceReport } from './performance';
 import { runScrape, getScrapeStatus, fetchStockAnalysisEarnings } from './scraper';
 import { publishToWeb } from './webPublish';
 import { launchBrowser, createContext } from './scraper/browser';
-import { fetchValuation } from './scraper/valuation';
 import { scrapeFinvizEarnings } from './scraper/finviz';
 import { fetchInsiderTrackRecord } from './scraper/insiderHistory';
 import { configureScheduler, stopScheduler, syncTaskScheduler } from './scheduler';
@@ -63,7 +61,6 @@ import {
   notifyFilingEvents,
   seedNotified,
 } from './notifications';
-import { getCachedValuation, setCachedValuation } from './valuationCache';
 import { startVixPolling, stopVixPolling, getCachedVix, fetchVix } from './vix';
 import {
   authStatus,
@@ -134,7 +131,7 @@ function broadcast(channel: string, payload: unknown): void {
 
 // ──────────────────────────────────────────────────────────────────────────
 // On-demand Chromium pool — bounds how many headless browsers run at once for
-// modal-triggered fetches (track records, valuation, earnings fallback). Opening
+// modal-triggered fetches (track records, earnings fallback). Opening
 // a multi-insider modal previously launched one Chromium PER insider in parallel.
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -268,19 +265,6 @@ async function fetchTrackRecord(
   }
 }
 
-async function fetchValuationForTicker(ticker: string): Promise<ValuationResult> {
-  const cached = getCachedValuation(ticker);
-  if (cached) return cached; // fresh within TTL — skip the slow re-scrape
-  const result = await withPooledBrowser(async (browser) => {
-    const context = await createContext(browser, loadMergedStorageState());
-    const r = await fetchValuation(context, ticker);
-    await context.close().catch(() => undefined);
-    return r;
-  });
-  // Only cache a result that actually found a fair value (don't pin transient errors).
-  if (result.sources.some((s) => s.fairValue != null)) setCachedValuation(ticker, result);
-  return result;
-}
 
 async function fetchEarningsForTicker(ticker: string): Promise<{ earningsDate?: string; daysToEarnings?: number; earningsTiming?: string }> {
   // Try Stock Analysis first (fast GET — reuses the orchestrator's fetch+parse).
@@ -581,7 +565,6 @@ function registerIpc(): void {
     return merged;
   });
 
-  ipcMain.handle(IPC.valuationFetch, (_e, ticker: string) => fetchValuationForTicker(ticker));
   ipcMain.handle(IPC.earningsFetch, (_e, ticker: string) => fetchEarningsForTicker(ticker));
 
   // Platform logins (authenticated scraping)

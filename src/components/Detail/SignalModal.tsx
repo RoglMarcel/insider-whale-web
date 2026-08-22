@@ -13,7 +13,6 @@ import { ScoreBreakdown } from './ScoreBreakdown';
 import { InsiderTable } from './InsiderTable';
 import { InsiderAccuracyPanel, type PanelInsider } from './InsiderAccuracyPanel';
 import { OptionsFlow } from './OptionsFlow';
-import { ValuationSection } from './ValuationSection';
 import { XIcon, StarIcon, UsersIcon } from '@/components/UI/icons';
 import { formatUSD, formatDate, accuracyColor, formatPercent } from '@/lib/format';
 import { useSwipeToDismiss } from '@/hooks/useSwipeToDismiss';
@@ -500,7 +499,6 @@ export function SignalModal() {
               <InsiderAccuracyPanel insiders={insiders} records={records} loading={trLoading} />
               <InsiderTable trades={signal.rawTrades} trackRecords={records} loading={trLoading} />
               <OptionsFlow options={signal.optionsActivity} />
-              <ValuationSection ticker={selectedTicker} />
 
               {/* Feature 7 — news mentioning this ticker */}
               {tickerNews.length > 0 && (

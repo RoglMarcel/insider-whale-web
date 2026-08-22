@@ -51,9 +51,6 @@ const api: InsiderTrackerAPI = {
     get: () => ipcRenderer.invoke(IPC.settingsGet),
     set: (settings) => ipcRenderer.invoke(IPC.settingsSet, settings),
   },
-  valuation: {
-    fetch: (ticker: string) => ipcRenderer.invoke(IPC.valuationFetch, ticker),
-  },
   earnings: {
     fetch: (ticker: string) => ipcRenderer.invoke(IPC.earningsFetch, ticker),
   },

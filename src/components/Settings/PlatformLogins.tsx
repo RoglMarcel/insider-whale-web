@@ -9,7 +9,6 @@ import { isWeb } from '@/lib/ipc';
 
 /** Category key -> translation key; the stored platform stays language-free. */
 const CATEGORY_KEYS: Record<LoginPlatform['category'], TKey> = {
-  valuation: 'login.catFairValue',
   options: 'login.catOptions',
   insider: 'login.catInsider',
   news: 'login.catNews',

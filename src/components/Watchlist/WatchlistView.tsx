@@ -128,7 +128,7 @@ export function WatchlistView() {
                   <div className="mt-1 text-xs text-secondary">{formatUSD(signal.totalDollarVolume)} insider buys</div>
                 )}
               </div>
-              <button className="icon-btn h-9 w-9" onClick={onRemove} title="Remove from watchlist">
+              <button className="icon-btn h-9 w-9" onClick={onRemove} title={t('card.removeFromWatchlist')}>
                 <TrashIcon size={16} />
               </button>
             </GlassCard>

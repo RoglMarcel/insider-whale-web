@@ -9,7 +9,6 @@ import {
   type ScrapeError,
   type TickerAggregate,
   type InsiderTrackRecord,
-  type ValuationResult,
   type FilingEvent,
   type PoliticianTrade,
   SCRAPER_SOURCES,
@@ -52,8 +51,6 @@ import {
   getPoliticianTradeTickers,
 } from '../database';
 import { fetchInsiderTrackRecord } from './insiderHistory';
-import { fetchValuation } from './valuation';
-import { getCachedUpside, setCachedValuation } from '../valuationCache';
 import { loadMergedStorageState, sourceUnlocked, isLoggedIn } from '../auth';
 
 import { scrapeEdgar } from './edgar';
@@ -163,10 +160,6 @@ const CACHEABLE_TRACK_RECORD_ERRORS: ReadonlySet<string> = new Set([
   'No post-trade performance data yet.',
   'No history page available for this insider.',
 ]);
-/** Feature 10 — fair-value pre-warm caps (login-gated; folds undervaluation into scoring). */
-const VALUATION_PREWARM_LIMIT = 5;
-const VALUATION_PER_TICKER_MS = 25_000;
-const VALUATION_PREWARM_BUDGET_MS = 45_000;
 /** Feature 9 — a score jump this large (and into ≥ WATCH) fires a "surge" alert. */
 const SCORE_SURGE_DELTA = 25;
 /**
@@ -534,33 +527,6 @@ async function prewarmTrackRecords(context: BrowserContext, aggregates: TickerAg
   });
 }
 
-/**
- * Feature 10 — pre-warm fair-value (undervaluation) for the strongest candidates so
- * the valuationMultiplier participates at scoring time. Login-gated (otherwise it
- * would burn the providers' free-view limits on every automated scrape) and tightly
- * bounded; results are cached so detail-modal opens are instant too.
- */
-async function prewarmValuations(context: BrowserContext, aggregates: TickerAggregate[]): Promise<void> {
-  if (!isLoggedIn('alphaspread') && !isLoggedIn('valueinvesting')) return;
-  const eligibleVolume = (agg: TickerAggregate) =>
-    agg.trades.filter(isScoringEligible).reduce((s, t) => s + (t.value || 0), 0);
-  const top = [...aggregates].sort((a, b) => eligibleVolume(b) - eligibleVolume(a)).slice(0, VALUATION_PREWARM_LIMIT);
-  if (!top.length) return;
-  const deadline = Date.now() + VALUATION_PREWARM_BUDGET_MS;
-  await mapLimit(top, 2, async (agg) => {
-    if (Date.now() > deadline || getCachedUpside(agg.ticker) != null) return;
-    try {
-      const result = await withTimeout<ValuationResult | null>(
-        fetchValuation(context, agg.ticker),
-        VALUATION_PER_TICKER_MS,
-        null,
-      );
-      if (result) setCachedValuation(agg.ticker, result);
-    } catch {
-      /* best-effort */
-    }
-  });
-}
 
 // ──────────────────────────────────────────────────────────────────────────
 // Orchestrator
@@ -1158,12 +1124,6 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
       } catch (err) {
         errors.push({ source: 'track-records', message: err instanceof Error ? err.message : String(err) });
       }
-      setStatus({ phase: 'Checking fair value…', currentSource: 'Valuation' });
-      try {
-        await prewarmValuations(context, aggregates);
-      } catch (err) {
-        errors.push({ source: 'valuations', message: err instanceof Error ? err.message : String(err) });
-      }
     }
 
     await context.close().catch(() => undefined);
@@ -1189,7 +1149,6 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
   const signals: Signal[] = aggregates.map((agg) => {
     agg.vix = vix;
     agg.bestAccuracy3m = lookupBestAccuracy(agg);
-    agg.upsidePct = getCachedUpside(agg.ticker);
     // Sell-side context: only attach when there is actual flow on record so
     // scoring notes stay quiet for tickers with no history.
     try {

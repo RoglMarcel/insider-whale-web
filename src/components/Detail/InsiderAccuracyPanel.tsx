@@ -118,13 +118,17 @@ export function InsiderAccuracyPanel({
                 <>
                   <div className="ml-auto text-right">
                     <div className="text-sm font-bold" style={{ color: accuracyColor(rec.accuracy3m) }}>
-                      Beat S&P on {rec.profitable3m} of {rec.totalTrades} ({Math.round(rec.accuracy3m * 100)}%)
+                      {t('acc.beatSp', {
+                        hit: rec.profitable3m,
+                        total: rec.totalTrades,
+                        pct: Math.round(rec.accuracy3m * 100),
+                      })}
                     </div>
                     <div
                       className="text-xs font-semibold"
                       style={{ color: rec.avgReturn3m >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}
                     >
-                      {formatPercent(rec.avgReturn3m)} avg 3M α (vs S&P)
+                      {t('acc.avgAlpha', { v: formatPercent(rec.avgReturn3m) })}
                     </div>
                   </div>
                   <Sparkline trades={rec.recentTrades} />
@@ -141,15 +145,14 @@ export function InsiderAccuracyPanel({
           <span className="font-semibold">{best.ins.name}</span>
           <span className="text-secondary"> — </span>
           <span style={{ color: accuracyColor(best.rec.accuracy3m) }}>
-            {Math.round(best.rec.accuracy3m * 100)}% market-beat rate
+            {t('acc.marketBeatRate', { pct: Math.round(best.rec.accuracy3m * 100) })}
           </span>
-          <span className="text-secondary">, {formatPercent(best.rec.avgReturn3m)} avg 3M alpha</span>
+          <span className="text-secondary">{t('acc.avgAlphaLong', { v: formatPercent(best.rec.avgReturn3m) })}</span>
         </div>
       )}
       {loaded.some((x) => x.rec && x.rec.totalTrades > 0) && (
         <p className="mt-2 text-xs leading-snug text-secondary">
-          Outcomes are split/dividend-adjusted and measured against the S&P 500 over ~3 months. Buys on
-          tickers later delisted have no price data and are excluded, so win rates skew optimistic.
+          {t('acc.disclaimer')}
         </p>
       )}
     </section>

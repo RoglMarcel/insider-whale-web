@@ -234,7 +234,12 @@ export interface TickerAggregate {
   bestAccuracy3m?: number;
   /** Market cap (USD) when known — normalizes buy size by company size. */
   marketCap?: number;
-  /** Feature 10 — best cached fair-value upside% (undervaluation) for this ticker. */
+  /**
+   * Fair-value upside% (undervaluation). NO LONGER POPULATED — the two
+   * fair-value providers (AlphaSpread, ValueInvesting.io) were removed, so this
+   * stays undefined and `getValuationMultiplier` resolves to a neutral 1.0.
+   * Kept as the seam a future provider would plug into; see electron/scoring.ts.
+   */
   upsidePct?: number;
   /** Feature 6 — sector/industry, when known. */
   sector?: string;
@@ -682,28 +687,6 @@ export interface ScrapeResult {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Valuation
-// ──────────────────────────────────────────────────────────────────────────
-
-export interface ValuationSourceResult {
-  source: 'alphaspread' | 'valueinvesting';
-  fairValue?: number;
-  currentPrice?: number;
-  /** (fairValue - price) / price * 100. Positive = undervalued / upside. */
-  upsidePct?: number;
-  label?: string;
-  url: string;
-  error?: string;
-}
-
-export interface ValuationResult {
-  ticker: string;
-  currentPrice?: number;
-  sources: ValuationSourceResult[];
-  fetchedAt: string;
-}
-
-// ──────────────────────────────────────────────────────────────────────────
 // Settings
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -802,6 +785,16 @@ const INSIDER_ROLE_SUFFIXES = [
   'director', 'officer', 'ceo', 'cfo', 'coo', 'president', '10% owner', '10%owner', 'owner', 'executive',
   'chairman', 'general counsel', 'general partner', 'secretary', 'treasurer', 'vice president', 'vp',
   'svp', 'evp', 'avp', 'trustee', 'beneficial owner', 'controller',
+  // Full titles, for sources that glue the title onto the surname with no
+  // separator ("Genner Gareth NevilleChief Executive Officer"). Stripping only
+  // the trailing word would leave "...NevilleChief Executive" behind and the
+  // row would never dedupe against the same person from a clean source.
+  'chief executive officer', 'chief financial officer', 'chief operating officer',
+  'chief technology officer', 'chief marketing officer', 'chief accounting officer',
+  'chief information officer', 'chief legal officer', 'chief medical officer',
+  'chief scientific officer', 'chief commercial officer', 'chief revenue officer',
+  'chief compliance officer', 'chief investment officer', 'chief business officer',
+  'chief product officer', 'chief people officer', 'chief security officer',
 ].sort((a, b) => b.length - a.length);
 
 /**
@@ -1114,10 +1107,10 @@ export interface LoginPlatform {
   label: string;
   /** Page to open for the user to log in manually. */
   loginUrl: string;
-  category: 'insider' | 'options' | 'valuation' | 'news';
+  category: 'insider' | 'options' | 'news';
   /** 'required' means the scrape source toggle stays locked until logged in. */
   gating: LoginGating;
-  /** The scraper source this login gates/improves (valuation providers have none). */
+  /** The scraper source this login gates/improves. */
   sourceKey?: ScraperSource;
   /** Translation key for the one-line hint (see src/lib/i18n.ts). */
   hintKey?: string;
@@ -1129,8 +1122,6 @@ export interface LoginPlatform {
  * no passwords are stored.
  */
 export const LOGIN_PLATFORMS: readonly LoginPlatform[] = [
-  { key: 'valueinvesting', label: 'ValueInvesting.io', loginUrl: 'https://valueinvesting.io/login', category: 'valuation', gating: 'optional', hintKey: 'plat.hintValueInvesting' },
-  { key: 'alphaspread', label: 'AlphaSpread', loginUrl: 'https://www.alphaspread.com/login', category: 'valuation', gating: 'optional', hintKey: 'plat.hintAlphaSpread' },
   { key: 'optionstrat', label: 'OptionStrat', loginUrl: 'https://optionstrat.com/login', category: 'options', gating: 'required', sourceKey: 'optionstrat', hintKey: 'plat.hintOptionsAccount' },
   { key: 'insiderfinance', label: 'InsiderFinance', loginUrl: 'https://www.insiderfinance.io/login', category: 'options', gating: 'required', sourceKey: 'insiderfinance', hintKey: 'plat.hintOptionsAccount' },
   { key: 'barchart', label: 'Barchart', loginUrl: 'https://www.barchart.com/login', category: 'options', gating: 'optional', sourceKey: 'barchart', hintKey: 'plat.hintBarchart' },
@@ -1256,9 +1247,6 @@ export interface InsiderTrackerAPI {
     get: () => Promise<AppSettings>;
     set: (settings: Partial<AppSettings>) => Promise<AppSettings>;
   };
-  valuation: {
-    fetch: (ticker: string) => Promise<ValuationResult>;
-  },
   earnings: {
     fetch: (ticker: string) => Promise<{ earningsDate?: string; daysToEarnings?: number; earningsTiming?: string }>;
   };

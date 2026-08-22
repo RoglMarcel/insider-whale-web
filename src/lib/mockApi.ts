@@ -70,9 +70,6 @@ export const mockApi: InsiderTrackerAPI = {
     get: async () => DEFAULT_SETTINGS,
     set: async () => DEFAULT_SETTINGS,
   },
-  valuation: {
-    fetch: async (ticker: string) => ({ ticker, sources: [], fetchedAt: new Date().toISOString() }),
-  },
   earnings: {
     fetch: async () => ({}),
   },

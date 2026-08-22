@@ -244,12 +244,6 @@ CREATE TABLE IF NOT EXISTS insider_trades (
 );
 CREATE INDEX IF NOT EXISTS idx_insider_trades_date ON insider_trades(trade_date);
 
-CREATE TABLE IF NOT EXISTS valuation_cache (
-  ticker TEXT PRIMARY KEY,
-  result TEXT,              -- JSON ValuationResult
-  fetched_at DATETIME
-);
-
 CREATE TABLE IF NOT EXISTS ticker_meta (
   ticker TEXT PRIMARY KEY,
   market_cap REAL,
@@ -1610,28 +1604,6 @@ export function backfillInsiderTradesFromSignals(days = 30): number {
   return n;
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Valuation cache persistence — backs the in-memory cache so app restarts
-// don't re-burn the providers' free-view limits (~5 stocks/month on the
-// ValueInvesting.io free tier).
-// ──────────────────────────────────────────────────────────────────────────
-
-export function getValuationCacheRow(ticker: string): { result: string; fetched_at: string } | null {
-  const row = getDb()
-    .prepare(`SELECT result, fetched_at FROM valuation_cache WHERE ticker = ?`)
-    .get(ticker.toUpperCase()) as { result: string | null; fetched_at: string | null } | undefined;
-  if (!row?.result || !row.fetched_at) return null;
-  return { result: row.result, fetched_at: row.fetched_at };
-}
-
-export function upsertValuationCacheRow(ticker: string, resultJson: string): void {
-  getDb()
-    .prepare(
-      `INSERT INTO valuation_cache (ticker, result, fetched_at) VALUES (?, ?, ?)
-       ON CONFLICT(ticker) DO UPDATE SET result = excluded.result, fetched_at = excluded.fetched_at`,
-    )
-    .run(ticker.toUpperCase(), resultJson, new Date().toISOString());
-}
 
 // ──────────────────────────────────────────────────────────────────────────
 // Ticker meta cache (market cap / sector / earnings) — enrichment values change
@@ -1749,12 +1721,10 @@ export function updateEarnings(
  */
 export function pruneOldData(retentionDays = 365): void {
   const cutoff = new Date(Date.now() - retentionDays * 86_400_000).toISOString();
-  const valuationCutoff = new Date(Date.now() - 7 * 86_400_000).toISOString();
   const flowCutoff = new Date(Date.now() - 180 * 86_400_000).toISOString().slice(0, 10);
   const tx = getDb().transaction(() => {
     getDb().prepare(`DELETE FROM signals WHERE scraped_at < ?`).run(cutoff);
     getDb().prepare(`DELETE FROM scrape_log WHERE started_at < ?`).run(cutoff);
-    getDb().prepare(`DELETE FROM valuation_cache WHERE fetched_at < ?`).run(valuationCutoff);
     getDb().prepare(`DELETE FROM insider_flow WHERE flow_date < ?`).run(flowCutoff);
     getDb().prepare(`DELETE FROM insider_trades WHERE trade_date < ?`).run(flowCutoff);
     getDb().prepare(`DELETE FROM politician_trades WHERE trade_date < ?`).run(flowCutoff);

@@ -14,13 +14,95 @@ the project without rediscovering the same context.
 
 - Product name: `Insider & Whale Terminal`
 - npm package: `insider-whale-terminal`
-- Current version: see `package.json` (currently `1.1.2`)
+- Current version: see `package.json` (currently `1.2.1`)
 - Release target: GitHub Releases at `RoglMarcel/insider-whale-terminal`
 - Local folder: `C:\Users\8marc\Desktop\Insider`
-- Important: this local folder is currently not a git repository. Releases are
-  built locally and uploaded to GitHub Releases.
+- Source repo: `RoglMarcel/insider-whale-web` — this is the whole codebase AND
+  the hosted site. `RoglMarcel/insider-whale-terminal` holds desktop releases
+  only (no source), which is why the auto-updater points there.
+- Releases are built locally (`npm run dist:win`) and uploaded to GitHub
+  Releases; pushing to `main` is what redeploys the website.
 
-- **v1.1.13** (Current)
+- **v1.2.1** (Current)
+  - **German / English UI.** Language switch in the header, where the light/dark
+    toggle used to be (the app is dark-only now). 320 keys in `src/lib/i18n.ts`;
+    `en` is the source of truth and `de` is typed as `Record<TKey, string>`, so a
+    missing German key is a compile error rather than a silent English fallback.
+    Startup language comes from `localStorage`, else the browser locale.
+    Domain terms deliberately stay English — "Conviction" is the scoring model's
+    own term and German "Überzeugung" means a personal belief, which reads wrong
+    for a computed rating; same for the HIGH/WATCH tier names and "Track Record".
+  - **News tab hidden on the web build.** It is fed by the desktop X scraper, so
+    the hosted build never had rows for it. Still present in the desktop app.
+  - **Quiver name/title parsing fixed.** Quiver now renders the name and the job
+    title as two sibling nodes with no separator, so `textContent` yielded
+    `"Genner Gareth NevilleChief Executive Officer"` and the old split-on-last-dash
+    never fired. The same insider then appeared twice in the track-record panel —
+    once clean, once glued and without a history link. Split is now anchored on
+    the title vocabulary (not a lowercase→uppercase transition, which would wreck
+    "McDonald"), and `normalizeInsiderName` learned the full C-suite titles so
+    glued rows dedupe against clean ones. Rows already stored stay wrong until
+    re-scraped; dedup collapses them regardless.
+  - **Fair-value feature removed.** Both providers (AlphaSpread, ValueInvesting.io)
+    are gone: UI section, scrapers, login entries, `valuation_cache`, IPC and the
+    pre-warm phase — 639 lines. `getValuationMultiplier` is deliberately KEPT in
+    `electron/scoring.ts` as a dormant seam: with no source, `upsidePct` is always
+    undefined and it returns a neutral 1.0, and it is one of the twelve components
+    `backtest-components.ts` tracks. Side effect: confidence loses its 5-point
+    valuation term, so the practical ceiling is 95, not 100.
+- **v1.2.0**
+  - **Desktop → web auto-publish.** A scrape in the desktop app now pushes its own
+    signals into `data/insider-tracker.db` and lets CI redeploy — previously the
+    two apps owned separate SQLite files and a desktop scrape was a dead end.
+    Snapshots via SQLite's online-backup API rather than copying the file, because
+    the app runs in WAL mode and a plain copy silently yields stale rows. The
+    commit is pathspec-limited to the DB so an unattended push can never sweep in
+    unrelated staged work, and marked `[desktop-publish]`.
+  - **CI fast path.** The workflow greps that marker and skips its own scrape,
+    Chromium install and outcome labeling, publishing straight from the pushed DB
+    via `npm run publish:data`. Measured: **2.0 min vs 5–6.7 min**, and the
+    desktop's login-gated options flow reaches the site intact instead of being
+    overwritten by a weaker cloud scrape.
+  - **Insider trades are persisted (`insider_trades`).** Every source is a "latest
+    filings" feed, so before this a trade existed only while its source page still
+    listed it. A real $1M PFE CEO buy dropped out of its own signal on day 7 and
+    the score fell to 0.0 — while the 90-day `insider_flow` panel still showed its
+    dollars, contradicting itself. Aggregates now build from a trailing 30-day
+    window (the same window `getClusterMultiplier` counts over), seeded once from
+    signal history so the first run isn't scored against an empty table.
+  - **OpenInsider window 7 → 14 days.** `cnt=500` is the binding ceiling, not `fd`:
+    measured 2026-08-21, fd=7 → 184 rows, fd=14 → 422, fd=21 → 500 (capped, silently
+    truncating the oldest filings). With persistence the window is only redundancy
+    margin, and a guard warns if the cap is ever hit.
+  - **Silent zero-row scrapes now fail loudly.** OpenInsider swallowed page errors
+    into an empty array, which logged as a healthy run and zeroed every signal it
+    was carrying — 3 of 11 CI runs, all in the same 14:37 UTC slot, none flagged.
+    It throws now, and source health gained a `flapping` state for sources that
+    return zero intermittently; the consecutive-runs rule could never see those.
+  - **CEOWatcher source (`instagram.com/ceowatcher`).** Caption-only — the post
+    media is never fetched. Parses both formats (numbered digest with names,
+    shares and prices; single-alert with role and a rounded total). Captions carry
+    no transaction date, so rows are reconciled against authoritative ones by
+    ticker + insider over a ±10-day window instead of an exact-date dedup key —
+    otherwise the same Form 4 would double-count. Off by default in CI.
+  - **Score breakdown separates "no data" from "bad data".** With zero
+    scoring-eligible trades the insider factors now render `—` instead of `0 / 10`
+    and `× 0.00`, which read as a verdict on the ticker. Undated signals also stop
+    collecting a full freshness multiplier — missing data used to outscore present
+    data.
+- **v1.1.17**
+  - Closed the remaining mobile gaps: 0 tap targets under 44px, 0 text under 12px,
+    welcome-modal fix, shared swipe-to-dismiss hook.
+- **v1.1.16**
+  - Phase 4+5: dropped a 5.3MB unused intro video, lazy-loaded Recharts, added a
+    PWA manifest, fixed mobile chart axes.
+- **v1.1.15**
+  - Phase 3: mobile dashboard (2×2 stat grid, filter sheet, card typography),
+    detail sheet, tables rendered as cards.
+- **v1.1.14**
+  - Mobile shell: bottom tab bar, safe areas, touch targets; History view wired up
+    on the web build.
+- **v1.1.13**
   - **Labeled training data (`signal_outcomes`).** New table + `npm run label:outcomes`
     records, for every ripened signal, the realized 5/10/20-day SPY-relative alpha,
     with the score frozen at FIRST sighting so labels can't inherit hindsight. Wired
@@ -227,13 +309,13 @@ the project without rediscovering the same context.
   - **New Data Sources**: SEC EDGAR Form 4 (authoritative, structured XML with exact roles and the 10b5-1 checkbox), Insider-Monitor daily purchase digest, Quiver Quantitative live insider feed (names + titles), and MarketBeat unusual call/put options volume (public, no login). OpenInsider now uses the 500-row purchases screener; Barchart parses its core-api JSON with a shadow-DOM fallback; VIX comes from CBOE's official endpoint with Yahoo fallback.
   - **Component Backtest Harness**: `npm run backtest:components` isolates all 12 scoring components against 5/10/20-day SPY-relative alpha (Spearman IC, 70/30 walk-forward, Welch t-tests, EDGAR-augmented history) and writes `backtest-components-report.md`.
   - **Evidence-Based Recalibration**: freshness decay floor deepened 0.2 → 0.15 (only component with confirmed out-of-sample alpha, IC(oos)=0.342, p=0.021); smooth exponential freshness decay and a smooth track-record multiplier curve replace step cliffs; options score now rewards repeated whale prints via a decayed sum.
-  - **Performance & Reliability**: sources scrape in a concurrency-3 pool, ticker meta (market cap/sector/earnings) cached 24h in SQLite, valuation cache persisted across restarts, fetch timeouts + retry/backoff everywhere, scheduled-task DST self-healing, WAL checkpointing, and prepared-statement reuse.
+  - **Performance & Reliability**: sources scrape in a concurrency-3 pool, ticker meta (market cap/sector/earnings) cached 24h in SQLite, fetch timeouts + retry/backoff everywhere, scheduled-task DST self-healing, WAL checkpointing, and prepared-statement reuse.
 - **v1.0.38**
   - **Calibrated Scoring Model**: Replaced linear normalization (`MAX_POSSIBLE_RAW`) with a saturating sigmoid curve (`SCORE_HALF_SATURATION ≈ 105`) mapped to a strong-but-plausible signal baseline (≈420 raw). This prevents insider-only signals from being compressed into single digits and resolves the issue where the `comboBonus` dominated the conviction level.
   - **Relative Buy Sizing**: Buy trade sizes are now evaluated relative to market cap when known, rather than absolute dollar volumes, for fairer scoring.
   - **Accurate Track-Record Metrics**: Fixed 3-month track record outcomes (now correctly using +90 days calendar returns rather than a 30-day proxy) and corrected the `accuracy6m` denominator to only count trades old enough to have a 180-day outcome.
   - **Backtesting Harness**: Added a backtest script (`npm run backtest`) to evaluate stored signals against realized S&P-relative returns.
-  - **Robust Scheduling & API Fetches**: Awaits VIX quotes before starting scheduled scans, limits concurrent stockanalysis earnings checks (max 6), and pools Chromium instances for track-record/valuation crawls (max 2) to prevent CPU spikes.
+  - **Robust Scheduling & API Fetches**: Awaits VIX quotes before starting scheduled scans, limits concurrent stockanalysis earnings checks (max 6), and pools Chromium instances for track-record crawls (max 2) to prevent CPU spikes.
   - **Algorithm & Parse Hardening**: Standardized name normalization using a shared `normalizeInsiderName` in `types`. Excluded SEC transaction code `A` (grant/award) from buy trade classification. Fixed options sentiment asymmetries, short-dated bonus on empty DTE cells, and option-age evaluation logic.
   - **Data Retention & Performance**: Added daily SQLite data retention/pruning (`pruneOldData` with 365-day cutoff) and cached decrypted auth states to speed up Playwright scraping session lookups.
 - **v1.0.37**
@@ -323,7 +405,7 @@ source in `src/lib/ipc.ts` (`window.api` / `webApi` / `mockApi`).
 
 A static site can only *display* data — logging in there can’t reach the cloud
 scraper. Two real ways to get account-gated sources (options flow, GuruFocus,
-Finviz Elite, X, valuation…) into the site:
+Finviz Elite, X…) into the site:
 
 1. **Desktop-as-publisher** — run the desktop app (it already logs in per user,
    residential IP, encrypted sessions) and have it publish its scraped output to
@@ -339,7 +421,7 @@ Finviz Elite, X, valuation…) into the site:
 
 ### Keeping login-gated sources fresh (Variante B)
 
-The cloud runs only 🟢 sources. To add options flow / GuruFocus / X / valuation to
+The cloud runs only 🟢 sources. To add options flow / GuruFocus / X to
 the site, publish from a machine that is logged in:
 
 ```bash
@@ -407,7 +489,7 @@ Main process responsibilities:
 
 - Open and manage the app window.
 - Register all IPC handlers.
-- Run scrapes and valuation fetches.
+- Run scrapes.
 - Store and migrate SQLite data.
 - Run scoring.
 - Poll VIX.
@@ -448,9 +530,6 @@ electron/scraper/index.ts
 
 electron/scraper/browser.ts
   Playwright launch/context helpers, including authenticated storageState.
-
-electron/scraper/valuation.ts
-  AlphaSpread + valueinvesting.io fair value fetches.
 
 electron/scraper/insiderHistory.ts
   Insider track-record lazy fetch/cache support.
@@ -494,12 +573,11 @@ src/components/Settings/PlatformLogins.tsx
 | GuruFocus | Insider/institutional summary | Login unlocks source in Settings |
 | Insider-Monitor | Daily Form 4 purchase digest (B/AB/S/AS codes) | Public |
 | Quiver Quantitative | Near-real-time insider feed with names + titles | Public |
+| CEOWatcher (Instagram) | Curated notable insider buys, parsed from post captions only | Public, off by default in CI |
 | Barchart | Unusual options activity | Login unlocks source in Settings |
 | MarketBeat Options Volume | Unusual call/put volume vs average (context only, no premium) | Public |
 | OptionStrat | Options flow | Login required before scraping |
 | InsiderFinance | Options flow | Login required before scraping |
-| AlphaSpread | DCF/fair value | Login optional |
-| valueinvesting.io | Intrinsic value estimate | Login strongly recommended |
 | Yahoo Finance JSON | VIX and historical prices | Public |
 
 Important OpenInsider note: use `latest-insider-purchases-25k`, not
@@ -539,11 +617,6 @@ scrape it.
 
 Public sources without a platform login remain available without login:
 OpenInsider and SECForm4.
-
-Valuation providers are slightly different because they are fetched on detail
-modal open rather than via the main scrape-source toggles. Saved sessions for
-ValueInvesting.io / AlphaSpread are still injected into valuation browser
-contexts, which is what fixes the valueinvesting.io free-view-limit problem.
 
 Relevant implementation:
 
@@ -646,7 +719,8 @@ Model-realism + UX (Tier 2/3):
     adjusted, sample-gated + Bayesian-shrunk win rates.
 16. Score backtest / calibration harness — `npm run backtest`.
 17. Signal expiry (tickers unseen for >4 days drop off the dashboard).
-18. Fair-value undervaluation folded into the score (cached + login-gated pre-warm).
+18. ~~Fair-value undervaluation folded into the score~~ — removed in v1.2.1; the
+    multiplier remains in `scoring.ts` as a dormant seam (always 1.0).
 19. Net-bearish options representation and insider sell/disposal awareness.
 20. "Follow this signal" P&L, sector context, ticker-tagged news in the detail modal.
 21. CSV export of the current signals, and score-surge (delta) desktop alerts.
@@ -666,6 +740,12 @@ Tables:
 - `scrape_log`
 - `app_settings`
 - `insider_track_records`
+- `insider_trades` — the pipeline's memory (v1.2.0). Aggregates build from a
+  trailing 30-day window of this table, not from whatever the current scrape
+  happened to return.
+- `insider_flow` — same-company 90-day buy/sell totals + Form 144 notices.
+- `politician_trades`, `filing_events`, `ticker_meta`, `live_news`
+- `signal_outcomes` — labeled training data (see `npm run label:outcomes`).
 
 `database.ts` defines both:
 
@@ -701,11 +781,6 @@ filter is therefore `week`.
 
 Dev and packaged builds can use different AppData folders because app name /
 product name differ. A rename can look like a fresh DB.
-
-### valueinvesting.io fair-value limits
-
-Without login, valueinvesting.io can start returning "not found" after a few free
-views. Use Settings -> Platform Logins -> ValueInvesting.io, then save the session.
 
 ### Playwright packaging
 

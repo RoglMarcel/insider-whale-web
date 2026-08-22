@@ -4,6 +4,36 @@ import { withPage, randomDelay } from './browser';
 import { extractFirstTable, colIndex, cell, parseMoney, parseShares, parseDate, cleanTicker, cleanText, sanitizeTradeAmounts } from './util';
 
 /**
+ * Start of a job title glued directly onto a surname. Anchored on the known
+ * title vocabulary (not on a lowercase→uppercase transition) so real names that
+ * contain an internal capital are left alone.
+ */
+const TITLE_BOUNDARY =
+  /(?:Chief|President|Vice[ ]?President|Director|Chairman|Chairwoman|Chair|Executive|Senior|General[ ]Counsel|General[ ]Partner|Managing|Officer|Treasurer|Secretary|Founder|Co-?Founder|Owner|Partner|Principal|Head[ ]of|Trustee|Controller|EVP|SVP|AVP|VP|CEO|CFO|COO|CTO|CMO|CIO|10%)/;
+
+/**
+ * Split Quiver's "Name / Title" cell. Pure and exported so both renderings can
+ * be regression-tested without a browser.
+ */
+export function splitNameTitle(raw: string, dash = raw.lastIndexOf('-')): { insiderName: string; role: string } {
+  let insiderName = (dash >= 0 ? raw.slice(0, dash) : raw).trim() || 'Unknown';
+  let role = dash >= 0 ? raw.slice(dash + 1).trim() : '';
+  // Quiver also renders the name and the title as two sibling nodes with no
+  // separator between them, so `textContent` yields "Genner Gareth NevilleChief
+  // Executive Officer" with no dash to split on. Recover the boundary from the
+  // title vocabulary rather than from a lowercase->uppercase transition, which
+  // would wreck names like "McDonald" or "DeAngelo".
+  if (!role) {
+    const m = TITLE_BOUNDARY.exec(insiderName);
+    if (m && m.index > 0) {
+      role = insiderName.slice(m.index).trim();
+      insiderName = insiderName.slice(0, m.index).trim() || 'Unknown';
+    }
+  }
+  return { insiderName, role };
+}
+
+/**
  * Quiver Quantitative — live insider feed. Client-rendered table (verified to
  * populate under headless Playwright) carrying insider names AND titles, both
  * purchases and sales, and near-real-time "Disclosed" timestamps. Values are
@@ -42,8 +72,7 @@ export async function scrapeQuiverQuant(context: BrowserContext): Promise<RawIns
         // dash so hyphenated surnames survive.
         const raw = cleanText(cell(row, idx.nameTitle));
         const dash = raw.lastIndexOf('-');
-        const insiderName = (dash >= 0 ? raw.slice(0, dash) : raw).trim() || 'Unknown';
-        const role = dash >= 0 ? raw.slice(dash + 1).trim() : '';
+        const { insiderName, role } = splitNameTitle(raw, dash);
 
         const typeRaw = cleanText(cell(row, idx.type)).toLowerCase();
         let transactionType: string;
