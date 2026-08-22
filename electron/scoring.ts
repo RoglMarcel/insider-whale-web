@@ -9,6 +9,12 @@ import type {
 } from '../src/types';
 import {
   CONVICTION_THRESHOLDS,
+  COMBO_SOFT_MULT,
+  POLITICIAN_INSIDER_SOFT_MULT,
+  POLITICIAN_OPTIONS_SOFT_MULT,
+  MEGA_SOFT_MULT,
+  CORROBORATION_GATE,
+  LEGACY_POLITICIAN_COMBO_BONUS,
   classifyTransaction,
   getFreshnessMultiplier,
   isLateFiling,
@@ -89,13 +95,18 @@ export const COMBO_BONUS = 30;
  * Live corroboration model (v1.0.46+): soft multipliers replace flat +20…+45
  * so a combo alone cannot jump two conviction tiers. Applied only when the
  * pre-corroboration base score is already ≥ WATCH (gate).
+ *
+ * DEFINED IN `src/types` and re-exported here: the breakdown UI renders these
+ * numbers, and a second copy on the renderer side had already drifted into
+ * showing the legacy flat bonuses for a model that no longer uses them.
  */
-export const COMBO_SOFT_MULT = 1.2;
-export const POLITICIAN_INSIDER_SOFT_MULT = 1.18;
-export const POLITICIAN_OPTIONS_SOFT_MULT = 1.15;
-export const MEGA_SOFT_MULT = 1.25;
-/** Base score must already be at/above WATCH before a corroboration mult applies. */
-export const CORROBORATION_GATE = CONVICTION_THRESHOLDS.watch;
+export {
+  COMBO_SOFT_MULT,
+  POLITICIAN_INSIDER_SOFT_MULT,
+  POLITICIAN_OPTIONS_SOFT_MULT,
+  MEGA_SOFT_MULT,
+  CORROBORATION_GATE,
+};
 
 // ──────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -469,12 +480,8 @@ export function detectCombo(trades: RawInsiderTrade[], options: OptionsActivity[
 // Congressional (politician) trading leg
 // ──────────────────────────────────────────────────────────────────────────
 
-/** Bonus a politician-combo tier adds after normalization (parallels COMBO_BONUS). */
-export const POLITICIAN_COMBO_BONUS: Record<PoliticianComboTier, number> = {
-  MEGA_SIGNAL: 45,
-  POLITICIAN_INSIDER: 25,
-  POLITICIAN_OPTIONS: 20,
-};
+/** Bonus a politician-combo tier adds after normalization (LEGACY/shadow only). */
+export const POLITICIAN_COMBO_BONUS = LEGACY_POLITICIAN_COMBO_BONUS;
 
 /** Base points from a disclosed amount midpoint. */
 function politicianAmountPoints(midpoint: number): number {

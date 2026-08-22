@@ -1209,6 +1209,40 @@ export const CONVICTION_THRESHOLDS = {
   watch: 50,
 } as const;
 
+// ──────────────────────────────────────────────────────────────────────────
+// Corroboration model (live) — SHARED, because the breakdown UI renders these
+// exact numbers. They used to live only in electron/scoring.ts while the UI
+// carried its own copy of the LEGACY flat bonuses, so a MEGA signal was labelled
+// "+45 Bonus" on screen while the score had actually received ×1.25 (and only
+// above the gate). Two copies, two different models, one of them wrong.
+// ──────────────────────────────────────────────────────────────────────────
+
+/** Soft multipliers applied to the normalized score when signals corroborate. */
+export const COMBO_SOFT_MULT = 1.2;
+export const POLITICIAN_INSIDER_SOFT_MULT = 1.18;
+export const POLITICIAN_OPTIONS_SOFT_MULT = 1.15;
+export const MEGA_SOFT_MULT = 1.25;
+
+/** The soft multiplier a politician-combo tier contributes (live model). */
+export const POLITICIAN_COMBO_SOFT_MULT: Record<PoliticianComboTier, number> = {
+  MEGA_SIGNAL: MEGA_SOFT_MULT,
+  POLITICIAN_INSIDER: POLITICIAN_INSIDER_SOFT_MULT,
+  POLITICIAN_OPTIONS: POLITICIAN_OPTIONS_SOFT_MULT,
+};
+
+/**
+ * Pre-v1.0.46 flat bonuses. Kept ONLY for the legacy/shadow comparison score —
+ * never render these as the live model.
+ */
+export const LEGACY_POLITICIAN_COMBO_BONUS: Record<PoliticianComboTier, number> = {
+  MEGA_SIGNAL: 45,
+  POLITICIAN_INSIDER: 25,
+  POLITICIAN_OPTIONS: 20,
+};
+
+/** A corroboration multiplier applies only once the base score is at/above WATCH. */
+export const CORROBORATION_GATE: number = CONVICTION_THRESHOLDS.watch;
+
 // Scoring maxima shared by the score model (electron/scoring.ts) and the
 // breakdown UI (ScoreBreakdown.tsx) so progress-bar fills can't drift from the
 // real ceilings if the model is retuned.

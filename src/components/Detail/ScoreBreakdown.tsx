@@ -9,15 +9,13 @@ import {
   daysBetween,
   MAX_INSIDER_TIMING_MULT,
   MAX_OPTIONS_SCORE_TOTAL,
+  POLITICIAN_COMBO_SOFT_MULT,
+  CORROBORATION_GATE,
+  DEFAULT_SCORING_CONFIG,
 } from '@/types';
 import { freshnessMeta, ageLabel, formatUSD, formatCompact, confidenceColor, timeAgo, formatDate, partyMeta } from '@/lib/format';
 import { useI18n } from '@/hooks/useI18n';
 
-const POLITICIAN_COMBO_BONUS: Record<PoliticianComboTier, number> = {
-  MEGA_SIGNAL: 45,
-  POLITICIAN_INSIDER: 25,
-  POLITICIAN_OPTIONS: 20,
-};
 const TIER_COLOR: Record<PoliticianComboTier, string> = {
   MEGA_SIGNAL: 'var(--accent-red)',
   POLITICIAN_INSIDER: 'var(--accent-purple)',
@@ -151,6 +149,18 @@ export function ScoreBreakdown({
     },
   ];
 
+  // The options leg carries its OWN earnings-timing multiplier (up to ×2.0),
+  // which was in the breakdown but never rendered — so a doubled options leg
+  // appeared nowhere in the explanation of the score.
+  if (b.optionsScore !== 0 && b.optionsTimingMultiplier !== 1) {
+    factors.push({
+      label: t('bd.optionsTiming'),
+      display: `× ${b.optionsTimingMultiplier.toFixed(2)}`,
+      fill: b.optionsTimingMultiplier / 2,
+      color: '#ff9f0a',
+    });
+  }
+
   const insiderLegNote = hasInsiderLeg
     ? null
     : t('bd.noInsiderLeg');
@@ -208,12 +218,21 @@ export function ScoreBreakdown({
         className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl px-4 py-3 text-sm"
         style={{ background: 'var(--bg-glass)', border: '1px solid var(--border-glass)' }}
       >
+        {/*
+          Showing "raw / maxPossibleRaw" here implied a linear normalization that
+          the model has not used since v1.0.46: at raw 170 that read as 6% of the
+          ceiling while the actual score was 61.8. The score comes from a
+          SATURATING curve, so the curve is what gets shown.
+        */}
         <span className="text-secondary">
           {t('bd.raw')}{' '}
           <span className="font-semibold tabular-nums" style={{ color: 'var(--text-primary)' }}>
             {b.rawScore.toFixed(0)}
-          </span>{' '}
-          / {Math.round(b.maxPossibleRaw)}
+          </span>
+          <span className="px-2">→</span>
+          <span className="tabular-nums" title={t('bd.saturationTitle', { k: DEFAULT_SCORING_CONFIG.scoreHalfSaturation })}>
+            {t('bd.saturation', { k: DEFAULT_SCORING_CONFIG.scoreHalfSaturation })}
+          </span>
           <span className="px-2">→</span>
           {t('bd.final')}{' '}
           <span className="font-bold" style={{ color: 'var(--text-primary)' }}>
@@ -306,9 +325,19 @@ export function ScoreBreakdown({
               color={(b.politicianScore ?? 0) > 0 ? 'var(--accent-purple)' : undefined}
             />
             {b.politicianComboTier && (
+              /*
+                The live model applies a SOFT MULTIPLIER, and only once the base
+                score has reached the gate. This row used to print the legacy
+                flat bonus (+45 / +25 / +20), which no longer exists in the live
+                path — a MEGA signal read "+45 Bonus" while it had received
+                ×1.25, or nothing at all when gated.
+              */
               <KV
                 label={t('bd.comboTier')}
-                value={`${b.politicianComboTier}  (+${POLITICIAN_COMBO_BONUS[b.politicianComboTier]} ${t('bd.bonus')})`}
+                value={
+                  `${b.politicianComboTier}  (× ${POLITICIAN_COMBO_SOFT_MULT[b.politicianComboTier].toFixed(2)}` +
+                  `${b.comboBonus > 0 ? '' : `, ${t('bd.gated', { gate: CORROBORATION_GATE })}`})`
+                }
                 color={TIER_COLOR[b.politicianComboTier]}
               />
             )}
