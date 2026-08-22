@@ -1,5 +1,6 @@
 import type { ConvictionLevel } from '@/types';
-import { convictionColor, convictionLabel } from '@/lib/format';
+import { useI18n } from '@/hooks/useI18n';
+import { convictionColor, convictionLabelKey } from '@/lib/format';
 
 interface ConvictionBadgeProps {
   level: ConvictionLevel;
@@ -7,6 +8,7 @@ interface ConvictionBadgeProps {
 }
 
 export function ConvictionBadge({ level, className = '' }: ConvictionBadgeProps) {
+  const { t } = useI18n();
   const color = convictionColor(level);
   return (
     <span
@@ -21,7 +23,7 @@ export function ConvictionBadge({ level, className = '' }: ConvictionBadgeProps)
         className="h-1.5 w-1.5 rounded-full"
         style={{ background: color, boxShadow: `0 0 6px ${color}` }}
       />
-      {convictionLabel(level)}
+      {t(convictionLabelKey(level))}
     </span>
   );
 }

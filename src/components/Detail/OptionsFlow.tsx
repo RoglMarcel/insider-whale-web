@@ -1,4 +1,5 @@
 import type { OptionsActivity } from '@/types';
+import { useI18n } from '@/hooks/useI18n';
 import { formatUSD, formatNumber } from '@/lib/format';
 
 function dteColor(dte: number): string {
@@ -8,6 +9,7 @@ function dteColor(dte: number): string {
 }
 
 function VolVsOi({ volume, oi }: { volume?: number; oi?: number }) {
+  const { t } = useI18n();
   if (!volume && !oi) return null;
   const max = Math.max(volume ?? 0, oi ?? 0, 1);
   const Bar = ({ label, value, color }: { label: string; value: number; color: string }) => (
@@ -21,13 +23,14 @@ function VolVsOi({ volume, oi }: { volume?: number; oi?: number }) {
   );
   return (
     <div className="mt-1 flex w-full flex-col gap-1 sm:w-56">
-      <Bar label="Vol" value={volume ?? 0} color="var(--accent-blue)" />
-      <Bar label="OI" value={oi ?? 0} color="var(--accent-purple)" />
+      <Bar label={t('opt.vol')} value={volume ?? 0} color="var(--accent-blue)" />
+      <Bar label={t('opt.oi')} value={oi ?? 0} color="var(--accent-purple)" />
     </div>
   );
 }
 
 export function OptionsFlow({ options }: { options: OptionsActivity[] }) {
+  const { t } = useI18n();
   if (!options || options.length === 0) return null;
 
   // The same sweep reported by two sources survives the merge (its key includes the
@@ -49,7 +52,7 @@ export function OptionsFlow({ options }: { options: OptionsActivity[] }) {
   return (
     <section>
       <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-secondary">
-        Unusual Options Flow ({unique.length})
+        {t('opt.title', { n: unique.length })}
       </h3>
       <div className="flex flex-col gap-2">
         {unique.map((o, i) => {
@@ -86,14 +89,14 @@ export function OptionsFlow({ options }: { options: OptionsActivity[] }) {
                     {o.dte}DTE
                   </span>
                 )}
-                {o.strike != null && <span className="text-secondary">Strike ${o.strike}</span>}
+                {o.strike != null && <span className="text-secondary">{t('opt.strike', { v: o.strike })}</span>}
                 {o.otmPercent != null && (
                   <span className="text-secondary">
-                    {Math.abs(o.otmPercent).toFixed(1)}% {o.otmPercent >= 0 ? 'Out of the Money' : 'In the Money'}
+                    {Math.abs(o.otmPercent).toFixed(1)}% {o.otmPercent >= 0 ? t('opt.otm') : t('opt.itm')}
                   </span>
                 )}
                 {o.volOiRatio != null && (
-                  <span className="text-secondary" title="Volume ÷ open interest — high values mean fresh new positioning">
+                  <span className="text-secondary" title={t('opt.volOiTitle')}>
                     Vol/OI: {o.volOiRatio.toFixed(1)}x
                   </span>
                 )}

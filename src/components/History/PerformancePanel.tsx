@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useI18n } from '@/hooks/useI18n';
 import { GlassCard } from '@/components/UI/GlassCard';
 import type { PerformanceReport } from '@/types';
 import { api } from '@/lib/ipc';
@@ -13,6 +14,7 @@ const pct = (v: number): string => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
 const alphaColor = (v: number): string => (v >= 0 ? 'var(--accent-green)' : 'var(--accent-red)');
 
 export function PerformancePanel() {
+  const { t } = useI18n();
   const [report, setReport] = useState<PerformanceReport | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +36,7 @@ export function PerformancePanel() {
     try {
       setReport(await api.performance.recompute());
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Recompute failed');
+      setError(e instanceof Error ? e.message : t('perf.recomputeFailed'));
     } finally {
       setRunning(false);
     }
@@ -45,9 +47,9 @@ export function PerformancePanel() {
   return (
     <GlassCard className="p-6">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="text-sm font-bold uppercase tracking-wide text-secondary">Signal Performance (vs SPY)</h3>
+        <h3 className="text-sm font-bold uppercase tracking-wide text-secondary">{t('perf.title')}</h3>
         <button className="btn" onClick={() => void recompute()} disabled={running}>
-          {running ? 'Computing…' : report ? 'Recompute' : 'Compute'}
+          {running ? t('perf.computing') : report ? t('perf.recompute') : t('perf.compute')}
         </button>
       </div>
 
@@ -89,9 +91,9 @@ export function PerformancePanel() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs uppercase tracking-wide text-secondary">
-                    <th className="py-1.5 pr-3 font-semibold">Tier</th>
+                    <th className="py-1.5 pr-3 font-semibold">{t('perf.tier')}</th>
                     <th className="py-1.5 pr-3 text-right font-semibold">n</th>
-                    <th className="py-1.5 pr-3 text-right font-semibold">Win rate 10d</th>
+                    <th className="py-1.5 pr-3 text-right font-semibold">{t('perf.winRate10d')}</th>
                     <th className="py-1.5 pr-3 text-right font-semibold">Avg α 10d</th>
                     <th className="py-1.5 text-right font-semibold">Avg α 20d</th>
                   </tr>

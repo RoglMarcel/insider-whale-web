@@ -11,6 +11,7 @@ import { StarIcon, UsersIcon, ActivityIcon } from '@/components/UI/icons';
 import { useStore } from '@/store/useStore';
 import { useWatchlist } from '@/hooks/useWatchlist';
 import { formatUSD, formatPrice, formatCompact, confidenceColor } from '@/lib/format';
+import { useI18n } from '@/hooks/useI18n';
 
 /** Single-trade ceiling — keep in sync with electron/scraper/util MAX_SANE_TRADE_VALUE. */
 const MAX_SANE_TRADE_VALUE = 5_000_000_000;
@@ -43,6 +44,7 @@ function Pill({ text, color, title }: { text: string; color: string; title?: str
 export function SignalCard({ signal }: { signal: Signal }) {
   const openSignal = useStore((s) => s.openSignal);
   const { isWatched, toggleWatch } = useWatchlist();
+  const { t } = useI18n();
   const watched = isWatched(signal.ticker);
 
   // Insider display fields — derive from raw trades so empty topInsiderRole /
@@ -158,7 +160,7 @@ export function SignalCard({ signal }: { signal: Signal }) {
                   letterSpacing: '0.02em',
                 }}
               >
-                ★ Big Player
+                ★ {t('card.bigPlayer')}
               </span>
             )}
           </div>
@@ -171,7 +173,7 @@ export function SignalCard({ signal }: { signal: Signal }) {
             <span
               className="inline-flex select-none rounded-md px-2 py-1 text-xs font-bold tabular-nums"
               style={{ color: confidenceColor(confidence), background: `color-mix(in srgb, ${confidenceColor(confidence)} 12%, transparent)` }}
-              title={`Data confidence ${Math.round(confidence)}%: field completeness + cross-source corroboration + authoritative sourcing. Not a judgment of the signal itself.`}
+              title={t('card.confidenceTitle', { pct: Math.round(confidence) })}
             >
               {Math.round(confidence)}%
             </span>
@@ -179,7 +181,7 @@ export function SignalCard({ signal }: { signal: Signal }) {
           <button
             className="icon-btn h-11 w-11 shrink-0 lg:h-9 lg:w-9"
             onClick={onStar}
-            title={watched ? 'Remove from watchlist' : 'Add to watchlist'}
+            title={watched ? t('card.removeFromWatchlist') : t('card.addToWatchlist')}
             style={watched ? { color: 'var(--accent-yellow)' } : undefined}
           >
             <StarIcon size={16} filled={watched} />
@@ -196,9 +198,9 @@ export function SignalCard({ signal }: { signal: Signal }) {
             <EarningsChip days={signal.daysToEarnings} timing={signal.earningsTiming} className="shrink-0 px-2 py-1 text-xs" />
             {hasPolitician && <PoliticianCountBadge count={politicianCount} className="shrink-0" />}
           </div>
-          <DetailRow label="Role" value={displayRole} />
-          <DetailRow label="Price" value={avgPrice ? formatPrice(avgPrice) : '—'} isMono />
-          <DetailRow label="Volume" value={displayVolume > 0 ? formatUSD(displayVolume) : '—'} isMono />
+          <DetailRow label={t('card.role')} value={displayRole} />
+          <DetailRow label={t('card.price')} value={avgPrice ? formatPrice(avgPrice) : '—'} isMono />
+          <DetailRow label={t('card.volume')} value={displayVolume > 0 ? formatUSD(displayVolume) : '—'} isMono />
         </div>
       </div>
 
@@ -210,21 +212,26 @@ export function SignalCard({ signal }: { signal: Signal }) {
             <Pill
               color={netFlowColor}
               text={`NET ${netFlow >= 0 ? '+' : '−'}${formatUSD(Math.abs(netFlow))}`}
-              title={`Trailing 90d insider flow — buys ${formatUSD(flow!.buys)} / sells ${formatUSD(flow!.sells)}${flow!.form144 > 0 ? ` · ${flow!.form144} Form 144 notice(s)` : ''}`}
+              title={
+                t('card.netFlowTitle', {
+                  buys: formatUSD(flow!.buys),
+                  sells: formatUSD(flow!.sells),
+                }) + (flow!.form144 > 0 ? ` · ${t('card.form144', { n: flow!.form144 })}` : '')
+              }
             />
           )}
           {dd != null && (
             <Pill
               color={dd <= -40 ? 'var(--accent-green)' : 'var(--text-secondary)'}
-              text={`${Math.round(dd)}% from 52w high`}
-              title={dd <= -40 ? 'Deep value territory — insider buying well below the 52-week high' : 'Distance from the 52-week high'}
+              text={t('card.from52wHigh', { pct: Math.round(dd) })}
+              title={dd <= -40 ? t('card.deepValueTitle') : t('card.from52wHighTitle')}
             />
           )}
           {shortPct != null && shortPct >= 20 && (
-            <Pill color="#ff9f0a" text={`⚡ SI ${shortPct.toFixed(0)}%`} title={`Short interest ${shortPct.toFixed(1)}% of float — short-squeeze potential`} />
+            <Pill color="#ff9f0a" text={`⚡ SI ${shortPct.toFixed(0)}%`} title={t('card.shortInterestTitle', { pct: shortPct.toFixed(1) })} />
           )}
           {adv != null && adv < 500_000 && (
-            <Pill color="var(--accent-red)" text="⚠ Low liquidity" title={`Average daily dollar volume ≈ ${formatUSD(adv)} — hard to trade`} />
+            <Pill color="var(--accent-red)" text={`⚠ ${t('card.lowLiquidity')}`} title={t('card.lowLiquidityTitle', { amount: formatUSD(adv) })} />
           )}
         </div>
       )}
@@ -232,7 +239,7 @@ export function SignalCard({ signal }: { signal: Signal }) {
       <div className="flex items-center justify-between border-t pt-3" style={{ borderColor: 'var(--border-glass)' }}>
         <span className="inline-flex items-center gap-1.5 text-sm text-secondary">
           <UsersIcon size={15} />
-          {signal.insiderCount} insider{signal.insiderCount === 1 ? '' : 's'}
+          {t(signal.insiderCount === 1 ? 'card.insiderOne' : 'card.insiderMany', { count: signal.insiderCount })}
         </span>
         {topOption ? (
           <span
@@ -243,7 +250,7 @@ export function SignalCard({ signal }: { signal: Signal }) {
             {formatUSD(topOption.notional)} {topOption.type}s
           </span>
         ) : (
-          <span className="text-sm text-secondary">No options flow</span>
+          <span className="text-sm text-secondary">{t('card.noOptionsFlow')}</span>
         )}
       </div>
       </GlassCard>

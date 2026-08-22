@@ -3,6 +3,7 @@ import { GlassCard } from '@/components/UI/GlassCard';
 import { useSignals } from '@/hooks/useSignals';
 import { LayersIcon, TrendingUpIcon, ActivityIcon } from '@/components/UI/icons';
 import { formatUSD } from '@/lib/format';
+import { useI18n } from '@/hooks/useI18n';
 
 function StatCard({
   icon,
@@ -51,6 +52,7 @@ function StatCard({
 
 export function StatCards() {
   const { stats } = useSignals();
+  const { t } = useI18n();
   return (
     // 2×2 on mobile instead of four stacked cards. Considered a horizontally
     // snapping row (DESIGN.md §7) and rejected it after comparing both: the row
@@ -59,31 +61,31 @@ export function StatCards() {
     <div className="grid grid-cols-2 gap-2 lg:grid-cols-2 lg:gap-4 xl:grid-cols-4">
       <StatCard
         icon={<LayersIcon size={22} />}
-        label="Total Signals"
+        label={t('stats.totalSignals')}
         value={stats.total}
         accent="var(--accent-blue)"
-        sub={`${formatUSD(stats.totalVolume)} insider buys`}
+        sub={t('stats.insiderBuys', { amount: formatUSD(stats.totalVolume) })}
       />
       <StatCard
         icon={<TrendingUpIcon size={22} />}
-        label="High Conviction"
+        label={t('stats.highConviction')}
         value={stats.high}
         accent="var(--accent-green)"
-        sub={`${stats.watch} on watch`}
+        sub={t('stats.onWatch', { count: stats.watch })}
       />
       <StatCard
         icon={<ActivityIcon size={22} />}
-        label="Unusual Options"
+        label={t('stats.unusualOptions')}
         value={stats.options}
         accent="var(--accent-purple)"
-        sub="tickers with flow"
+        sub={t('stats.tickersWithFlow')}
       />
       <StatCard
         icon={<span className="text-xl">⚡</span>}
-        label="Combo Signals"
+        label={t('stats.comboSignals')}
         value={stats.combos}
         accent="var(--accent-blue)"
-        sub="insider + options"
+        sub={t('stats.insiderPlusOptions')}
         highlight
       />
     </div>

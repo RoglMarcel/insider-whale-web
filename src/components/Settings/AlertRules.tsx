@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { useI18n } from '@/hooks/useI18n';
+import type { TKey } from '@/lib/i18n';
 import { GlassCard } from '@/components/UI/GlassCard';
 import { TrashIcon } from '@/components/UI/icons';
 import {
@@ -14,10 +16,19 @@ import { api } from '@/lib/ipc';
  * after every scrape (crossing-style, so a rule fires when its condition
  * becomes true, not while it stays true).
  */
-const SCOPE_LABELS: Record<AlertScope, string> = {
-  ticker: 'One ticker',
-  watchlist: 'Watchlist',
-  global: 'All signals',
+const SCOPE_LABELS: Record<AlertScope, TKey> = {
+  ticker: 'alert.scopeTicker',
+  watchlist: 'alert.scopeWatchlist',
+  global: 'alert.scopeGlobal',
+};
+
+/** Condition labels live in src/types (shared with the main process); the UI
+ *  maps them to translation keys here so the stored rule stays language-free. */
+const CONDITION_KEYS: Record<AlertCondition, TKey> = {
+  score_gte: 'alert.condScore',
+  new_insider_buy: 'alert.condNewBuy',
+  new_combo: 'alert.condNewCombo',
+  cluster_gte: 'alert.condCluster',
 };
 
 const NEEDS_THRESHOLD: Record<AlertCondition, boolean> = {
@@ -34,10 +45,14 @@ const DEFAULT_THRESHOLD: Record<AlertCondition, number> = {
   new_combo: 0,
 };
 
-function describeRule(rule: AlertRule): string {
+function describeRule(rule: AlertRule, t: (k: TKey, v?: Record<string, string | number>) => string): string {
   const scope =
-    rule.scope === 'ticker' ? rule.ticker ?? '?' : rule.scope === 'watchlist' ? 'Watchlist' : 'All signals';
-  const cond = ALERT_CONDITION_LABELS[rule.condition] ?? rule.condition;
+    rule.scope === 'ticker'
+      ? rule.ticker ?? '?'
+      : rule.scope === 'watchlist'
+        ? t('alert.scopeWatchlist')
+        : t('alert.scopeGlobal');
+  const cond = CONDITION_KEYS[rule.condition] ? t(CONDITION_KEYS[rule.condition]) : rule.condition;
   const th = NEEDS_THRESHOLD[rule.condition] && rule.threshold != null ? ` (≥ ${rule.threshold})` : '';
   return `${scope} — ${cond}${th}`;
 }
@@ -83,6 +98,7 @@ export function AlertRules() {
     setRules(await api.alerts.toggleRule(rule.id, !rule.enabled));
   };
 
+  const { t } = useI18n();
   const selectStyle = {
     background: 'var(--bg-glass)',
     border: '1px solid var(--border-glass)',
@@ -91,9 +107,9 @@ export function AlertRules() {
 
   return (
     <GlassCard className="p-6">
-      <h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-secondary">Custom Alerts</h3>
+      <h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-secondary">{t('alert.title')}</h3>
       <p className="mb-3 text-xs text-secondary">
-        Rules are checked after every scrape and fire once when their condition becomes true.
+        {t('alert.intro')}
       </p>
 
       {/* Add-rule form */}
@@ -106,7 +122,7 @@ export function AlertRules() {
         >
           {(Object.keys(SCOPE_LABELS) as AlertScope[]).map((s) => (
             <option key={s} value={s}>
-              {SCOPE_LABELS[s]}
+              {t(SCOPE_LABELS[s])}
             </option>
           ))}
         </select>
@@ -114,7 +130,7 @@ export function AlertRules() {
           <input
             value={ticker}
             onChange={(e) => setTicker(e.target.value.toUpperCase())}
-            placeholder="TICKER"
+            placeholder={t('alert.tickerPlaceholder')}
             className="w-24 rounded-lg px-2 py-1.5 text-sm font-mono-terminal uppercase"
             style={selectStyle}
           />
@@ -129,9 +145,9 @@ export function AlertRules() {
           className="rounded-lg px-2 py-1.5 text-sm"
           style={selectStyle}
         >
-          {(Object.keys(ALERT_CONDITION_LABELS) as AlertCondition[]).map((c) => (
+          {(Object.keys(CONDITION_KEYS) as AlertCondition[]).map((c) => (
             <option key={c} value={c}>
-              {ALERT_CONDITION_LABELS[c]}
+              {t(CONDITION_KEYS[c])}
             </option>
           ))}
         </select>
@@ -145,19 +161,19 @@ export function AlertRules() {
           />
         )}
         <button className="btn" onClick={() => void add()} disabled={scope === 'ticker' && !ticker.trim()}>
-          Add rule
+          {t('alert.addRule')}
         </button>
       </div>
 
       {/* Rule list */}
       {rules.length === 0 ? (
-        <div className="py-3 text-sm text-secondary">No custom alert rules yet.</div>
+        <div className="py-3 text-sm text-secondary">{t('alert.none')}</div>
       ) : (
         <div className="divide-y" style={{ borderColor: 'var(--border-glass)' }}>
           {rules.map((rule) => (
             <div key={rule.id} className="flex items-center justify-between gap-3 py-2.5">
               <span className="text-sm" style={{ opacity: rule.enabled ? 1 : 0.5 }}>
-                🔔 {describeRule(rule)}
+                🔔 {describeRule(rule, t)}
               </span>
               <div className="flex items-center gap-2">
                 <button
@@ -172,7 +188,7 @@ export function AlertRules() {
                     style={{ left: rule.enabled ? '1.375rem' : '0.125rem' }}
                   />
                 </button>
-                <button className="icon-btn" onClick={() => void remove(rule.id)} aria-label="Delete rule">
+                <button className="icon-btn" onClick={() => void remove(rule.id)} aria-label={t('alert.deleteRule')}>
                   <TrashIcon size={15} />
                 </button>
               </div>

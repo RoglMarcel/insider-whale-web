@@ -1,13 +1,19 @@
 import { useState } from 'react';
+import { useI18n } from '@/hooks/useI18n';
+import type { TKey } from '@/lib/i18n';
 import { useStore } from '@/store/useStore';
 import { GlassCard } from '@/components/UI/GlassCard';
 import { CheckIcon } from '@/components/UI/icons';
 import { LOGIN_PLATFORMS, type LoginPlatform } from '@/types';
 import { isWeb } from '@/lib/ipc';
 
-function categoryLabel(c: LoginPlatform['category']): string {
-  return c === 'valuation' ? 'Fair value' : c === 'options' ? 'Options flow' : 'Insider trades';
-}
+/** Category key -> translation key; the stored platform stays language-free. */
+const CATEGORY_KEYS: Record<LoginPlatform['category'], TKey> = {
+  valuation: 'login.catFairValue',
+  options: 'login.catOptions',
+  insider: 'login.catInsider',
+  news: 'login.catNews',
+};
 
 function PlatformRow({ platform }: { platform: LoginPlatform }) {
   const authStatus = useStore((s) => s.authStatus);
@@ -19,6 +25,7 @@ function PlatformRow({ platform }: { platform: LoginPlatform }) {
   const loggedIn = !!authStatus[platform.key]?.loggedIn;
   const [phase, setPhase] = useState<'idle' | 'open' | 'busy'>('idle');
   const [msg, setMsg] = useState<string | null>(null);
+  const { t } = useI18n();
 
   const onLogin = async () => {
     setMsg(null);
@@ -29,7 +36,7 @@ function PlatformRow({ platform }: { platform: LoginPlatform }) {
       setMsg('A browser window opened - sign in there, then click "Save session".');
     } else {
       setPhase('idle');
-      setMsg(res.message || 'Could not open the login window.');
+      setMsg(res.message || t('login.cannotOpen'));
     }
   };
 
@@ -41,7 +48,7 @@ function PlatformRow({ platform }: { platform: LoginPlatform }) {
       setPhase('idle');
     } else {
       setPhase('open');
-      setMsg(res.message || 'Could not save the session.');
+      setMsg(res.message || t('login.cannotSave'));
     }
   };
 
@@ -67,20 +74,20 @@ function PlatformRow({ platform }: { platform: LoginPlatform }) {
                 className="rounded px-1.5 py-0.5 text-xs font-bold uppercase"
                 style={{ color: 'var(--accent-yellow)', background: 'color-mix(in srgb, var(--accent-yellow) 16%, transparent)' }}
               >
-                Login required to scrape
+                {t('login.requiredToScrape')}
               </span>
             )}
           </div>
           <div className="text-xs text-secondary">
-            {categoryLabel(platform.category)}
-            {platform.hint ? ` - ${platform.hint}` : ''}
+            {t(CATEGORY_KEYS[platform.category] ?? 'login.catInsider')}
+            {platform.hintKey ? ` - ${t(platform.hintKey as TKey)}` : ''}
           </div>
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
           {isWeb ? (
             <span className="text-xs text-secondary">
-              {loggedIn ? 'Session active (CI)' : 'Desktop / CI only'}
+              {loggedIn ? t('login.sessionActive') : t('login.desktopOnly')}
             </span>
           ) : loggedIn ? (
             <>
@@ -102,7 +109,7 @@ function PlatformRow({ platform }: { platform: LoginPlatform }) {
             </>
           ) : (
             <button className="btn px-3 py-1.5 text-xs" disabled={phase === 'busy'} onClick={onLogin}>
-              {phase === 'busy' ? 'Opening...' : 'Log in'}
+              {phase === 'busy' ? t('login.opening') : t('login.logIn')}
             </button>
           )}
         </div>
@@ -113,22 +120,17 @@ function PlatformRow({ platform }: { platform: LoginPlatform }) {
 }
 
 export function PlatformLogins() {
+  const { t } = useI18n();
   return (
     <GlassCard className="p-6">
-      <h3 className="mb-1 text-sm font-bold uppercase tracking-wide text-secondary">Platform Logins</h3>
+      <h3 className="mb-1 text-sm font-bold uppercase tracking-wide text-secondary">{t('login.title')}</h3>
       {isWeb ? (
         <p className="mb-2 text-xs text-secondary">
-          This is the hosted web view — it only <em>displays</em> data, it never scrapes, so logging in here
-          would have nowhere to send the cookies. Login-gated sources (options flow, GuruFocus, X…) are scraped
-          two ways: (1) in the <strong>desktop app</strong>, which publishes its results here, or (2) by the
-          cloud scraper if you add exported session cookies as the <code>SCRAPE_SESSIONS</code> GitHub secret.
-          See the README section “Login-gated sources”.
+          {t('login.webNote')}
         </p>
       ) : (
         <p className="mb-2 text-xs text-secondary">
-          Sign in to read past free-view limits and account-gated data. A browser window opens for you to log in
-          (email, Google, anything) - only the resulting session cookies are stored, encrypted on this device. No
-          passwords are saved.
+          {t('login.desktopNote')}
         </p>
       )}
       <div className="divide-y" style={{ borderColor: 'var(--border-glass)' }}>

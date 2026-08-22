@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useI18n } from '@/hooks/useI18n';
 import { useStore } from '@/store/useStore';
 import { SCRAPER_SOURCES, SIDE_PIPELINE_SOURCES, sourceLabel } from '@/types';
 import { GlassCard } from '@/components/UI/GlassCard';
@@ -15,6 +16,7 @@ function statusColor(status: string): string {
 }
 
 export function HistoryView() {
+  const { t } = useI18n();
   const scrapeLogs = useStore((s) => s.scrapeLogs);
   const [expandedLogId, setExpandedLogId] = useState<number | null>(null);
 
@@ -31,9 +33,9 @@ export function HistoryView() {
 
       {/* Scrape session timeline */}
       <GlassCard className="p-6">
-        <h3 className="mb-4 text-sm font-bold uppercase tracking-wide text-secondary">Scrape Sessions</h3>
+        <h3 className="mb-4 text-sm font-bold uppercase tracking-wide text-secondary">{t('hist.sessions')}</h3>
         {scrapeLogs.length === 0 ? (
-          <div className="py-10 text-center text-sm text-secondary">No scrape sessions recorded yet.</div>
+          <div className="py-10 text-center text-sm text-secondary">{t('hist.noSessions')}</div>
         ) : (
           <div className="flex flex-col">
             {scrapeLogs.map((log) => {

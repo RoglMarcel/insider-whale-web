@@ -6,11 +6,13 @@ import { FilterBar, ActiveFilterChips } from './FilterBar';
 import { FilterSheet } from './FilterSheet';
 import { SearchIcon } from '@/components/UI/icons';
 import { api, isWeb } from '@/lib/ipc';
+import { useI18n } from '@/hooks/useI18n';
 
 export function Dashboard() {
   // `search` lives in the shared filter (not local state) so the stat cards above
   // describe exactly the set rendered below.
   const { filteredSignals, filter, setFilter } = useSignals();
+  const { t } = useI18n();
   const searchQuery = filter.search ?? '';
   const [exporting, setExporting] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
@@ -58,7 +60,7 @@ export function Dashboard() {
               type="text"
               className="input pl-10 pr-4"
               style={{ minHeight: 44 }}
-              placeholder="Search ticker, company, insider…"
+              placeholder={t('dash.searchPlaceholder')}
               value={searchQuery}
               onChange={(e) => setFilter({ search: e.target.value })}
             />
@@ -69,9 +71,9 @@ export function Dashboard() {
             className="btn shrink-0 md:hidden"
             style={{ minHeight: 44 }}
             onClick={() => setFilterOpen(true)}
-            aria-label="Open filters"
+            aria-label={t('dash.openFilters')}
           >
-            Filter
+            {t('dash.filter')}
             {activeFilterCount > 0 && (
               <span
                 className="ml-0.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1 text-xs font-bold text-white"
@@ -87,9 +89,9 @@ export function Dashboard() {
               className="btn shrink-0"
               onClick={() => void onExport()}
               disabled={exporting || filteredSignals.length === 0}
-              title="Export the current signals to a CSV file"
+              title={t('dash.exportTitle')}
             >
-              {exporting ? 'Exporting…' : 'Export CSV'}
+              {exporting ? t('dash.exporting') : t('dash.exportCsv')}
             </button>
           )}
         </div>

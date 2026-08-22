@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useI18n } from '@/hooks/useI18n';
 import { createPortal } from 'react-dom';
 import { useStore } from '@/store/useStore';
 import { useWatchlist } from '@/hooks/useWatchlist';
@@ -37,6 +38,7 @@ function getTradingViewSymbol(ticker: string): string {
 }
 
 function TradingViewChart({ ticker, theme }: { ticker: string; theme: string }) {
+  const { t } = useI18n();
   const symbol = getTradingViewSymbol(ticker);
   return (
     <div 
@@ -51,7 +53,7 @@ function TradingViewChart({ ticker, theme }: { ticker: string; theme: string }) 
       <iframe
         src={`https://s.tradingview.com/widgetembed/?symbol=${symbol}&theme=${theme}&style=1&timezone=exchange&interval=D&withdateranges=1&details=1&hide_side_toolbar=0&allow_symbol_change=1`}
         style={{ width: '100%', height: '100%', border: 'none' }}
-        title={`TradingView Chart for ${symbol}`}
+        title={t('modal.chartFor', { symbol })}
       />
     </div>
   );
@@ -77,6 +79,7 @@ export function SignalModal() {
   const { isWatched, toggleWatch } = useWatchlist();
   const [signal, setSignal] = useState<Signal | null>(null);
   const [loadingSignal, setLoadingSignal] = useState(true);
+  const { t } = useI18n();
   const [records, setRecords] = useState<Record<string, InsiderTrackRecord>>({});
   const [trLoading, setTrLoading] = useState(false);
   const fetchedRef = useRef<string | null>(null);
@@ -228,7 +231,7 @@ export function SignalModal() {
           avgReturn3m: 0,
           lastUpdated: new Date().toISOString(),
           recentTrades: [],
-          error: 'Track record data unavailable',
+          error: t('acc.unavailable'),
         };
         const rec = await fetchTrackRecord(ins.name, ins.role, ins.url).catch(() => null);
         if (fetchedRef.current === ticker) {
@@ -320,18 +323,22 @@ export function SignalModal() {
               {/* `&&` binds tighter than `||`, so a missing companyName used to fall
                   through to the chart-only placeholder ("AMZN Asset Chart") even in
                   the full detail view. Keep the placeholder for chart-only mode only. */}
-              {chartOnly ? `${selectedTicker} Asset Chart` : signal?.companyName || selectedTicker}
+              {chartOnly ? t('modal.assetChart', { ticker: selectedTicker }) : signal?.companyName || selectedTicker}
               {!chartOnly && signal?.sector ? ` · ${signal.sector}` : ''}
             </p>
             {!chartOnly && signal && (
               <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-secondary sm:text-xs">
                 <span className="inline-flex items-center gap-1">
-                  <UsersIcon size={13} /> {signal.insiderCount} insiders
+                  <UsersIcon size={13} />{' '}
+                  {t(signal.insiderCount === 1 ? 'card.insiderOne' : 'card.insiderMany', { count: signal.insiderCount })}
                 </span>
-                <span>{formatUSD(signal.totalDollarVolume)} bought</span>
+                <span>{t('modal.bought', { amount: formatUSD(signal.totalDollarVolume) })}</span>
                 {best && (
                   <span style={{ color: accuracyColor(best.accuracy3m) }}>
-                    Top insider: beat S&P on {Math.round(best.accuracy3m * 100)}% of {best.totalTrades} buys (3mo)
+                    {t('modal.topInsider', {
+                      pct: Math.round(best.accuracy3m * 100),
+                      n: best.totalTrades,
+                    })}
                   </span>
                 )}
               </p>
@@ -345,13 +352,13 @@ export function SignalModal() {
             onClick={() => void toggleWatch(selectedTicker)}
           >
             <StarIcon size={16} filled={watched} />
-            {watched ? 'Watching' : 'Add to Watchlist'}
+            {watched ? t('modal.watching') : t('card.addToWatchlist')}
           </button>
           {/* Absolute on mobile so it never competes for the header's width. */}
           <button
             className="icon-btn absolute right-4 top-4 sm:static"
             onClick={closeSignal}
-            aria-label="Close"
+            aria-label={t('common.close')}
           >
             <XIcon size={18} />
           </button>
@@ -407,7 +414,7 @@ export function SignalModal() {
                     border: '1px solid color-mix(in srgb, var(--accent-blue) 35%, transparent)',
                   }}
                 >
-                  ⚡ COMBO SIGNAL DETECTED — Insider Buying + Unusual Options Flow on the same ticker
+                  ⚡ {t('modal.comboDetected')}
                 </div>
               )}
 
@@ -421,22 +428,22 @@ export function SignalModal() {
                     border: '1px solid color-mix(in srgb, var(--accent-red) 30%, transparent)',
                   }}
                 >
-                  🐻 NET BEARISH OPTIONS FLOW — put-dominated activity is weighing on this signal
+                  🐻 {t('modal.netBearish')}
                 </div>
               )}
 
               {/* Features 1 + 5 — dates & earnings */}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <InfoCell label="Trade Date">{formatDate(signal.tradeDate)}</InfoCell>
-                <InfoCell label="Filing Date">
+                <InfoCell label={t('modal.tradeDate')}>{formatDate(signal.tradeDate)}</InfoCell>
+                <InfoCell label={t('modal.filingDate')}>
                   <span className="inline-flex items-center gap-1">
                     {formatDate(signal.filingDate)}
                     {signal.lateFiling && (
-                      <span title="Filed unusually late after the trade — potentially suspicious">⚠️</span>
+                      <span title={t('modal.lateFiling')}>⚠️</span>
                     )}
                   </span>
                 </InfoCell>
-                <InfoCell label="Earnings">
+                <InfoCell label={t('modal.earnings')}>
                   {localEarningsDate ? (
                     <div>
                        <div>
@@ -462,7 +469,7 @@ export function SignalModal() {
                   className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl px-4 py-3 text-sm"
                   style={{ background: 'var(--bg-glass)', border: '1px solid var(--border-glass)' }}
                 >
-                  <span className="text-secondary">Since signal ({formatDate(performance.sinceDate)}):</span>
+                  <span className="text-secondary">{t('modal.sinceSignal', { date: formatDate(performance.sinceDate) })}</span>
                   <span
                     className="font-bold tabular-nums"
                     style={{ color: (performance.returnPct ?? 0) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}
@@ -498,7 +505,7 @@ export function SignalModal() {
               {/* Feature 7 — news mentioning this ticker */}
               {tickerNews.length > 0 && (
                 <section>
-                  <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-secondary">Recent Mentions</h3>
+                  <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-secondary">{t('modal.recentMentions')}</h3>
                   <div className="flex flex-col gap-2">
                     {tickerNews.slice(0, 5).map((n) => (
                       <a

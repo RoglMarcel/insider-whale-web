@@ -8,6 +8,7 @@ import { PlatformLogins } from './PlatformLogins';
 import { AlertRules } from './AlertRules';
 import { ShadowScoring } from './ShadowScoring';
 import { api, isWeb } from '@/lib/ipc';
+import { useI18n } from '@/hooks/useI18n';
 
 function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
@@ -59,11 +60,12 @@ export function SettingsPanel() {
   const saveSettings = useStore((s) => s.saveSettings);
   const clearDatabase = useStore((s) => s.clearDatabase);
   const authStatus = useStore((s) => s.authStatus);
+  const { t } = useI18n();
 
   const save = (patch: Partial<AppSettings>) => void saveSettings(patch);
 
   const onClear = () => {
-    if (window.confirm('Clear all signal history and scrape logs? Your watchlist and settings are kept.')) {
+    if (window.confirm(t('set.clearConfirm'))) {
       void clearDatabase();
     }
   };
@@ -79,19 +81,16 @@ export function SettingsPanel() {
             border: '1px solid color-mix(in srgb, var(--accent-blue) 26%, transparent)',
           }}
         >
-          Live web view — the schedule, source and filter toggles below don’t control the cloud scraper (that
-          runs on a fixed GitHub Actions schedule). They’re here for parity with the desktop app; changes are
-          local to this browser only.
+          {t('set.webNote')}
         </div>
       )}
 
       {/* Web build: the local scraper/scorer doesn't exist, so the interactive
           controls below are omitted. A read-only note replaces the schedule. */}
       {isWeb && (
-        <SectionCard title="Cloud scrape schedule">
+        <SectionCard title={t('set.cloudSchedule')}>
           <div className="py-2 text-xs text-secondary">
-            Runs automatically on GitHub Actions ~3× every weekday (around US market open, midday and after
-            close, UTC cron) plus on every code push. It can’t be changed from here.
+            {t('set.cloudScheduleNote')}
           </div>
         </SectionCard>
       )}
@@ -99,25 +98,25 @@ export function SettingsPanel() {
       {!isWeb && (
       <>
       {/* Schedule */}
-      <SectionCard title="Auto-Refresh Schedule">
-        <Row label="Enable scheduled scrapes" hint="Runs automatically on weekdays (US Eastern)">
+      <SectionCard title={t('set.autoRefresh')}>
+        <Row label={t('set.enableSchedule')} hint={t('set.enableScheduleHint')}>
           <Toggle checked={settings.scheduleEnabled} onChange={(v) => save({ scheduleEnabled: v })} />
         </Row>
-        <Row label="Market Open — 9:30 AM ET">
+        <Row label={t('set.marketOpen')}>
           <Toggle
             checked={settings.scheduleTimes.marketOpen}
             disabled={!settings.scheduleEnabled}
             onChange={(v) => save({ scheduleTimes: { ...settings.scheduleTimes, marketOpen: v } })}
           />
         </Row>
-        <Row label="Midday — 12:00 PM ET">
+        <Row label={t('set.midday')}>
           <Toggle
             checked={settings.scheduleTimes.midday}
             disabled={!settings.scheduleEnabled}
             onChange={(v) => save({ scheduleTimes: { ...settings.scheduleTimes, midday: v } })}
           />
         </Row>
-        <Row label="Market Close — 4:00 PM ET">
+        <Row label={t('set.marketClose')}>
           <Toggle
             checked={settings.scheduleTimes.close}
             disabled={!settings.scheduleEnabled}
@@ -127,8 +126,11 @@ export function SettingsPanel() {
       </SectionCard>
 
       {/* Notifications */}
-      <SectionCard title="Notifications">
-        <Row label="High-conviction threshold" hint={`Notify when a new signal scores ≥ ${settings.notificationThreshold}`}>
+      <SectionCard title={t('set.notifications')}>
+        <Row
+          label={t('set.threshold')}
+          hint={t('set.thresholdHint', { n: settings.notificationThreshold })}
+        >
           <div className="flex items-center gap-3">
             <input
               type="range"
@@ -144,8 +146,11 @@ export function SettingsPanel() {
       </SectionCard>
 
       {/* Filters */}
-      <SectionCard title="Filters">
-        <Row label="Minimum dollar volume" hint={`Ignore tickers below ${formatUSD(settings.minDollarVolume)} in insider buys`}>
+      <SectionCard title={t('set.filters')}>
+        <Row
+          label={t('set.minVolume')}
+          hint={t('set.minVolumeHint', { amount: formatUSD(settings.minDollarVolume) })}
+        >
           <input
             type="number"
             className="input w-36"
@@ -156,7 +161,7 @@ export function SettingsPanel() {
           />
         </Row>
         <div className="py-3">
-          <div className="mb-2 text-sm font-medium">Insider roles to include</div>
+          <div className="mb-2 text-sm font-medium">{t('set.rolesToInclude')}</div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {ROLE_CATEGORIES.map((role) => {
               const checked = settings.roleFilters[role.key] ?? true;
@@ -178,14 +183,18 @@ export function SettingsPanel() {
       </SectionCard>
 
       {/* Sources */}
-      <SectionCard title="Data Sources">
+      <SectionCard title={t('set.dataSources')}>
         {SCRAPER_SOURCES.map((src) => {
           const unlocked = isSourceUnlocked(src.key, authStatus);
           return (
             <Row
               key={src.key}
               label={src.label}
-              hint={`${src.kind === 'options' ? 'Options flow' : 'Insider trades'}${src.authOptional ? ' · may need login' : ''}${!unlocked ? ' · Login required' : ''}`}
+              hint={
+                `${src.kind === 'options' ? t('set.srcOptions') : t('set.srcInsider')}` +
+                `${src.authOptional ? ` · ${t('set.srcMayNeedLogin')}` : ''}` +
+                `${!unlocked ? ` · ${t('set.srcLoginRequired')}` : ''}`
+              }
             >
               <Toggle
                 checked={settings.sources[src.key] && unlocked}
@@ -209,10 +218,10 @@ export function SettingsPanel() {
       <ShadowScoring />
 
       {/* Desktop -> web terminal sync */}
-      <SectionCard title="Web publish">
+      <SectionCard title={t('set.webPublish')}>
         <Row
-          label="Publish scrapes to the web terminal"
-          hint="After every scrape, push this run's signals to the site's repo and let CI redeploy"
+          label={t('set.webPublishToggle')}
+          hint={t('set.webPublishHint')}
         >
           <Toggle
             checked={settings.webPublishEnabled}
@@ -220,11 +229,9 @@ export function SettingsPanel() {
           />
         </Row>
         <div className="py-2.5">
-          <div className="text-sm font-medium">Repo path</div>
+          <div className="text-sm font-medium">{t('set.repoPath')}</div>
           <div className="mb-2 text-xs text-secondary">
-            Absolute path to your checkout of the website repo (the folder containing{' '}
-            <code>data/insider-tracker.db</code>). Required for the installed app, which runs from
-            Program Files and cannot find the repo on its own.
+            {t('set.repoPathHint')}
           </div>
           <input
             type="text"
@@ -243,18 +250,18 @@ export function SettingsPanel() {
       </SectionCard>
 
       {/* Danger zone */}
-      <SectionCard title="Data">
-        <Row label="Headless browser" hint="Hide the scraping browser window (recommended)">
+      <SectionCard title={t('set.data')}>
+        <Row label={t('set.headless')} hint={t('set.headlessHint')}>
           <Toggle checked={settings.headless} onChange={(v) => save({ headless: v })} />
         </Row>
-        <Row label="Clear signal history" hint="Deletes all signals & scrape logs. Watchlist is kept.">
+        <Row label={t('set.clearHistory')} hint={t('set.clearHistoryHint')}>
           <button
             className="btn"
             onClick={onClear}
             style={{ color: 'var(--accent-red)', borderColor: 'color-mix(in srgb, var(--accent-red) 30%, transparent)' }}
           >
             <TrashIcon size={16} />
-            Clear
+            {t('set.clear')}
           </button>
         </Row>
       </SectionCard>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useI18n } from '@/hooks/useI18n';
 import { GlassCard } from '@/components/UI/GlassCard';
 import { DEFAULT_SCORING_CONFIG, type ScoringConfig } from '@/types';
 import { api } from '@/lib/ipc';
@@ -11,6 +12,7 @@ import { api } from '@/lib/ipc';
 const KNOB_KEYS = Object.keys(DEFAULT_SCORING_CONFIG) as (keyof ScoringConfig)[];
 
 export function ShadowScoring() {
+  const { t } = useI18n();
   const [text, setText] = useState('');
   const [active, setActive] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -36,7 +38,7 @@ export function ShadowScoring() {
     try {
       parsed = JSON.parse(text) as Record<string, unknown>;
     } catch {
-      setMessage('Invalid JSON.');
+      setMessage(t('shadow.invalidJson'));
       return;
     }
     const cfg: Partial<ScoringConfig> = {};
@@ -51,14 +53,14 @@ export function ShadowScoring() {
     const saved = await api.shadow.set(cfg);
     setActive(!!saved);
     setText(saved ? JSON.stringify(saved, null, 2) : '');
-    setMessage('Shadow config active — future scrapes also store shadow_score.');
+    setMessage(t('shadow.active'));
   };
 
   const clear = async () => {
     await api.shadow.set(null);
     setActive(false);
     setText('');
-    setMessage('Shadow scoring disabled.');
+    setMessage(t('shadow.disabled'));
   };
 
   return (

@@ -2,21 +2,30 @@ import { useEffect, useState } from 'react';
 import { useStore, type View } from '@/store/useStore';
 import { GridIcon, StarIcon, HistoryIcon, SettingsIcon, NewsIcon } from '@/components/UI/icons';
 
-import { api } from '@/lib/ipc';
+import { api, isWeb } from '@/lib/ipc';
+import { useI18n } from '@/hooks/useI18n';
+import type { TKey } from '@/lib/i18n';
 
 interface NavItem {
   key: View;
-  label: string;
+  label: TKey;
   icon: (p: { size?: number }) => JSX.Element;
+  /** Hidden on the hosted build — see NAV below. */
+  desktopOnly?: boolean;
 }
 
 const NAV: NavItem[] = [
-  { key: 'dashboard', label: 'Alerts', icon: GridIcon },
-  { key: 'news', label: 'Live News', icon: NewsIcon },
-  { key: 'watchlist', label: 'Watchlist', icon: StarIcon },
-  { key: 'history', label: 'History', icon: HistoryIcon },
-  { key: 'settings', label: 'Settings', icon: SettingsIcon },
+  { key: 'dashboard', label: 'nav.alerts', icon: GridIcon },
+  // News is scraped from X by the desktop app into its local database; the
+  // hosted build has neither that scraper nor the rows, so the tab was always
+  // an empty view there.
+  { key: 'news', label: 'nav.news', icon: NewsIcon, desktopOnly: true },
+  { key: 'watchlist', label: 'nav.watchlist', icon: StarIcon },
+  { key: 'history', label: 'nav.history', icon: HistoryIcon },
+  { key: 'settings', label: 'nav.settings', icon: SettingsIcon },
 ];
+
+export const VISIBLE_NAV = NAV.filter((n) => !(isWeb && n.desktopOnly));
 
 export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: () => void }) {
   const view = useStore((s) => s.view);
@@ -24,6 +33,7 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
   const watchlistCount = useStore((s) => s.watchlist.length);
   const scheduleEnabled = useStore((s) => s.settings.scheduleEnabled);
   const [version, setVersion] = useState<string>('');
+  const { t } = useI18n();
 
   useEffect(() => {
     api.app.getVersion().then(setVersion).catch(() => undefined);
@@ -49,7 +59,7 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
         <button
           type="button"
           className="icon-btn lg:hidden"
-          aria-label="Close menu"
+          aria-label={t('nav.closeMenu')}
           onClick={() => onClose?.()}
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -60,7 +70,7 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
 
       {/* Nav */}
       <nav className="flex flex-col gap-1">
-        {NAV.map((item) => {
+        {VISIBLE_NAV.map((item) => {
           const Icon = item.icon;
           const active = view === item.key;
           return (
@@ -70,7 +80,7 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
               onClick={() => go(item.key)}
             >
               <Icon size={18} />
-              <span className="flex-1 text-left">{item.label}</span>
+              <span className="flex-1 text-left">{t(item.label)}</span>
               {item.key === 'watchlist' && watchlistCount > 0 && (
                 <span
                   className="rounded-full px-2 py-0.5 text-[11px] font-bold"
@@ -93,7 +103,7 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
             className="h-2 w-2 rounded-full"
             style={{ background: scheduleEnabled ? 'var(--accent-green)' : 'var(--text-secondary)' }}
           />
-          {scheduleEnabled ? 'Auto-refresh on' : 'Auto-refresh off'}
+          {scheduleEnabled ? t('nav.autoRefreshOn') : t('nav.autoRefreshOff')}
         </div>
         {version && <span className="text-[10px] text-secondary/50 font-medium select-none">v{version}</span>}
       </div>

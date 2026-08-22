@@ -1,3 +1,4 @@
+import { translate, type Lang, type TKey } from './i18n';
 import { type ConvictionLevel, type FreshnessLevel, getFreshnessLevel } from '@/types';
 
 /** Compact USD: $5.2M, $450K, $12,340. */
@@ -76,18 +77,26 @@ export function formatDateTime(iso: string | null | undefined): string {
   });
 }
 
-export function timeAgo(iso: string | null | undefined): string {
-  if (!iso) return 'never';
+/**
+ * These helpers build user-facing prose, so they take the active language.
+ * They are pure (no React), which is why the language is a parameter rather
+ * than a hook — callers inside components pass `language` from `useI18n()`.
+ * `en` is the default so a missed call site degrades to English, not to a
+ * crash or a raw key.
+ */
+export function timeAgo(iso: string | null | undefined, lang: Lang = 'en'): string {
+  const T = (k: TKey, v?: Record<string, string | number>) => translate(lang, k, v);
+  if (!iso) return T('time.never');
   const d = new Date(iso).getTime();
-  if (Number.isNaN(d)) return 'never';
+  if (Number.isNaN(d)) return T('time.never');
   const sec = Math.round((Date.now() - d) / 1000);
-  if (sec < 60) return 'just now';
+  if (sec < 60) return T('time.justNow');
   const min = Math.round(sec / 60);
-  if (min < 60) return `${min}m ago`;
+  if (min < 60) return T('time.minutesAgo', { n: min });
   const hr = Math.round(min / 60);
-  if (hr < 24) return `${hr}h ago`;
+  if (hr < 24) return T('time.hoursAgo', { n: hr });
   const day = Math.round(hr / 24);
-  return `${day}d ago`;
+  return T('time.daysAgoShort', { n: day });
 }
 
 export function convictionColor(level: ConvictionLevel): string {
@@ -107,21 +116,21 @@ export function scoreColor(score: number): string {
   return 'var(--text-secondary)';
 }
 
-export function convictionLabel(level: ConvictionLevel): string {
+export function convictionLabelKey(level: ConvictionLevel): TKey {
   switch (level) {
     case 'HIGH':
-      return 'High Conviction';
+      return 'conviction.high';
     case 'WATCH':
-      return 'Watch';
+      return 'conviction.watch';
     default:
-      return 'Low Signal';
+      return 'conviction.low';
   }
 }
 
 // ── Feature 1 — freshness badge meta ──
 export interface FreshnessMeta {
   level: FreshnessLevel;
-  label: string;
+  labelKey: TKey;
   emoji: string;
   color: string;
 }
@@ -130,21 +139,21 @@ export function freshnessMeta(ageDays: number | null | undefined): FreshnessMeta
   const level = getFreshnessLevel(ageDays ?? null);
   switch (level) {
     case 'fresh':
-      return { level, label: 'Fresh', emoji: '🟢', color: 'var(--accent-green)' };
+      return { level, labelKey: 'fresh.fresh', emoji: '🟢', color: 'var(--accent-green)' };
     case 'recent':
-      return { level, label: 'Recent', emoji: '🟡', color: 'var(--accent-yellow)' };
+      return { level, labelKey: 'fresh.recent', emoji: '🟡', color: 'var(--accent-yellow)' };
     case 'aging':
-      return { level, label: 'Aging', emoji: '🟠', color: '#ff9f0a' };
+      return { level, labelKey: 'fresh.aging', emoji: '🟠', color: '#ff9f0a' };
     default:
-      return { level, label: 'Stale', emoji: '🔴', color: 'var(--accent-red)' };
+      return { level, labelKey: 'fresh.stale', emoji: '🔴', color: 'var(--accent-red)' };
   }
 }
 
-export function ageLabel(ageDays: number | null | undefined): string {
-  if (ageDays == null) return 'unknown age';
-  if (ageDays < 1) return '< 24h ago';
+export function ageLabel(ageDays: number | null | undefined, lang: Lang = 'en'): string {
+  if (ageDays == null) return translate(lang, 'fresh.unknownAge');
+  if (ageDays < 1) return translate(lang, 'fresh.under24h');
   const d = Math.round(ageDays);
-  return `${d} day${d === 1 ? '' : 's'} ago`;
+  return translate(lang, d === 1 ? 'fresh.dayAgo' : 'fresh.daysAgo', { n: d });
 }
 
 // ── Feature 5 — earnings countdown chip color ──

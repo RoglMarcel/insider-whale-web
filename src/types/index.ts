@@ -1119,7 +1119,8 @@ export interface LoginPlatform {
   gating: LoginGating;
   /** The scraper source this login gates/improves (valuation providers have none). */
   sourceKey?: ScraperSource;
-  hint?: string;
+  /** Translation key for the one-line hint (see src/lib/i18n.ts). */
+  hintKey?: string;
 }
 
 /**
@@ -1128,15 +1129,15 @@ export interface LoginPlatform {
  * no passwords are stored.
  */
 export const LOGIN_PLATFORMS: readonly LoginPlatform[] = [
-  { key: 'valueinvesting', label: 'ValueInvesting.io', loginUrl: 'https://valueinvesting.io/login', category: 'valuation', gating: 'optional', hint: 'Removes the free-view limit on fair value.' },
-  { key: 'alphaspread', label: 'AlphaSpread', loginUrl: 'https://www.alphaspread.com/login', category: 'valuation', gating: 'optional', hint: 'More complete DCF / intrinsic value.' },
-  { key: 'optionstrat', label: 'OptionStrat', loginUrl: 'https://optionstrat.com/login', category: 'options', gating: 'required', sourceKey: 'optionstrat', hint: 'Options flow requires an account.' },
-  { key: 'insiderfinance', label: 'InsiderFinance', loginUrl: 'https://www.insiderfinance.io/login', category: 'options', gating: 'required', sourceKey: 'insiderfinance', hint: 'Options flow requires an account.' },
-  { key: 'barchart', label: 'Barchart', loginUrl: 'https://www.barchart.com/login', category: 'options', gating: 'optional', sourceKey: 'barchart', hint: 'Free tier works; login lifts limits.' },
-  { key: 'gurufocus', label: 'GuruFocus', loginUrl: 'https://www.gurufocus.com/login/', category: 'insider', gating: 'optional', sourceKey: 'gurufocus', hint: 'Most data is gated behind login.' },
-  { key: 'finviz', label: 'Finviz Elite', loginUrl: 'https://finviz.com/login.ashx', category: 'insider', gating: 'optional', sourceKey: 'finviz', hint: 'Elite removes delays.' },
+  { key: 'valueinvesting', label: 'ValueInvesting.io', loginUrl: 'https://valueinvesting.io/login', category: 'valuation', gating: 'optional', hintKey: 'plat.hintValueInvesting' },
+  { key: 'alphaspread', label: 'AlphaSpread', loginUrl: 'https://www.alphaspread.com/login', category: 'valuation', gating: 'optional', hintKey: 'plat.hintAlphaSpread' },
+  { key: 'optionstrat', label: 'OptionStrat', loginUrl: 'https://optionstrat.com/login', category: 'options', gating: 'required', sourceKey: 'optionstrat', hintKey: 'plat.hintOptionsAccount' },
+  { key: 'insiderfinance', label: 'InsiderFinance', loginUrl: 'https://www.insiderfinance.io/login', category: 'options', gating: 'required', sourceKey: 'insiderfinance', hintKey: 'plat.hintOptionsAccount' },
+  { key: 'barchart', label: 'Barchart', loginUrl: 'https://www.barchart.com/login', category: 'options', gating: 'optional', sourceKey: 'barchart', hintKey: 'plat.hintBarchart' },
+  { key: 'gurufocus', label: 'GuruFocus', loginUrl: 'https://www.gurufocus.com/login/', category: 'insider', gating: 'optional', sourceKey: 'gurufocus', hintKey: 'plat.hintGuruFocus' },
+  { key: 'finviz', label: 'Finviz Elite', loginUrl: 'https://finviz.com/login.ashx', category: 'insider', gating: 'optional', sourceKey: 'finviz', hintKey: 'plat.hintFinviz' },
   { key: 'marketbeat', label: 'MarketBeat', loginUrl: 'https://www.marketbeat.com/login/', category: 'insider', gating: 'optional', sourceKey: 'marketbeat' },
-  { key: 'twitter', label: 'Twitter/X', loginUrl: 'https://x.com/login', category: 'news', gating: 'required', hint: 'Required to scrape WhaleInsider news feed.' },
+  { key: 'twitter', label: 'Twitter/X', loginUrl: 'https://x.com/login', category: 'news', gating: 'required', hintKey: 'plat.hintTwitter' },
 ] as const;
 
 export interface AuthInfo {

@@ -1,4 +1,5 @@
 import type { MouseEvent } from 'react';
+import { useI18n } from '@/hooks/useI18n';
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { useWatchlist } from '@/hooks/useWatchlist';
 import { useStore } from '@/store/useStore';
@@ -17,6 +18,7 @@ const ACCENT_BLUE = '#0a84ff';
 const GRID = 'rgba(128,128,128,0.2)';
 
 export function WatchlistView() {
+  const { t, language } = useI18n();
   // Axis furniture costs more width than it explains on a phone.
   const [compactChart, setCompactChart] = useState(
     typeof window !== 'undefined' ? window.innerWidth < 768 : false,
@@ -75,9 +77,9 @@ export function WatchlistView() {
         >
           <StarIcon size={28} />
         </div>
-        <div className="text-lg font-bold">Your watchlist is empty</div>
+        <div className="text-lg font-bold">{t('watch.empty')}</div>
         <p className="max-w-md text-sm text-secondary">
-          Star any signal on the dashboard to track it here with a live conviction score.
+          {t('watch.emptyHint')}
         </p>
       </GlassCard>
     );
@@ -113,13 +115,13 @@ export function WatchlistView() {
               <div className="min-w-0 flex-1">
                 <div className="text-lg font-extrabold">{item.ticker}</div>
                 <div className="truncate text-xs text-secondary">
-                  {signal?.companyName || 'Added ' + timeAgo(item.addedAt)}
+                  {signal?.companyName || t('watch.added', { when: timeAgo(item.addedAt, language) })}
                 </div>
                 <div className="mt-1.5">
                   {signal ? (
                     <ConvictionBadge level={signal.convictionLevel} />
                   ) : (
-                    <span className="text-xs text-secondary">No signal in latest scrape</span>
+                    <span className="text-xs text-secondary">{t('watch.noSignal')}</span>
                   )}
                 </div>
                 {signal && (
@@ -165,8 +167,8 @@ export function WatchlistView() {
         ) : (
           <div className="py-16 text-center text-sm text-secondary">
             {selectedTicker
-              ? `Not enough history for ${selectedTicker} yet — run more scrapes to build a trend.`
-              : 'Add stocks to your watchlist to track their score trend.'}
+              ? t('watch.notEnoughHistory', { ticker: selectedTicker })
+              : t('watch.addToTrack')}
           </div>
         )}
       </GlassCard>

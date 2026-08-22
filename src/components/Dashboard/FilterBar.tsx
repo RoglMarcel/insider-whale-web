@@ -1,29 +1,31 @@
 import type { TimeRange, TypeFilter, ConvictionFilter, SortKey } from '@/types';
 import { useSignals } from '@/hooks/useSignals';
+import { useI18n } from '@/hooks/useI18n';
+import type { TKey } from '@/lib/i18n';
 
-const TIME: { key: TimeRange; label: string }[] = [
-  { key: '24h', label: 'Today' },
-  { key: '48h', label: '48h' },
-  { key: 'week', label: 'This Week' },
-  { key: 'all', label: 'All' },
+const TIME: { key: TimeRange; label: TKey }[] = [
+  { key: '24h', label: 'filter.today' },
+  { key: '48h', label: 'filter.48h' },
+  { key: 'week', label: 'filter.thisWeek' },
+  { key: 'all', label: 'filter.all' },
 ];
 
-const TYPE: { key: TypeFilter; label: string }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'openmarket', label: 'Open Market' },
-  { key: 'options', label: 'Options' },
-  { key: 'combo', label: 'Combo' },
+const TYPE: { key: TypeFilter; label: TKey }[] = [
+  { key: 'all', label: 'filter.all' },
+  { key: 'openmarket', label: 'filter.openMarket' },
+  { key: 'options', label: 'filter.options' },
+  { key: 'combo', label: 'filter.combo' },
 ];
 
-const CONVICTION: { key: ConvictionFilter; label: string }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'HIGH', label: 'High' },
-  { key: 'WATCH', label: 'Watch' },
+const CONVICTION: { key: ConvictionFilter; label: TKey }[] = [
+  { key: 'all', label: 'filter.all' },
+  { key: 'HIGH', label: 'filter.high' },
+  { key: 'WATCH', label: 'filter.watch' },
 ];
 
-const SORT: { key: SortKey; label: string }[] = [
-  { key: 'score', label: 'Score' },
-  { key: 'confidence', label: 'Confidence' },
+const SORT: { key: SortKey; label: TKey }[] = [
+  { key: 'score', label: 'filter.score' },
+  { key: 'confidence', label: 'filter.confidence' },
 ];
 
 function Segmented<T extends string>({
@@ -66,20 +68,26 @@ function Segmented<T extends string>({
 /** Removable chips for every non-default filter, so an empty list is explainable. */
 export function ActiveFilterChips() {
   const { filter, setFilter } = useSignals();
+  const { t } = useI18n();
   const chips: { label: string; clear: () => void }[] = [];
   if (filter.timeRange !== 'all') {
     chips.push({
-      label: TIME.find((t) => t.key === filter.timeRange)?.label ?? filter.timeRange,
+      label: (() => {
+        const m = TIME.find((o) => o.key === filter.timeRange);
+        return m ? t(m.label) : filter.timeRange;
+      })(),
       clear: () => setFilter({ timeRange: 'all' }),
     });
   }
   if (filter.type !== 'all') {
-    chips.push({ label: TYPE.find((t) => t.key === filter.type)?.label ?? filter.type, clear: () => setFilter({ type: 'all' }) });
+    const m = TYPE.find((o) => o.key === filter.type);
+    chips.push({ label: m ? t(m.label) : filter.type, clear: () => setFilter({ type: 'all' }) });
   }
   if (filter.conviction !== 'all') {
     chips.push({ label: filter.conviction, clear: () => setFilter({ conviction: 'all' }) });
   }
-  if (filter.bigPlayersOnly) chips.push({ label: '★ Big Players', clear: () => setFilter({ bigPlayersOnly: false }) });
+  if (filter.bigPlayersOnly)
+    chips.push({ label: t('filter.bigPlayersChip'), clear: () => setFilter({ bigPlayersOnly: false }) });
   if (filter.search?.trim()) chips.push({ label: `“${filter.search.trim()}”`, clear: () => setFilter({ search: '' }) });
   if (!chips.length) return null;
 
@@ -97,7 +105,7 @@ export function ActiveFilterChips() {
             color: 'var(--accent-blue)',
             border: '1px solid color-mix(in srgb, var(--accent-blue) 30%, transparent)',
           }}
-          aria-label={`Remove filter ${c.label}`}
+          aria-label={t('filter.removeFilter', { label: c.label })}
         >
           {c.label}
           <span aria-hidden="true" className="text-[15px] leading-none">×</span>
@@ -109,12 +117,15 @@ export function ActiveFilterChips() {
 
 export function FilterBar() {
   const { filter, setFilter } = useSignals();
+  const { t } = useI18n();
+  const tr = <T extends string>(opts: { key: T; label: TKey }[]) =>
+    opts.map((o) => ({ key: o.key, label: t(o.label) }));
   return (
     // Segmented controls are a pointer pattern; on mobile the same options live
     // in the filter sheet with 44px rows (see FilterSheet).
     <div className="hidden flex-col gap-3 md:flex">
       <div className="flex flex-row items-center justify-between gap-4 flex-wrap">
-        <Segmented options={TIME} value={filter.timeRange} onChange={(v) => setFilter({ timeRange: v })} />
+        <Segmented options={tr(TIME)} value={filter.timeRange} onChange={(v) => setFilter({ timeRange: v })} />
         <button
           onClick={() => setFilter({ bigPlayersOnly: !filter.bigPlayersOnly })}
           className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-all duration-150 border select-none ${
@@ -124,28 +135,28 @@ export function FilterBar() {
           }`}
         >
           <span style={filter.bigPlayersOnly ? { color: '#fbbf24' } : undefined}>★</span>
-          Big Players Only
+          {t('filter.bigPlayersOnly')}
         </button>
       </div>
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-medium uppercase tracking-wide text-secondary">Type</span>
-          <Segmented size="sm" options={TYPE} value={filter.type} onChange={(v) => setFilter({ type: v })} />
+          <span className="text-xs font-medium uppercase tracking-wide text-secondary">{t('filter.type')}</span>
+          <Segmented size="sm" options={tr(TYPE)} value={filter.type} onChange={(v) => setFilter({ type: v })} />
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs font-medium uppercase tracking-wide text-secondary">Conviction</span>
+          <span className="text-xs font-medium uppercase tracking-wide text-secondary">{t('filter.conviction')}</span>
           <Segmented
             size="sm"
-            options={CONVICTION}
+            options={tr(CONVICTION)}
             value={filter.conviction}
             onChange={(v) => setFilter({ conviction: v })}
           />
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs font-medium uppercase tracking-wide text-secondary">Sort</span>
+          <span className="text-xs font-medium uppercase tracking-wide text-secondary">{t('filter.sort')}</span>
           <Segmented
             size="sm"
-            options={SORT}
+            options={tr(SORT)}
             value={filter.sortBy ?? 'score'}
             onChange={(v) => setFilter({ sortBy: v })}
           />

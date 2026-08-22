@@ -1,20 +1,26 @@
 import { useStore, type View } from '@/store/useStore';
 import { GridIcon, StarIcon, HistoryIcon, SettingsIcon, NewsIcon } from '@/components/UI/icons';
+import { isWeb } from '@/lib/ipc';
+import { useI18n } from '@/hooks/useI18n';
+import type { TKey } from '@/lib/i18n';
 
 interface Tab {
   key: View;
-  label: string;
+  label: TKey;
   icon: (p: { size?: number }) => JSX.Element;
+  desktopOnly?: boolean;
 }
 
-/** Same five destinations as the sidebar, in the same order. */
+/** Same destinations as the sidebar, in the same order. */
 const TABS: Tab[] = [
-  { key: 'dashboard', label: 'Alerts', icon: GridIcon },
-  { key: 'news', label: 'News', icon: NewsIcon },
-  { key: 'watchlist', label: 'Watch', icon: StarIcon },
-  { key: 'history', label: 'History', icon: HistoryIcon },
-  { key: 'settings', label: 'Settings', icon: SettingsIcon },
+  { key: 'dashboard', label: 'nav.alerts', icon: GridIcon },
+  { key: 'news', label: 'nav.newsShort', icon: NewsIcon, desktopOnly: true },
+  { key: 'watchlist', label: 'nav.watchlistShort', icon: StarIcon },
+  { key: 'history', label: 'nav.history', icon: HistoryIcon },
+  { key: 'settings', label: 'nav.settings', icon: SettingsIcon },
 ];
+
+const VISIBLE_TABS = TABS.filter((tb) => !(isWeb && tb.desktopOnly));
 
 /**
  * Bottom tab bar — the mobile navigation (DESIGN.md §8).
@@ -31,10 +37,11 @@ export function BottomTabBar() {
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
   const watchlistCount = useStore((s) => s.watchlist.length);
+  const { t } = useI18n();
 
   return (
     <nav
-      aria-label="Main"
+      aria-label={t('nav.main')}
       className="fixed inset-x-0 bottom-0 z-40 flex md:hidden"
       style={{
         paddingBottom: 'var(--sa-bottom)',
@@ -44,7 +51,7 @@ export function BottomTabBar() {
         borderTop: '1px solid var(--border-glass)',
       }}
     >
-      {TABS.map((tab) => {
+      {VISIBLE_TABS.map((tab) => {
         const Icon = tab.icon;
         const active = view === tab.key;
         return (
@@ -71,7 +78,7 @@ export function BottomTabBar() {
               )}
             </span>
             <span className="text-xs" style={{ fontWeight: active ? 700 : 500 }}>
-              {tab.label}
+              {t(tab.label)}
             </span>
           </button>
         );

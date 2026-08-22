@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useI18n } from '@/hooks/useI18n';
 import { createPortal } from 'react-dom';
 import { type RawInsiderTrade, type InsiderTrackRecord, classifyTransaction, normalizeInsiderName } from '@/types';
 import { formatUSD, formatNumber, formatDate, formatPrice, formatPercent, accuracyColor } from '@/lib/format';
@@ -10,6 +11,7 @@ function tierColor(tier: 'strong' | 'reduced' | 'excluded'): string {
 }
 
 function TrackRecordModal({ record, onClose }: { record: InsiderTrackRecord; onClose: () => void }) {
+  const { t: tr } = useI18n();
   return createPortal(
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center p-4"
@@ -25,7 +27,7 @@ function TrackRecordModal({ record, onClose }: { record: InsiderTrackRecord; onC
         <button
           onClick={onClose}
           className="absolute right-4 top-4 text-secondary hover:text-primary transition-colors p-1.5 rounded-lg hover:bg-white/10"
-          aria-label="Close track record"
+          aria-label={tr('tbl.closeTrackRecord')}
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -54,12 +56,12 @@ function TrackRecordModal({ record, onClose }: { record: InsiderTrackRecord; onC
             <table className="w-full min-w-[420px] text-xs">
               <thead>
                 <tr className="text-left text-secondary border-none">
-                  <th className="py-2 px-1 font-semibold bg-transparent text-[10px]" style={{ borderBottom: '1px solid var(--border-glass)' }}>Date</th>
-                  <th className="py-2 px-1 font-semibold bg-transparent text-[10px]" style={{ borderBottom: '1px solid var(--border-glass)' }}>Ticker</th>
-                  <th className="py-2 px-1 text-right font-semibold bg-transparent text-[10px]" style={{ borderBottom: '1px solid var(--border-glass)' }}>Amount</th>
-                  <th className="py-2 px-1 text-right font-semibold bg-transparent text-[10px]" style={{ borderBottom: '1px solid var(--border-glass)' }}>Buy Price</th>
-                  <th className="py-2 px-1 text-right font-semibold bg-transparent text-[10px]" title="3-month return in excess of the S&P 500 (split/dividend-adjusted)" style={{ borderBottom: '1px solid var(--border-glass)' }}>3M vs S&P</th>
-                  <th className="py-2 px-1 text-right font-semibold bg-transparent text-[10px]" title="Did the buy beat the S&P 500 over ~6 months?" style={{ borderBottom: '1px solid var(--border-glass)' }}>6M vs S&P</th>
+                  <th className="py-2 px-1 font-semibold bg-transparent text-[10px]" style={{ borderBottom: '1px solid var(--border-glass)' }}>{tr('tbl.date')}</th>
+                  <th className="py-2 px-1 font-semibold bg-transparent text-[10px]" style={{ borderBottom: '1px solid var(--border-glass)' }}>{tr('tbl.ticker')}</th>
+                  <th className="py-2 px-1 text-right font-semibold bg-transparent text-[10px]" style={{ borderBottom: '1px solid var(--border-glass)' }}>{tr('tbl.amount')}</th>
+                  <th className="py-2 px-1 text-right font-semibold bg-transparent text-[10px]" style={{ borderBottom: '1px solid var(--border-glass)' }}>{tr('tbl.buyPrice')}</th>
+                  <th className="py-2 px-1 text-right font-semibold bg-transparent text-[10px]" title={tr('tbl.3mVsSpTitle')} style={{ borderBottom: '1px solid var(--border-glass)' }}>{tr('tbl.3mVsSp')}</th>
+                  <th className="py-2 px-1 text-right font-semibold bg-transparent text-[10px]" title={tr('tbl.6mVsSpTitle')} style={{ borderBottom: '1px solid var(--border-glass)' }}>{tr('tbl.6mVsSp')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -135,6 +137,7 @@ export function InsiderTable({
   loading?: boolean;
 }) {
   const [openInsider, setOpenInsider] = useState<string | null>(null);
+  const { t: tr } = useI18n();
   const sorted = [...trades].sort(
     (a, b) => (Date.parse(b.tradeDate) || 0) - (Date.parse(a.tradeDate) || 0) || b.value - a.value,
   );
@@ -175,19 +178,19 @@ export function InsiderTable({
               </div>
               <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[13px]">
                 <div className="flex justify-between gap-2">
-                  <dt className="text-secondary">Date</dt>
+                  <dt className="text-secondary">{tr('tbl.date')}</dt>
                   <dd className="tabular-nums">{formatDate(t.tradeDate) || '—'}</dd>
                 </div>
                 <div className="flex justify-between gap-2">
-                  <dt className="text-secondary">Price</dt>
+                  <dt className="text-secondary">{tr('tbl.price')}</dt>
                   <dd className="tabular-nums">{formatPrice(price)}</dd>
                 </div>
                 <div className="flex justify-between gap-2">
-                  <dt className="text-secondary">Shares</dt>
+                  <dt className="text-secondary">{tr('tbl.shares')}</dt>
                   <dd className="tabular-nums">{formatNumber(t.shares)}</dd>
                 </div>
                 <div className="flex justify-between gap-2">
-                  <dt className="text-secondary">Value</dt>
+                  <dt className="text-secondary">{tr('tbl.value')}</dt>
                   <dd className="font-semibold tabular-nums">{formatUSD(t.value)}</dd>
                 </div>
               </dl>
@@ -220,13 +223,13 @@ export function InsiderTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-secondary">
-              <th className="px-3 py-2 font-semibold">Date</th>
-              <th className="px-3 py-2 font-semibold">Insider</th>
-              <th className="px-3 py-2 font-semibold">Type</th>
-              <th className="px-3 py-2 font-semibold">Track Record</th>
-              <th className="px-3 py-2 text-right font-semibold">Price</th>
-              <th className="px-3 py-2 text-right font-semibold">Shares</th>
-              <th className="px-3 py-2 text-right font-semibold">Value</th>
+              <th className="px-3 py-2 font-semibold">{tr('tbl.date')}</th>
+              <th className="px-3 py-2 font-semibold">{tr('tbl.insider')}</th>
+              <th className="px-3 py-2 font-semibold">{tr('tbl.type')}</th>
+              <th className="px-3 py-2 font-semibold">{tr('tbl.trackRecord')}</th>
+              <th className="px-3 py-2 text-right font-semibold">{tr('tbl.price')}</th>
+              <th className="px-3 py-2 text-right font-semibold">{tr('tbl.shares')}</th>
+              <th className="px-3 py-2 text-right font-semibold">{tr('tbl.value')}</th>
             </tr>
           </thead>
           <tbody>
@@ -268,7 +271,7 @@ export function InsiderTable({
                       <span
                         className="inline-block whitespace-nowrap rounded-md px-2 py-0.5 text-xs font-bold not-italic"
                         style={{ color, background: `color-mix(in srgb, ${color} 14%, transparent)` }}
-                        title={cls.tier === 'reduced' ? 'Pre-scheduled / reduced-weight trade' : undefined}
+                        title={cls.tier === 'reduced' ? tr('tbl.reducedWeight') : undefined}
                       >
                         {cls.label}
                       </span>

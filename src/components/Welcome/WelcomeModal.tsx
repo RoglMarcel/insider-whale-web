@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useI18n } from '@/hooks/useI18n';
 import { createPortal } from 'react-dom';
 
 interface SlideData {
@@ -155,6 +156,7 @@ export function WelcomeModal({
     : slides;
 
   const [slide, setSlide] = useState(0);
+  const { t } = useI18n();
 
   if (applicableSlides.length === 0) {
     // Proactively close if no slides are applicable
@@ -197,14 +199,14 @@ export function WelcomeModal({
           <div className="mb-6">
             <div className="flex justify-between items-start">
               <span className="text-[10px] font-extrabold uppercase tracking-wider text-secondary">
-                Release Notes
+                {t('welcome.releaseNotes')}
               </span>
               {slide < applicableSlides.length - 1 && (
                 <button
                   onClick={onClose}
                   className="text-xs text-secondary hover:text-primary transition-colors hover:underline"
                 >
-                  Skip
+                {t('welcome.skip')}
                 </button>
               )}
             </div>
@@ -259,14 +261,14 @@ export function WelcomeModal({
                 onClick={handleBack}
                 className="btn text-xs px-3.5 py-1.5"
               >
-                Back
+                {t('welcome.back')}
               </button>
             )}
             <button
               onClick={handleNext}
               className="btn btn-primary text-xs px-4 py-1.5"
             >
-              {slide === applicableSlides.length - 1 ? 'Get Started' : 'Next'}
+              {slide === applicableSlides.length - 1 ? t('welcome.getStarted') : t('welcome.next')}
             </button>
           </div>
         </div>

@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
+import { useI18n } from '@/hooks/useI18n';
 import { useStore } from '@/store/useStore';
 import type { ValuationResult, ValuationSourceResult } from '@/types';
 import { formatPrice, formatPercent } from '@/lib/format';
 import { ExternalLinkIcon, AlertIcon } from '@/components/UI/icons';
 
 function SourceCard({ source }: { source: ValuationSourceResult }) {
+  const { t } = useI18n();
   const name = source.source === 'alphaspread' ? 'AlphaSpread (DCF)' : 'ValueInvesting.io';
   const upside = source.upsidePct;
   const upColor =
@@ -22,7 +24,7 @@ function SourceCard({ source }: { source: ValuationSourceResult }) {
           target="_blank"
           rel="noreferrer"
           className="text-secondary hover:opacity-70"
-          title="Open source"
+          title={t('val.openSource')}
         >
           <ExternalLinkIcon size={15} />
         </a>
@@ -36,15 +38,15 @@ function SourceCard({ source }: { source: ValuationSourceResult }) {
       ) : (
         <div className="flex flex-col gap-1">
           <div className="flex items-baseline justify-between">
-            <span className="text-xs uppercase tracking-wide text-secondary">Fair Value</span>
+            <span className="text-xs uppercase tracking-wide text-secondary">{t('val.fairValue')}</span>
             <span className="text-lg font-extrabold">{formatPrice(source.fairValue)}</span>
           </div>
           <div className="flex items-baseline justify-between">
-            <span className="text-xs uppercase tracking-wide text-secondary">Current</span>
+            <span className="text-xs uppercase tracking-wide text-secondary">{t('val.current')}</span>
             <span className="font-semibold">{formatPrice(source.currentPrice)}</span>
           </div>
           <div className="flex items-baseline justify-between">
-            <span className="text-xs uppercase tracking-wide text-secondary">Upside</span>
+            <span className="text-xs uppercase tracking-wide text-secondary">{t('val.upside')}</span>
             <span className="font-bold" style={{ color: upColor }}>
               {formatPercent(upside)}
             </span>
@@ -64,6 +66,7 @@ export function ValuationSection({ ticker }: { ticker: string }) {
   const fetchValuation = useStore((s) => s.fetchValuation);
   const [data, setData] = useState<ValuationResult | null>(null);
   const [loading, setLoading] = useState(true);
+  const { t } = useI18n();
 
   useEffect(() => {
     let active = true;
@@ -80,7 +83,7 @@ export function ValuationSection({ ticker }: { ticker: string }) {
 
   return (
     <section>
-      <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-secondary">Fair Value Estimates</h3>
+      <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-secondary">{t('val.title')}</h3>
 
       {loading ? (
         <div
@@ -91,7 +94,7 @@ export function ValuationSection({ ticker }: { ticker: string }) {
             className="h-4 w-4 animate-spin rounded-full border-2"
             style={{ borderColor: 'var(--border-glass)', borderTopColor: 'var(--accent-blue)' }}
           />
-          Fetching DCF & intrinsic value (this opens the source sites)…
+          {t('val.fetching')}
         </div>
       ) : data && data.sources.length > 0 ? (
         <div className="flex flex-col gap-3 sm:flex-row">
@@ -104,11 +107,11 @@ export function ValuationSection({ ticker }: { ticker: string }) {
           className="rounded-xl px-4 py-5 text-sm text-secondary"
           style={{ background: 'var(--bg-glass)', border: '1px solid var(--border-glass)' }}
         >
-          Fair-value data unavailable for {ticker}.
+          {t('val.unavailable', { ticker })}
         </div>
       )}
       <p className="mt-2 text-xs text-secondary">
-        Estimates are scraped best-effort from public pages and may be incomplete. Not investment advice.
+        {t('val.disclaimer')}
       </p>
     </section>
   );

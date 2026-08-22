@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useI18n } from '@/hooks/useI18n';
 import { GlassCard } from '@/components/UI/GlassCard';
 import { AlertIcon } from '@/components/UI/icons';
 import { useSourceHealth, type SourceHealthEntry } from '@/hooks/useSourceHealth';
@@ -18,6 +19,7 @@ const STATUS_META: Record<SourceHealthEntry['status'], { dot: string; label: str
  * Derived from persisted scrape logs — dismissible per session.
  */
 export function SourceHealthBanner() {
+  const { t } = useI18n();
   const { dead } = useSourceHealth();
   const setView = useStore((s) => s.setView);
   const [dismissed, setDismissed] = useState(false);
@@ -40,20 +42,20 @@ export function SourceHealthBanner() {
         </span>
         <span className="min-w-0">
           <span className="font-bold" style={{ color: 'var(--accent-red)' }}>
-            {dead.length} scraper source{dead.length === 1 ? '' : 's'} may be broken:
+            {t(dead.length === 1 ? 'srcH.brokenOne' : 'srcH.brokenMany', { n: dead.length })}
           </span>{' '}
-          <span className="text-secondary">{names} returned zero rows for multiple consecutive scrapes.</span>
+          <span className="text-secondary">{t('srcH.zeroRows', { names })}</span>
         </span>
       </span>
       <div className="flex shrink-0 items-center gap-2">
         <button className="btn flex-1 md:flex-none" style={{ minHeight: 44 }} onClick={() => setView('settings')}>
-          View sources
+          {t('srcH.viewSources')}
         </button>
         <button
           className="icon-btn shrink-0"
           onClick={() => setDismissed(true)}
-          aria-label="Dismiss"
-          title="Dismiss for this session"
+          aria-label={t('srcH.dismiss')}
+          title={t('srcH.dismissTitle')}
         >
           ✕
         </button>
@@ -64,17 +66,18 @@ export function SourceHealthBanner() {
 
 /** Compact per-source health panel — last rows, rolling median, status. */
 export function SourceHealthPanel() {
+  const { t } = useI18n();
   const { entries } = useSourceHealth();
   const hasData = entries.some((e) => e.status !== 'unknown');
 
   return (
     <GlassCard className="px-4 py-3">
       <div className="mb-2 flex items-baseline justify-between gap-2">
-        <h3 className="text-xs font-bold uppercase tracking-wide text-secondary">Source Health</h3>
-        <span className="text-xs text-secondary">last · median · status</span>
+        <h3 className="text-xs font-bold uppercase tracking-wide text-secondary">{t('srcH.title')}</h3>
+        <span className="text-xs text-secondary">{t('srcH.legend')}</span>
       </div>
       {!hasData ? (
-        <div className="py-1 text-xs text-secondary">No scrape sessions recorded yet.</div>
+        <div className="py-1 text-xs text-secondary">{t('hist.noSessions')}</div>
       ) : (
         <div className="grid grid-cols-1 gap-x-4 gap-y-0.5 sm:grid-cols-2">
           {entries.map((e) => {

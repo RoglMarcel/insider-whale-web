@@ -11,6 +11,7 @@ import {
   MAX_OPTIONS_SCORE_TOTAL,
 } from '@/types';
 import { freshnessMeta, ageLabel, formatUSD, formatCompact, confidenceColor, timeAgo, formatDate, partyMeta } from '@/lib/format';
+import { useI18n } from '@/hooks/useI18n';
 
 const POLITICIAN_COMBO_BONUS: Record<PoliticianComboTier, number> = {
   MEGA_SIGNAL: 45,
@@ -44,6 +45,7 @@ function KV({ label, value, color }: { label: string; value: string; color?: str
 
 /** One politician row: name (party·chamber·committee) — buy/sell · amount · age [disclosure]. */
 function PoliticianRow({ t }: { t: PoliticianTrade }) {
+  const { t: tr, language } = useI18n();
   const party = partyMeta(t.party);
   const isBuy = t.transactionType === 'buy';
   const ctx = [t.chamber, t.committee].filter(Boolean).join(' · ');
@@ -59,17 +61,19 @@ function PoliticianRow({ t }: { t: PoliticianTrade }) {
       </div>
       <div className="flex shrink-0 items-baseline gap-2 tabular-nums">
         <span className="font-semibold" style={{ color: isBuy ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-          {isBuy ? 'Buy' : 'Sell'} · {formatUSD(t.amountMidpoint)}
+          {isBuy ? tr('common.buy') : tr('common.sell')} · {formatUSD(t.amountMidpoint)}
         </span>
         <span className="text-xs text-secondary" title={formatDate(t.tradeDate)}>
-          {age == null ? '—' : timeAgo(t.tradeDate)}
+          {age == null ? '—' : timeAgo(t.tradeDate, language)}
         </span>
         <span
           className="text-xs"
           style={{ color: lateDisclose ? 'var(--accent-yellow)' : 'var(--text-secondary)' }}
-          title={`Disclosed ${t.daysToDisclose} day(s) after the trade`}
+          title={tr('bd.disclosedAfter', { n: t.daysToDisclose })}
         >
-          {lateDisclose ? `⚠ disclosed late (${t.daysToDisclose}d)` : `disclosed in ${t.daysToDisclose}d`}
+          {lateDisclose
+            ? `⚠ ${tr('bd.disclosedLate', { n: t.daysToDisclose })}`
+            : tr('bd.disclosedIn', { n: t.daysToDisclose })}
         </span>
       </div>
     </div>
@@ -90,6 +94,7 @@ export function ScoreBreakdown({
   rawTrades?: RawInsiderTrade[] | null;
 }) {
   const b = breakdown;
+  const { t, language } = useI18n();
   const fresh = freshnessMeta(b.signalAgeDays);
 
   // "No insider data" and "bad insider data" are different facts and must not
@@ -103,44 +108,44 @@ export function ScoreBreakdown({
 
   const factors: FactorRow[] = [
     {
-      label: 'Insider Rank',
+      label: t('bd.insiderRank'),
       display: hasInsiderLeg ? `${b.rankWeight} / 10` : NA,
       fill: hasInsiderLeg ? b.rankWeight / 10 : 0,
       color: 'var(--accent-blue)',
     },
     {
-      label: 'Dollar Volume',
+      label: t('bd.dollarVolume'),
       display: hasInsiderLeg ? `${b.dollarVolumePoints} / 20 pts` : NA,
       fill: hasInsiderLeg ? b.dollarVolumePoints / 20 : 0,
       color: 'var(--accent-blue)',
     },
     {
-      label: 'Transaction Quality',
+      label: t('bd.transactionQuality'),
       display: hasInsiderLeg ? `× ${b.typeModifier.toFixed(2)}` : NA,
       fill: hasInsiderLeg ? b.typeModifier : 0,
       color: 'var(--accent-purple)',
     },
     {
-      label: 'Cluster Bonus',
+      label: t('bd.clusterBonus'),
       display: hasInsiderLeg ? `× ${b.clusterMultiplier.toFixed(1)}` : NA,
       fill: hasInsiderLeg ? b.clusterMultiplier / 3 : 0,
       color: 'var(--accent-purple)',
     },
     {
-      label: 'Earnings Timing',
+      label: t('bd.earningsTiming'),
       display: `× ${b.timingMultiplier.toFixed(2)}`,
       fill: b.timingMultiplier / MAX_INSIDER_TIMING_MULT,
       color: '#ff9f0a',
     },
     {
-      label: 'Options Flow',
+      label: t('bd.optionsFlow'),
       display: `${b.optionsScore >= 0 ? '+' : ''}${b.optionsScore.toFixed(0)} pts`,
       fill: Math.min(Math.abs(b.optionsScore) / MAX_OPTIONS_SCORE_TOTAL, 1),
       color: b.optionsScore < 0 ? 'var(--accent-red)' : 'var(--accent-green)',
     },
     {
-      label: 'Signal Age',
-      display: `× ${b.freshnessMultiplier.toFixed(2)} · ${ageLabel(b.signalAgeDays)}`,
+      label: t('bd.signalAge'),
+      display: `× ${b.freshnessMultiplier.toFixed(2)} · ${ageLabel(b.signalAgeDays, language)}`,
       fill: b.freshnessMultiplier,
       color: fresh.color,
     },
@@ -148,14 +153,14 @@ export function ScoreBreakdown({
 
   const insiderLegNote = hasInsiderLeg
     ? null
-    : 'No scoring-eligible insider trade on this signal — the insider factors are unmeasured, not zero-rated.';
+    : t('bd.noInsiderLeg');
 
   if (b.vixMultiplier > 1) {
-    factors.push({ label: 'VIX Fear Boost', display: `× ${b.vixMultiplier.toFixed(2)}`, fill: 1, color: 'var(--accent-red)' });
+    factors.push({ label: t('bd.vixBoost'), display: `× ${b.vixMultiplier.toFixed(2)}`, fill: 1, color: 'var(--accent-red)' });
   }
   if (b.trackRecordMultiplier !== 1) {
     factors.push({
-      label: 'Track Record',
+      label: t('bd.trackRecord'),
       display: `× ${b.trackRecordMultiplier.toFixed(2)}`,
       fill: b.trackRecordMultiplier / 1.2,
       color: b.trackRecordMultiplier >= 1 ? 'var(--accent-green)' : 'var(--accent-red)',
@@ -164,7 +169,7 @@ export function ScoreBreakdown({
   // When a politician tier is set, the tier row shows that bonus; comboBonus
   // already holds the effective total — avoid double-counting in the factor list.
   if (b.comboBonus > 0 && !b.politicianComboTier) {
-    factors.push({ label: 'Combo Bonus', display: `+ ${b.comboBonus} pts`, fill: 1, color: 'var(--accent-blue)' });
+    factors.push({ label: t('bd.comboBonus'), display: `+ ${b.comboBonus} pts`, fill: 1, color: 'var(--accent-blue)' });
   }
 
   const hasFlow = !!insiderFlow && (insiderFlow.buys > 0 || insiderFlow.sells > 0 || insiderFlow.form144 > 0);
@@ -175,7 +180,7 @@ export function ScoreBreakdown({
 
   return (
     <section>
-      <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-secondary">Score Breakdown</h3>
+      <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-secondary">{t('bd.title')}</h3>
       <div className="flex flex-col gap-2.5">
         {factors.map((f) => (
           <div key={f.label} className="grid grid-cols-[8.5rem_1fr_8rem] items-center gap-3">
@@ -204,13 +209,13 @@ export function ScoreBreakdown({
         style={{ background: 'var(--bg-glass)', border: '1px solid var(--border-glass)' }}
       >
         <span className="text-secondary">
-          Raw{' '}
+          {t('bd.raw')}{' '}
           <span className="font-semibold tabular-nums" style={{ color: 'var(--text-primary)' }}>
             {b.rawScore.toFixed(0)}
           </span>{' '}
           / {Math.round(b.maxPossibleRaw)}
           <span className="px-2">→</span>
-          Final{' '}
+          {t('bd.final')}{' '}
           <span className="font-bold" style={{ color: 'var(--text-primary)' }}>
             {b.normalizedScore.toFixed(1)}
           </span>
@@ -218,9 +223,9 @@ export function ScoreBreakdown({
         {b.confidence != null && (
           <span
             className="text-secondary"
-            title="Data confidence — enrichment completeness + cross-source corroboration + authoritative sourcing. Not a judgment of the signal itself."
+            title={t('bd.confidenceTitle')}
           >
-            Confidence{' '}
+            {t('bd.confidence')}{' '}
             <span className="tabular-nums" style={{ color: confidenceColor(b.confidence) }}>
               {'●'.repeat(Math.max(1, Math.round(b.confidence / 25)))}
               {'○'.repeat(Math.max(0, 4 - Math.max(1, Math.round(b.confidence / 25))))}
@@ -233,16 +238,16 @@ export function ScoreBreakdown({
       {/* Net insider flow — gross buys vs gross sells vs net (sell-side intel). */}
       {hasFlow && insiderFlow && (
         <div className="mt-4 rounded-xl px-4 py-3" style={{ background: 'var(--bg-glass)', border: '1px solid var(--border-glass)' }}>
-          <div className="mb-2 text-xs font-bold uppercase tracking-wide text-secondary">Net Insider Flow · 90d</div>
+          <div className="mb-2 text-xs font-bold uppercase tracking-wide text-secondary">{t('bd.netFlow90d')}</div>
           <div className="flex flex-col gap-1.5">
-            <KV label="Gross buys" value={formatUSD(insiderFlow.buys)} color="var(--accent-green)" />
-            <KV label="Gross sells" value={insiderFlow.sells > 0 ? `-${formatUSD(insiderFlow.sells)}` : '—'} color={insiderFlow.sells > 0 ? 'var(--accent-red)' : undefined} />
+            <KV label={t('bd.grossBuys')} value={formatUSD(insiderFlow.buys)} color="var(--accent-green)" />
+            <KV label={t('bd.grossSells')} value={insiderFlow.sells > 0 ? `-${formatUSD(insiderFlow.sells)}` : '—'} color={insiderFlow.sells > 0 ? 'var(--accent-red)' : undefined} />
             <KV
-              label="Net flow"
+              label={t('bd.netFlow')}
               value={`${net >= 0 ? '+' : '−'}${formatUSD(Math.abs(net))}`}
               color={net > 0 ? 'var(--accent-green)' : net < 0 ? 'var(--accent-red)' : undefined}
             />
-            {insiderFlow.form144 > 0 && <KV label="Form 144 notices" value={String(insiderFlow.form144)} color="var(--accent-yellow)" />}
+            {insiderFlow.form144 > 0 && <KV label={t('bd.form144Notices')} value={String(insiderFlow.form144)} color="var(--accent-yellow)" />}
           </div>
         </div>
       )}
@@ -250,26 +255,26 @@ export function ScoreBreakdown({
       {/* Equity stats — short interest, float, liquidity, drawdown. */}
       {hasStats && stats && (
         <div className="mt-3 rounded-xl px-4 py-3" style={{ background: 'var(--bg-glass)', border: '1px solid var(--border-glass)' }}>
-          <div className="mb-2 text-xs font-bold uppercase tracking-wide text-secondary">Equity Stats</div>
+          <div className="mb-2 text-xs font-bold uppercase tracking-wide text-secondary">{t('bd.equityStats')}</div>
           <div className="flex flex-col gap-1.5">
             {stats.shortPctFloat != null && (
               <KV
-                label="Short interest"
+                label={t('bd.shortInterest')}
                 value={`${stats.shortPctFloat.toFixed(1)}% of float`}
                 color={stats.shortPctFloat >= 20 ? '#ff9f0a' : undefined}
               />
             )}
-            {stats.floatShares != null && <KV label="Float" value={`${formatCompact(stats.floatShares)} sh`} />}
+            {stats.floatShares != null && <KV label={t('bd.float')} value={t('bd.floatShares', { n: formatCompact(stats.floatShares) })} />}
             {stats.avgDollarVolume != null && (
               <KV
-                label="Avg daily $ vol"
+                label={t('bd.avgDailyVol')}
                 value={formatUSD(stats.avgDollarVolume)}
                 color={stats.avgDollarVolume < 500_000 ? 'var(--accent-red)' : undefined}
               />
             )}
             {stats.pctFrom52wHigh != null && (
               <KV
-                label="From 52w high"
+                label={t('bd.from52wHigh')}
                 value={`${Math.round(stats.pctFrom52wHigh)}%`}
                 color={stats.pctFrom52wHigh <= -40 ? 'var(--accent-green)' : undefined}
               />
@@ -282,7 +287,7 @@ export function ScoreBreakdown({
       {politicianTrades && politicianTrades.length > 0 && (
         <div className="mt-3 rounded-xl px-4 py-3" style={{ background: 'var(--bg-glass)', border: '1px solid var(--border-glass)' }}>
           <div className="mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-secondary">
-            🏛️ Politician Activity
+            🏛️ {t('bd.politicianActivity')}
           </div>
           <div className="divide-y" style={{ borderColor: 'var(--border-glass)' }}>
             {politicianTrades.slice(0, 8).map((t, i) => (
@@ -291,19 +296,19 @@ export function ScoreBreakdown({
           </div>
           {politicianTrades.some((t) => t.transactionType === 'sell') && (
             <div className="mt-2 text-xs" style={{ color: 'var(--accent-red)' }}>
-              ⚠ Contra-signal — a member of Congress is selling this name
+              ⚠ {t('bd.contraSignal')}
             </div>
           )}
           <div className="mt-3 flex flex-col gap-1.5 border-t pt-2.5" style={{ borderColor: 'var(--border-glass)' }}>
             <KV
-              label="Politician score contribution"
+              label={t('bd.politicianContribution')}
               value={`+${Math.round(b.politicianScore ?? 0)} pts`}
               color={(b.politicianScore ?? 0) > 0 ? 'var(--accent-purple)' : undefined}
             />
             {b.politicianComboTier && (
               <KV
-                label="Combo tier"
-                value={`${b.politicianComboTier}  (+${POLITICIAN_COMBO_BONUS[b.politicianComboTier]} bonus)`}
+                label={t('bd.comboTier')}
+                value={`${b.politicianComboTier}  (+${POLITICIAN_COMBO_BONUS[b.politicianComboTier]} ${t('bd.bonus')})`}
                 color={TIER_COLOR[b.politicianComboTier]}
               />
             )}

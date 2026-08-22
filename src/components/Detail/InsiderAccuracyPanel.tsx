@@ -1,4 +1,5 @@
 import type { InsiderTrackRecord, InsiderHistoricalTrade } from '@/types';
+import { useI18n } from '@/hooks/useI18n';
 import { accuracyColor, formatPercent } from '@/lib/format';
 
 export interface PanelInsider {
@@ -44,6 +45,7 @@ export function InsiderAccuracyPanel({
   loading: boolean;
 }) {
   const loaded = insiders.map((ins) => ({ ins, rec: records[ins.key] }));
+  const { t } = useI18n();
   const withData = loaded.filter((x) => x.rec && x.rec.totalTrades > 0);
 
   // Best insider by 3-month accuracy.
@@ -55,7 +57,7 @@ export function InsiderAccuracyPanel({
 
   return (
     <section>
-      <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-secondary">Insider Track Record</h3>
+      <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-secondary">{t('acc.title')}</h3>
 
       <div className="rounded-xl" style={{ border: '1px solid var(--border-glass)' }}>
         {loading && withData.length === 0 ? (
@@ -87,7 +89,7 @@ export function InsiderAccuracyPanel({
                   {rec?.pattern === 'routine' && (
                     <span
                       className="rounded-md px-1.5 py-0.5 text-xs"
-                      title="Calendar-clustered buyer — same-month purchases across years are scheduled/habitual and historically carry little information."
+                      title={t('acc.calendarClustered')}
                       style={{ background: 'var(--bg-glass)', color: 'var(--text-secondary)' }}
                     >
                       🔁 routine buyer
@@ -96,7 +98,7 @@ export function InsiderAccuracyPanel({
                   {rec?.pattern === 'opportunistic' && (
                     <span
                       className="rounded-md px-1.5 py-0.5 text-xs font-semibold"
-                      title="First-ever open-market buy on record — pattern-breaking purchases historically carry the alpha."
+                      title={t('acc.firstEver')}
                       style={{
                         color: 'var(--accent-green)',
                         background: 'color-mix(in srgb, var(--accent-green) 12%, transparent)',
@@ -109,9 +111,9 @@ export function InsiderAccuracyPanel({
               </div>
 
               {!rec ? (
-                <span className="ml-auto text-sm text-secondary">Loading…</span>
+                <span className="ml-auto text-sm text-secondary">{t('common.loading')}</span>
               ) : rec.totalTrades === 0 ? (
-                <span className="ml-auto text-sm text-secondary">{rec.error || 'Track record data unavailable'}</span>
+                <span className="ml-auto text-sm text-secondary">{rec.error || t('acc.unavailable')}</span>
               ) : (
                 <>
                   <div className="ml-auto text-right">
@@ -135,7 +137,7 @@ export function InsiderAccuracyPanel({
 
       {best && (
         <div className="mt-2 text-sm">
-          <span className="text-secondary">Best insider on this signal: </span>
+          <span className="text-secondary">{t('acc.bestInsider')} </span>
           <span className="font-semibold">{best.ins.name}</span>
           <span className="text-secondary"> — </span>
           <span style={{ color: accuracyColor(best.rec.accuracy3m) }}>

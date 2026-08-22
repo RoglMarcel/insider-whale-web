@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useI18n } from '@/hooks/useI18n';
 import { useStore } from '@/store/useStore';
 import { api } from '@/lib/ipc';
 import { GlassCard } from '@/components/UI/GlassCard';
@@ -7,6 +8,7 @@ import { RefreshIcon, ExternalLinkIcon, AlertIcon } from '@/components/UI/icons'
 import type { NewsItem } from '@/types';
 
 export function NewsView() {
+  const { t } = useI18n();
   const [news, setNews] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [isPending, startTransition] = useTransition();
@@ -122,9 +124,9 @@ export function NewsView() {
             <AlertIcon size={28} />
           </div>
           <div>
-            <h3 className="text-lg font-bold">Twitter/X Connection Required</h3>
+            <h3 className="text-lg font-bold">{t('news.connectionRequired')}</h3>
             <p className="text-sm text-secondary mt-1 max-w-sm">
-              X requires authentication to view profiles. Log in with your X account in settings to unlock this feed and get real-time alerts.
+              {t('news.connectionHint')}
             </p>
           </div>
           <button
@@ -132,17 +134,17 @@ export function NewsView() {
             style={{ minHeight: 44 }}
             className="mt-2 rounded-xl bg-[var(--accent-blue)] px-6 text-sm font-bold text-white hover:bg-[var(--accent-blue)]/85 active:scale-95 transition-all shadow-[0_0_15px_color-mix(in_srgb,var(--accent-blue)_30%,transparent)]"
           >
-            Go to Settings
+            {t('news.goToSettings')}
           </button>
         </GlassCard>
       ) : loading && news.length === 0 ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center py-20 gap-3">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--accent-blue)] border-t-transparent" />
-          <span className="text-xs text-secondary font-medium">Fetching live news timeline...</span>
+          <span className="text-xs text-secondary font-medium">{t('news.fetching')}</span>
         </div>
       ) : news.length === 0 ? (
         <GlassCard className="p-8 text-center text-secondary text-sm my-10 max-w-lg mx-auto">
-          No news updates captured yet. Click <strong>Refresh News</strong> to fetch the latest tweets.
+          {t('news.empty')}
         </GlassCard>
       ) : (
         <div className="mx-auto flex min-h-0 w-full max-w-[min(100%,52rem)] flex-1 flex-col gap-4 overflow-y-auto pr-1">

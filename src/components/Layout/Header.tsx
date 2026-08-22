@@ -1,18 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@/store/useStore';
 import { useSignals } from '@/hooks/useSignals';
-import { ThemeToggle } from '@/components/UI/ThemeToggle';
+import { LanguageToggle } from '@/components/UI/LanguageToggle';
 import { VixIndicator } from '@/components/UI/VixIndicator';
 import { RefreshIcon, BellIcon } from '@/components/UI/icons';
 import { timeAgo } from '@/lib/format';
 import { isWeb } from '@/lib/ipc';
+import { useI18n } from '@/hooks/useI18n';
+import type { TKey } from '@/lib/i18n';
 
-const VIEW_META: Record<string, { title: string; subtitle: string }> = {
-  dashboard: { title: 'Alerts', subtitle: 'Ranked insider & whale conviction signals' },
-  news: { title: 'Live News Feed', subtitle: 'Real-time alerts and research from @WhaleInsider' },
-  watchlist: { title: 'Watchlist', subtitle: 'Your saved tickers with live scores' },
-  history: { title: 'History', subtitle: 'Past scrape sessions & score trends' },
-  settings: { title: 'Settings', subtitle: 'Schedule, filters, sources & data' },
+const VIEW_META: Record<string, { title: TKey; subtitle: TKey }> = {
+  dashboard: { title: 'view.dashboard.title', subtitle: 'view.dashboard.subtitle' },
+  news: { title: 'view.news.title', subtitle: 'view.news.subtitle' },
+  watchlist: { title: 'view.watchlist.title', subtitle: 'view.watchlist.subtitle' },
+  history: { title: 'view.history.title', subtitle: 'view.history.subtitle' },
+  settings: { title: 'view.settings.title', subtitle: 'view.settings.subtitle' },
 };
 
 export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
@@ -20,6 +22,7 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
   const signals = useStore((s) => s.signals);
   const openSignal = useStore((s) => s.openSignal);
   const { scrapeStatus, lastScrapeAt, refresh } = useSignals();
+  const { t, language } = useI18n();
   const meta = VIEW_META[view] ?? VIEW_META.dashboard;
   const running = scrapeStatus.running;
 
@@ -63,7 +66,7 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
       <button
         type="button"
         className="icon-btn hidden shrink-0 md:inline-flex lg:hidden"
-        aria-label="Open menu"
+        aria-label={t('nav.openMenu')}
         onClick={() => onMenuClick?.()}
         style={isWeb ? undefined : ({ WebkitAppRegion: 'no-drag' } as any)}
       >
@@ -73,9 +76,9 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
       </button>
 
       <div className="min-w-0 flex-1">
-        <h1 className="truncate text-xl font-extrabold tracking-tight lg:text-2xl">{meta.title}</h1>
+        <h1 className="truncate text-xl font-extrabold tracking-tight lg:text-2xl">{t(meta.title)}</h1>
         {/* The subtitle only ever truncated on a phone; it earns its line from md up. */}
-        <p className="hidden truncate text-xs text-secondary md:block lg:text-sm">{meta.subtitle}</p>
+        <p className="hidden truncate text-xs text-secondary md:block lg:text-sm">{t(meta.subtitle)}</p>
       </div>
 
       {/* Live scrape phase */}
@@ -95,8 +98,8 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
           data is (the client never scrapes and the Refresh button is hidden), so
           it must survive on a phone — previously it was `hidden sm:block`. */}
       <div className="shrink-0 text-right">
-        <div className="hidden text-xs uppercase tracking-wide text-secondary sm:block">Last scrape</div>
-        <div className="text-xs font-semibold tabular-nums sm:text-sm">{timeAgo(lastScrapeAt)}</div>
+        <div className="hidden text-xs uppercase tracking-wide text-secondary sm:block">{t('header.lastScrape')}</div>
+        <div className="text-xs font-semibold tabular-nums sm:text-sm">{timeAgo(lastScrapeAt, language)}</div>
       </div>
 
       {/* Interactive controls */}
@@ -106,8 +109,8 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
           <button
             type="button"
             className="icon-btn relative"
-            title={`${highSignals.length} high-conviction signals`}
-            aria-label="Notifications"
+            title={t('header.highSignalsTitle', { count: highSignals.length })}
+            aria-label={t('header.notifications')}
             aria-expanded={bellOpen}
             onClick={() => setBellOpen((o) => !o)}
           >
@@ -130,10 +133,10 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
               }}
             >
               <div className="px-3 py-2 text-xs font-bold uppercase tracking-wide text-secondary" style={{ borderBottom: '1px solid var(--border-glass)' }}>
-                High conviction
+                {t('header.highConviction')}
               </div>
               {highSignals.length === 0 ? (
-                <div className="px-3 py-4 text-sm text-secondary">No high-conviction signals</div>
+                <div className="px-3 py-4 text-sm text-secondary">{t('header.noHighConviction')}</div>
               ) : (
                 <ul className="max-h-80 overflow-y-auto">
                   {highSignals.map((s) => (
@@ -161,14 +164,14 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
 
         <VixIndicator />
 
-        <ThemeToggle />
+        <LanguageToggle />
 
         {/* Manual refresh — desktop/Electron only. On the web the data comes from
             the scheduled GitHub Actions scrape, so an in-app refresh does nothing. */}
         {!isWeb && (
           <button className="btn btn-primary shrink-0" onClick={() => refresh()} disabled={running}>
             <RefreshIcon size={16} className={running ? 'animate-spin' : ''} />
-            <span className="hidden sm:inline">{running ? 'Scraping…' : 'Refresh'}</span>
+            <span className="hidden sm:inline">{running ? t('header.scraping') : t('header.refresh')}</span>
           </button>
         )}
       </div>

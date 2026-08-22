@@ -13,6 +13,7 @@ import type {
 } from '@/types';
 import { DEFAULT_SETTINGS, DEFAULT_FILTER } from '@/types';
 import { api } from '@/lib/ipc';
+import { type Lang, initialLanguage, persistLanguage } from '@/lib/i18n';
 
 export type View = 'dashboard' | 'watchlist' | 'history' | 'news' | 'settings';
 export type Theme = 'light' | 'dark';
@@ -60,17 +61,13 @@ function applyTheme(theme: Theme): void {
   }
 }
 
+/**
+ * The light/dark switch was removed in favour of the language switch, so the
+ * app is dark-only. `theme` stays in the store because the TradingView embed
+ * takes it as a parameter — it is simply no longer variable.
+ */
 function initialTheme(): Theme {
-  try {
-    const saved = localStorage.getItem('theme');
-    if (saved === 'light' || saved === 'dark') return saved;
-  } catch {
-    /* ignore */
-  }
-  return typeof window !== 'undefined' &&
-    window.matchMedia?.('(prefers-color-scheme: dark)').matches
-    ? 'dark'
-    : 'light';
+  return 'dark';
 }
 
 interface StoreState {
@@ -83,6 +80,7 @@ interface StoreState {
 
   // ── UI ──
   theme: Theme;
+  language: Lang;
   view: View;
   selectedTicker: string | null;
   chartOnly: boolean;
@@ -95,8 +93,8 @@ interface StoreState {
   // ── Actions ──
   init: () => Promise<void>;
   setView: (view: View) => void;
+  setLanguage: (lang: Lang) => void;
   setTheme: (theme: Theme) => void;
-  toggleTheme: () => void;
   openSignal: (ticker: string, chartOnly?: boolean) => void;
   closeSignal: () => void;
   setFilter: (partial: Partial<SignalFilter>) => void;
@@ -126,6 +124,7 @@ export const useStore = create<StoreState>((set, get) => ({
   lastScrapeAt: null,
 
   theme: initialTheme(),
+  language: initialLanguage(),
   view: 'dashboard',
   selectedTicker: null,
   chartOnly: false,
@@ -142,6 +141,7 @@ export const useStore = create<StoreState>((set, get) => ({
     const theme = initialTheme();
     applyTheme(theme);
     void api.app.setTheme(theme);
+    persistLanguage(get().language);
 
     // Live subscriptions from the main process.
     api.scraper.onStatus((status) => set({ scrapeStatus: status }));
@@ -207,11 +207,9 @@ export const useStore = create<StoreState>((set, get) => ({
     void api.app.setTheme(theme);
   },
 
-  toggleTheme: () => {
-    const next: Theme = get().theme === 'dark' ? 'light' : 'dark';
-    applyTheme(next);
-    set({ theme: next });
-    void api.app.setTheme(next);
+  setLanguage: (lang) => {
+    persistLanguage(lang);
+    set({ language: lang });
   },
 
   openSignal: (ticker, chartOnly) => set({ selectedTicker: ticker, chartOnly: !!chartOnly }),

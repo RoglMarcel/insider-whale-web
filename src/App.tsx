@@ -9,10 +9,12 @@ import { SettingsPanel } from '@/components/Settings/SettingsPanel';
 import { NewsView } from '@/components/News/NewsView';
 import { SignalModal } from '@/components/Detail/SignalModal';
 import { WelcomeModal } from '@/components/Welcome/WelcomeModal';
+import { useI18n } from '@/hooks/useI18n';
 
 export default function App() {
   const init = useStore((s) => s.init);
   const view = useStore((s) => s.view);
+  const { t } = useI18n();
   const [showWelcome, setShowWelcome] = useState(false);
   const [appVersion, setAppVersion] = useState('');
   // Skip the 5 MB intro video on the web build (heavy + 10s delay on mobile data).
@@ -109,14 +111,15 @@ export default function App() {
               border: '1px solid color-mix(in srgb, var(--accent-yellow) 30%, transparent)',
             }}
           >
-            Preview mode — running outside Electron, so scraping & the local database are disabled.
+            {t('app.previewMode')}
           </div>
         )}
 
         {view === 'dashboard' && <Dashboard />}
         {view === 'watchlist' && <WatchlistView />}
         {view === 'history' && <HistoryView />}
-        {view === 'news' && <NewsView />}
+        {/* News lives only in the desktop app — the hosted build has no X scraper. */}
+        {view === 'news' && !isWeb && <NewsView />}
         {view === 'settings' && <SettingsPanel />}
 
         <SignalModal />

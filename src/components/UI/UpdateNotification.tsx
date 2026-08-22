@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useI18n } from '@/hooks/useI18n';
 import { api } from '@/lib/ipc';
 import { GlassCard } from '@/components/UI/GlassCard';
 import { RefreshIcon } from '@/components/UI/icons';
@@ -42,6 +43,7 @@ function ArrowDownIcon({ size = 16 }: { size?: number }) {
 }
 
 export function UpdateNotification() {
+  const { t } = useI18n();
   const [status, setStatus] = useState<'idle' | 'available' | 'downloaded'>('idle');
   const [version, setVersion] = useState<string>('');
 
@@ -102,12 +104,12 @@ export function UpdateNotification() {
           </div>
           <div className="min-w-0 flex-1 pt-0.5">
             <h4 className="text-sm font-semibold tracking-tight text-white leading-tight">
-              {status === 'downloaded' ? 'Software Update Ready' : 'Downloading Update'}
+              {status === 'downloaded' ? t('upd.ready') : t('upd.downloading')}
             </h4>
             <p className="text-[12px] text-[#8e8e93] leading-snug mt-1 font-medium">
               {status === 'downloaded'
-                ? `Version v${version} has been successfully downloaded and is ready to install.`
-                : `Version v${version} is currently downloading in the background.`}
+                ? t('upd.readyBody', { version })
+                : t('upd.downloadingBody', { version })}
             </p>
           </div>
         </div>
@@ -118,14 +120,14 @@ export function UpdateNotification() {
               className="px-4 py-2 text-xs font-semibold text-[#8e8e93] hover:text-white transition-colors duration-150 rounded-lg hover:bg-[rgba(255,255,255,0.04)]"
               onClick={() => setStatus('idle')}
             >
-              Later
+              {t('upd.later')}
             </button>
             <button
               className="px-4 py-2 text-xs font-semibold text-white bg-[#007aff] hover:bg-[#0062cc] active:bg-[#004b9b] transition-all duration-150 rounded-lg flex items-center gap-1.5 shadow-[0_2px_8px_rgba(0,122,255,0.25)] hover:shadow-[0_4px_12px_rgba(0,122,255,0.4)]"
               onClick={() => void api.app.quitAndInstall()}
             >
               <RefreshIcon size={12} />
-              Restart & Update
+              {t('upd.restart')}
             </button>
           </div>
         )}

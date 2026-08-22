@@ -4,10 +4,12 @@ import { GlassCard } from '@/components/UI/GlassCard';
 import { useStore } from '@/store/useStore';
 import { useSignals } from '@/hooks/useSignals';
 import { SearchIcon, RefreshIcon } from '@/components/UI/icons';
+import { useI18n } from '@/hooks/useI18n';
 
 export function SignalGrid({ signals, hasSearchQuery }: { signals: Signal[]; hasSearchQuery?: boolean }) {
   const { scrapeStatus, refresh } = useSignals();
   const totalSignals = useStore((s) => s.signals.length);
+  const { t } = useI18n();
 
   if (signals.length === 0) {
     return (
@@ -21,23 +23,23 @@ export function SignalGrid({ signals, hasSearchQuery }: { signals: Signal[]; has
         <div>
           <div className="text-lg font-bold">
             {totalSignals === 0
-              ? 'No signals yet'
+              ? t('grid.noSignalsYet')
               : hasSearchQuery
-              ? 'No signals match your search'
-              : 'No signals match this filter'}
+              ? t('grid.noSearchMatch')
+              : t('grid.noFilterMatch')}
           </div>
           <p className="mx-auto mt-1 max-w-md text-sm text-secondary">
             {totalSignals === 0
-              ? 'Run a scrape to pull the latest insider buys and unusual options flow, score them, and rank by conviction.'
+              ? t('grid.noSignalsYetHint')
               : hasSearchQuery
-              ? 'Try searching for a different ticker, company, or insider name.'
-              : 'Try a different conviction filter to see more results.'}
+              ? t('grid.noSearchMatchHint')
+              : t('grid.noFilterMatchHint')}
           </p>
         </div>
         {totalSignals === 0 && (
           <button className="btn btn-primary" onClick={() => refresh()} disabled={scrapeStatus.running}>
             <RefreshIcon size={16} className={scrapeStatus.running ? 'animate-spin' : ''} />
-            {scrapeStatus.running ? 'Scraping…' : 'Run first scrape'}
+            {scrapeStatus.running ? t('header.scraping') : t('grid.runFirstScrape')}
           </button>
         )}
       </GlassCard>
