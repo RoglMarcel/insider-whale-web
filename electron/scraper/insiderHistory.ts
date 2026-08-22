@@ -2,7 +2,7 @@ import type { BrowserContext } from 'playwright';
 import type { InsiderTrackRecord, InsiderHistoricalTrade } from '../../src/types';
 import { classifyTransaction, classifyInsiderPattern } from '../../src/types';
 import { withPage } from './browser';
-import { extractTable, colIndex, cell, parseMoney, parseShares, parseDate, cleanTicker, cleanText } from './util';
+import { extractTable, colIndex, cell, parseMoney, parseShares, parseDate, cleanTicker, cleanText, yahooTicker } from './util';
 
 /**
  * Feature 6 — scrape an insider's OpenInsider history page and compute a track
@@ -128,7 +128,7 @@ export async function fetchInsiderTrackRecord(
         continue;
       }
       try {
-        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=10y`;
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooTicker(ticker) || ticker)}?interval=1d&range=10y`;
         const res = await fetch(url, { headers: { 'User-Agent': YF_UA }, signal: AbortSignal.timeout(10_000) });
         if (res.ok) {
           const result = (await res.json() as any)?.chart?.result?.[0];

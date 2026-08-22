@@ -19,6 +19,7 @@
  */
 import path from 'node:path';
 import fs from 'node:fs';
+import { yahooTicker } from '../electron/scraper/util';
 import {
   initDatabase,
   closeDatabase,
@@ -44,7 +45,10 @@ async function fetchSeries(ticker: string): Promise<Series | null> {
   if (cache.has(ticker)) return cache.get(ticker)!;
   await sleep(REQUEST_GAP_MS);
   try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1y`;
+    // Share classes reach Yahoo in the dash form (BRK-B); the pipeline stores
+    // the canonical dot form, so this conversion is what lets those signals be
+    // labeled at all.
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooTicker(ticker) || ticker)}?interval=1d&range=1y`;
     const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(15_000) });
     if (!res.ok) {
       cache.set(ticker, null);

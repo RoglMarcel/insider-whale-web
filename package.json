@@ -1,7 +1,7 @@
 {
   "name": "insider-whale-terminal",
   "version": "1.2.1",
-  "description": "Insider & Whale Stock Signal Tracker — desktop app that scrapes insider trading and unusual options flow, scores conviction, and ranks tickers.",
+  "description": "Insider & Whale Stock Signal Tracker \u2014 desktop app that scrapes insider trading and unusual options flow, scores conviction, and ranks tickers.",
   "author": "Insider Tracker",
   "license": "MIT",
   "private": true,
@@ -12,7 +12,7 @@
     "build": "vite build",
     "build:web": "vite build --config vite.config.web.ts",
     "scrape:web": "esbuild scripts/scrape-web.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --external:playwright --alias:electron=./scripts/electron-stub.ts --outfile=tmp/scrape-web.cjs && node tmp/scrape-web.cjs",
-    "label:outcomes": "esbuild scripts/label-outcomes.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --alias:electron=./scripts/electron-stub.ts --outfile=tmp/label-outcomes.cjs && node tmp/label-outcomes.cjs",
+    "label:outcomes": "esbuild scripts/label-outcomes.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --alias:electron=./scripts/electron-stub.ts --outfile=tmp/label-outcomes.cjs && node scripts/run-node-or-electron.cjs tmp/label-outcomes.cjs",
     "publish:data": "esbuild scripts/publish-data.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --alias:electron=./scripts/electron-stub.ts --outfile=tmp/publish-data.cjs && node tmp/publish-data.cjs",
     "publish:web": "esbuild scripts/publish-web.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --external:playwright --external:electron --outfile=tmp/publish-web.cjs && electron tmp/publish-web.cjs",
     "preview": "vite preview",
@@ -28,7 +28,7 @@
     "backtest:components": "esbuild scripts/backtest-components.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --outfile=tmp/backtest-components.cjs && electron tmp/backtest-components.cjs",
     "backtest:opportunistic": "esbuild scripts/backtest-opportunistic.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --outfile=tmp/backtest-opportunistic.cjs && electron tmp/backtest-opportunistic.cjs",
     "postinstall": "electron-builder install-app-deps",
-    "analyze:score": "esbuild scripts/analyze-score.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --alias:electron=./scripts/electron-stub.ts --outfile=tmp/analyze-score.cjs && node tmp/analyze-score.cjs",
+    "analyze:score": "esbuild scripts/analyze-score.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --alias:electron=./scripts/electron-stub.ts --outfile=tmp/analyze-score.cjs && node scripts/run-node-or-electron.cjs tmp/analyze-score.cjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "golden:update": "esbuild scripts/gen-golden.ts --bundle --platform=node --format=cjs --outfile=tmp/gen-golden.cjs && node tmp/gen-golden.cjs"

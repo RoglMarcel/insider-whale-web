@@ -1,5 +1,6 @@
 import type { PerformanceReport, PerformanceTierStats, PerformanceBucketStats } from '../src/types';
 import { getSignalRowsForBacktest } from './database';
+import { yahooTicker } from './scraper/util';
 
 /**
  * In-app calibration report — replays stored signals against realized forward
@@ -51,7 +52,10 @@ async function fetchSeries(symbol: string, fromYmd: string): Promise<Series | nu
   try {
     const period1 = Math.floor((ymdUtcMs(fromYmd) - 10 * 86_400_000) / 1000);
     const period2 = Math.floor(Date.now() / 1000) + 86_400;
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&period1=${period1}&period2=${period2}`;
+    // Yahoo writes share classes with a DASH (BRK-B); the pipeline canonicalizes
+    // to the dot form, so without this every class-share signal silently failed
+    // to resolve a price series and was dropped from the calibration.
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooTicker(symbol) || symbol)}?interval=1d&period1=${period1}&period2=${period2}`;
     const res = await fetch(url, { headers: { 'User-Agent': YF_UA }, signal: AbortSignal.timeout(12_000) });
     if (!res.ok) return null;
     const json = (await res.json()) as YahooChart;
@@ -162,8 +166,12 @@ async function computeInner(): Promise<PerformanceReport> {
     const date = entryYmd(r);
     if (date > ripeEnd) continue;
     const key = `${r.ticker}|${date}`;
-    const prev = byTickerDay.get(key);
-    if (!prev || r.score > prev.score) {
+    // FIRST sighting wins, not the highest score. Rows arrive ordered by
+    // scraped_at, and several runs can share one entry date; keeping the max
+    // picked the best of N intraday scores after the fact, which is a
+    // selection bias in favour of the model being measured.
+    // (`label-outcomes.ts` already uses MIN(id) for the same reason.)
+    if (!byTickerDay.has(key)) {
       byTickerDay.set(key, { ticker: r.ticker, date, score: r.score, tier: r.conviction_level ?? 'LOW' });
     }
   }

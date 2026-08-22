@@ -1338,15 +1338,25 @@ export function getOutcomeCoverage(): {
   };
 }
 
-/** Score + realized alpha pairs for one horizon (score-calibration report). */
-export function getScoreOutcomeRows(horizon: number): { score: number; alpha: number; entryDate: string }[] {
+/**
+ * Score + realized alpha pairs for one horizon (score-calibration report).
+ *
+ * `ticker` and `breakdown` come along because the calibration report cannot be
+ * honest without them: the ticker is the CLUSTER for the effective-sample-size
+ * correction (the same name recurs day after day with overlapping holding
+ * periods), and the breakdown is what distinguishes a real signal from a row
+ * that only exists because a single congressional print named the ticker.
+ */
+export function getScoreOutcomeRows(
+  horizon: number,
+): { score: number; alpha: number; entryDate: string; ticker: string; breakdown: string | null }[] {
   return getDb()
     .prepare(
-      `SELECT score, alpha, entry_date AS entryDate
+      `SELECT score, alpha, entry_date AS entryDate, ticker, breakdown
        FROM signal_outcomes
        WHERE horizon = ? AND alpha IS NOT NULL AND score IS NOT NULL`,
     )
-    .all(horizon) as { score: number; alpha: number; entryDate: string }[];
+    .all(horizon) as { score: number; alpha: number; entryDate: string; ticker: string; breakdown: string | null }[];
 }
 
 export function getSignalRowsForBacktest(): BacktestSignalRow[] {

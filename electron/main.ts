@@ -49,6 +49,7 @@ import { computePerformanceReport } from './performance';
 import { runScrape, getScrapeStatus, fetchStockAnalysisEarnings } from './scraper';
 import { publishToWeb } from './webPublish';
 import { launchBrowser, createContext } from './scraper/browser';
+import { yahooTicker } from './scraper/util';
 import { scrapeFinvizEarnings } from './scraper/finviz';
 import { fetchInsiderTrackRecord } from './scraper/insiderHistory';
 import { configureScheduler, stopScheduler, syncTaskScheduler } from './scheduler';
@@ -307,7 +308,7 @@ async function yahooAdjMap(symbol: string): Promise<Record<string, number>> {
   const map: Record<string, number> = {};
   try {
     const res = await fetch(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=2y`,
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooTicker(symbol) || symbol)}?interval=1d&range=2y`,
       { headers: { 'User-Agent': YF_UA }, signal: AbortSignal.timeout(10_000) },
     );
     if (!res.ok) return map;
