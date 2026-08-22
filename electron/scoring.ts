@@ -32,10 +32,13 @@ const MAX_TYPE_MODIFIER = 1.0;
 const MAX_CLUSTER_MULTIPLIER = 3.0;
 const MAX_INSIDER_TIMING = MAX_INSIDER_TIMING_MULT; // 2.34 — shared with the breakdown UI
 const MAX_OPTIONS_TIMING = 2.0;
-const MAX_VIX_MULTIPLIER = 1.15;
+// Read from the config rather than hard-coded: `getVixMultiplier` takes its cap
+// from the active ScoringConfig, so a shadow config with a different vixCap used
+// to make MAX_POSSIBLE_RAW quietly wrong.
+const MAX_VIX_MULTIPLIER = DEFAULT_SCORING_CONFIG.vixCap;
 const MAX_TRACK_RECORD = 1.2;
 const MAX_VALUATION = 1.15; // Feature 10 — deep-undervaluation boost ceiling
-const MAX_OPTIONS_SCORE = MAX_OPTIONS_SCORE_TOTAL; // 157.248 — shared with the breakdown UI
+const MAX_OPTIONS_SCORE = MAX_OPTIONS_SCORE_TOTAL; // 227.136 — shared with the breakdown UI
 
 const MAX_INSIDER_RAW =
   MAX_RANK_WEIGHT *
@@ -48,7 +51,12 @@ const MAX_INSIDER_RAW =
 const MAX_OPTIONS_RAW = MAX_OPTIONS_SCORE * MAX_OPTIONS_TIMING;
 
 /**
- * ≈ 2662.15 — the theoretical ceiling (every factor at its maximum at once).
+ * ≈ 2855.04 — the theoretical ceiling (every factor at its maximum at once):
+ *   MAX_INSIDER_RAW  = 10 · 20 · 1.0 · 3.0 · 2.34 · 1.15 = 1614.60
+ *   MAX_OPTIONS_RAW  = 227.136 · 2.0                     =  454.272
+ *   (1614.60 + 454.272) · 1.2 · 1.15                     = 2855.043
+ * (The comment said 2662.15 for a while — that is the value from before the
+ * premium ladder gained rungs above $2M and its top base rose 18 → 26.)
  * Retained only as a reference for the score-breakdown display; it is NO LONGER
  * the score denominator. Those maxima essentially never co-occur, so dividing by
  * them crushed real signals into single digits and let the flat combo bonus
@@ -94,7 +102,19 @@ export const CORROBORATION_GATE = CONVICTION_THRESHOLDS.watch;
 // ──────────────────────────────────────────────────────────────────────────
 
 function clamp(v: number, min: number, max: number): number {
+  // NaN must not survive a clamp. `Math.max(0, NaN)` is NaN and `Math.min(100,
+  // NaN)` is NaN, so the plain form let a single NaN input (a NaN vix reading,
+  // a NaN cached accuracy) propagate all the way to `finalScore` — where
+  // `getConvictionLevel(NaN)` then silently returned 'LOW' and the value was
+  // written to SQLite. Every factor below is also guarded at its source; this is
+  // the backstop that makes the invariant total.
+  if (!Number.isFinite(v)) return min;
   return Math.min(max, Math.max(min, v));
+}
+
+/** A multiplier that is not a finite number is no information — fall back to neutral. */
+function finiteOr(v: number, fallback: number): number {
+  return Number.isFinite(v) ? v : fallback;
 }
 
 /**
@@ -196,7 +216,8 @@ export function isFinanceInsider(role: string): boolean {
  * the market-cap-relative branch production now uses. Retest before touching.
  */
 export function getDollarVolumePoints(buyValue: number, marketCap?: number): number {
-  if (marketCap && marketCap > 0) {
+  if (!Number.isFinite(buyValue)) return 1;
+  if (marketCap != null && Number.isFinite(marketCap) && marketCap > 0) {
     const ratio = buyValue / marketCap;
     if (ratio >= 0.005) return 20; // ≥ 0.5% of market cap
     if (ratio >= 0.001) return 14; // ≥ 0.1%
@@ -204,7 +225,12 @@ export function getDollarVolumePoints(buyValue: number, marketCap?: number): num
     if (ratio >= 0.00005) return 5; // ≥ 0.005%
     return 1;
   }
-  if (buyValue > 5_000_000) return 20;
+  // NOTE the `>=` on the top rung. It used to be `>`, while every rung below it
+  // used `>=`: a buy of exactly $5,000,000 fell through to 14 points and
+  // $5,000,001 scored 20 — a 43% jump across one cent, from an inconsistency
+  // rather than a decision. 20 trades in the live history sit exactly on this
+  // threshold. The cap-relative branch above was always consistent.
+  if (buyValue >= 5_000_000) return 20;
   if (buyValue >= 1_000_000) return 14;
   if (buyValue >= 500_000) return 10;
   if (buyValue >= 100_000) return 5;
@@ -216,6 +242,7 @@ export function getDollarVolumePoints(buyValue: number, marketCap?: number): num
 // ──────────────────────────────────────────────────────────────────────────
 
 export function getClusterMultiplier(distinctInsiders: number): number {
+  if (!Number.isFinite(distinctInsiders)) return 1.0;
   if (distinctInsiders >= 4) return 3.0;
   if (distinctInsiders === 3) return 2.0;
   if (distinctInsiders === 2) return 1.5;
@@ -232,10 +259,10 @@ export function getInsiderTimingMultiplier(
 ): { multiplier: number; notes: string[] } {
   const notes: string[] = [];
   let multiplier = 1.0;
-  if (daysToEarnings != null && daysToEarnings >= 0) {
+  if (daysToEarnings != null && Number.isFinite(daysToEarnings) && daysToEarnings >= 0) {
     if (daysToEarnings <= 5) {
       multiplier = 1.8;
-      notes.push('Earnings in 1–5 days (insider ×1.8)');
+      notes.push('Earnings in 0–5 days (insider ×1.8)');
     } else if (daysToEarnings <= 15) {
       multiplier = 1.5;
       notes.push('Earnings in 6–15 days (insider ×1.5)');
@@ -252,7 +279,7 @@ export function getInsiderTimingMultiplier(
 }
 
 export function getOptionsTimingMultiplier(daysToEarnings: number | undefined): number {
-  if (daysToEarnings == null || daysToEarnings < 0) return 1.0;
+  if (daysToEarnings == null || !Number.isFinite(daysToEarnings) || daysToEarnings < 0) return 1.0;
   if (daysToEarnings <= 5) return 2.0;
   if (daysToEarnings <= 15) return 1.6;
   if (daysToEarnings <= 30) return 1.3;
@@ -264,7 +291,8 @@ export function getOptionsTimingMultiplier(daysToEarnings: number | undefined): 
 // ──────────────────────────────────────────────────────────────────────────
 
 function optionPremium(o: OptionsActivity): number {
-  return o.premiumTotal ?? o.notional ?? 0;
+  const p = o.premiumTotal ?? o.notional ?? 0;
+  return Number.isFinite(p) ? p : 0;
 }
 
 /**
@@ -276,9 +304,13 @@ function optionPremium(o: OptionsActivity): number {
  * below $2M is unchanged.
  */
 function baseOptionPoints(premium: number): number {
-  if (premium > 10_000_000) return MAX_OPTION_BASE_POINTS; // 26
-  if (premium > 5_000_000) return 22;
-  if (premium > 2_000_000) return 18;
+  // All rungs use `>=`. The top three used `>` while the bottom two used `>=`,
+  // so a print of exactly $2,000,000 scored 14 and $2,000,001 scored 18 — an
+  // inconsistency, not a decision. (No live print sits exactly on a threshold,
+  // so this changes nothing in the current history; it makes the ladder honest.)
+  if (premium >= 10_000_000) return MAX_OPTION_BASE_POINTS; // 26
+  if (premium >= 5_000_000) return 22;
+  if (premium >= 2_000_000) return 18;
   if (premium >= 1_000_000) return 14;
   if (premium >= 500_000) return 9;
   return 3;
@@ -290,22 +322,22 @@ export function scoreOneOption(o: OptionsActivity): number {
   if (o.isSweep) pts *= 1.6;
   // Guard against expired contracts (negative DTE can leak in via the 72h temporal
   // merge) so they don't collect the short-dated "near-term gamma" boost.
-  if (o.dte != null && o.dte >= 0) {
+  if (o.dte != null && Number.isFinite(o.dte) && o.dte >= 0) {
     if (o.dte < 21) pts *= 1.5;
     else if (o.dte <= 60) pts *= 1.2;
     else if (o.dte > 180) pts *= 0.8;
   }
   // Signed: positive = out-of-the-money. Only OTM strikes signal speculative
   // conviction; a deep-ITM print is a conservative stock substitute, not a bet.
-  if (o.otmPercent != null) {
+  if (o.otmPercent != null && Number.isFinite(o.otmPercent)) {
     if (o.otmPercent > 15) pts *= 1.4;
     else if (o.otmPercent >= 5) pts *= 1.1;
   }
-  if (o.volOiRatio != null) {
+  if (o.volOiRatio != null && Number.isFinite(o.volOiRatio)) {
     if (o.volOiRatio > 10) pts *= 1.3;
     else if (o.volOiRatio >= 3) pts *= 1.1;
   }
-  return pts;
+  return finiteOr(pts, 0);
 }
 
 /**
@@ -314,7 +346,7 @@ export function scoreOneOption(o: OptionsActivity): number {
  * the persistence the 72h merge exists to capture — counts beyond the first
  * print without letting many small prints swamp one huge one.
  */
-export function scoreOptionsDetailed(options: OptionsActivity[]): { score: number; notes: string[] } {
+export function scoreOptionsDetailed(options: readonly OptionsActivity[]): { score: number; notes: string[] } {
   const notes: string[] = [];
   const bulls: number[] = [];
   const bears: number[] = []; // stored as positive magnitudes
@@ -339,7 +371,9 @@ export function scoreOptionsDetailed(options: OptionsActivity[]): { score: numbe
 // ──────────────────────────────────────────────────────────────────────────
 
 export function getVixMultiplier(vix: number | undefined, cap = DEFAULT_SCORING_CONFIG.vixCap): number {
-  if (vix == null) return 1.0;
+  // A NaN reading used to produce a NaN multiplier (`NaN <= 20` and `NaN >= 35`
+  // are both false, so the linear branch ran on NaN) and from there a NaN score.
+  if (vix == null || !Number.isFinite(vix) || !Number.isFinite(cap)) return 1.0;
   // Smooth ramp instead of a cliff: VIX 20→35 maps linearly to 1.0→cap, so a
   // reading of 24.9 vs 25.1 no longer flips the whole insider score by 15%.
   if (vix <= 20) return 1.0;
@@ -351,7 +385,9 @@ export function getTrackRecordMultiplier(
   bestAccuracy3m: number | undefined,
   slope = DEFAULT_SCORING_CONFIG.trackRecordSlope,
 ): number {
-  if (bestAccuracy3m == null) return 1.0;
+  // `clamp(NaN, …)` used to be NaN (Math.min(1.2, NaN) === NaN), so a NaN
+  // accuracy propagated into the score. Guard at the source as well as in clamp.
+  if (bestAccuracy3m == null || !Number.isFinite(bestAccuracy3m) || !Number.isFinite(slope)) return 1.0;
   // Smooth curve instead of two step thresholds: with Bayesian shrinkage the
   // old >0.7 boost effectively required a perfect 5-for-5 record, leaving the
   // multiplier at exactly 1.0 for nearly everyone the app pays to track.
@@ -612,21 +648,55 @@ export function computeConfidence(agg: TickerAggregate, eligible: RawInsiderTrad
 }
 
 /**
+ * Repair the shares/price/value of an aggregate's trades IN PLACE, dropping rows
+ * that cannot be salvaged. `scoreTicker` is pure and works on copies, so this is
+ * what the orchestrator calls when the rows it PERSISTS (and the UI renders)
+ * should carry the repaired numbers rather than the raw scrape.
+ */
+export function normalizeAggregateTrades(agg: TickerAggregate): void {
+  const out: RawInsiderTrade[] = [];
+  for (const t of agg.trades) {
+    const sane = sanitizeTradeAmounts(t.shares ?? 0, t.price, t.value ?? 0);
+    // Only scoring-eligible rows are repaired; sales/awards are display-only and
+    // are kept exactly as scraped so the modal still shows what the source said.
+    if (!isScoringEligible(t)) {
+      out.push(t);
+      continue;
+    }
+    if (!sane) continue;
+    t.shares = sane.shares;
+    t.price = sane.price;
+    t.value = sane.value;
+    out.push(t);
+  }
+  agg.trades = out;
+}
+
+/**
  * Score a single ticker from its merged trades + options.
  * Only transaction types with modifier > 0 contribute; modifier-0 trades
  * (sales, awards, exercise+sale…) are kept for display but score nothing.
+ *
+ * PURE: the aggregate is never modified, and two calls with the same input
+ * always produce the same output.
  */
 export function scoreTicker(agg: TickerAggregate, config: ScoringConfig = DEFAULT_SCORING_CONFIG): ScoredTicker {
   // Drop/repair impossible share×price×value combos so one glitched scrape
   // cannot mint $quadrillion volumes (e.g. FINS Insider-Monitor unit error).
-  const eligible = agg.trades.filter(isScoringEligible).filter((t) => {
+  // Repaired COPIES — scoring must not mutate its input. Writing the sanitized
+  // amounts back onto `agg.trades` made the function non-idempotent: a derived
+  // price above MAX_SANE_SHARE_PRICE (shares 1, value $5M) was accepted on the
+  // first pass and rejected on the second, so `scoreTicker(agg)` returned 57.1
+  // and the shadow-config call right after it, on the same object, returned 0.
+  // `normalizeAggregateTrades()` below is what the orchestrator uses when it
+  // WANTS the persisted rows repaired for display.
+  const eligible: RawInsiderTrade[] = [];
+  for (const t of agg.trades) {
+    if (!isScoringEligible(t)) continue;
     const sane = sanitizeTradeAmounts(t.shares ?? 0, t.price, t.value ?? 0);
-    if (!sane) return false;
-    t.shares = sane.shares;
-    t.price = sane.price;
-    t.value = sane.value;
-    return true;
-  });
+    if (!sane) continue;
+    eligible.push({ ...t, shares: sane.shares, price: sane.price, value: sane.value });
+  }
 
   // Total raw dollar volume across eligible buys (already sanity-bounded).
   const totalDollarVolume = eligible.reduce((sum, t) => {
@@ -674,18 +744,27 @@ export function scoreTicker(agg: TickerAggregate, config: ScoringConfig = DEFAUL
   // Step 3 — cluster from distinct eligible insiders buying in the last 30 days.
   const recentInsiders = new Set<string>();
   const allInsiders = new Set<string>();
+  /** Volume of the trades inside the SAME 30-day window the cluster counts. */
+  let recentVolume = 0;
   let freshestAge: number | null = null;
   let tradeDate: string | null = null;
   let filingDate: string | null = null;
   let lateFiling = false;
   for (const t of eligible) {
     const key = normalizeInsiderName(t.insiderName);
+    const age = daysBetween(t.tradeDate);
+    // A future-dated trade is a parsing error, never a real filing — it must not
+    // count as the freshest signal (see getFreshnessMultiplier).
+    const usableAge = age != null && Number.isFinite(age) && age >= 0 ? age : null;
     if (key) {
       allInsiders.add(key);
-      const age = daysBetween(t.tradeDate);
-      if (age != null && age <= 30) recentInsiders.add(key);
-      if (age != null && (freshestAge == null || age < freshestAge)) {
-        freshestAge = age;
+      if (usableAge != null && usableAge <= 30) {
+        recentInsiders.add(key);
+        const v = Number.isFinite(t.value) ? t.value : 0;
+        if (v > 0 && v <= MAX_SANE_TRADE_VALUE) recentVolume += v;
+      }
+      if (usableAge != null && (freshestAge == null || usableAge < freshestAge)) {
+        freshestAge = usableAge;
         tradeDate = t.tradeDate;
         filingDate = t.filingDate ?? null;
       }
@@ -721,8 +800,19 @@ export function scoreTicker(agg: TickerAggregate, config: ScoringConfig = DEFAUL
 
   // Step 2 — dollar-volume points on the AVERAGE buy per insider (decorrelates
   // magnitude from cluster count), market-cap-normalized when available.
-  const distinctBuyers = Math.max(allInsiders.size, 1);
-  const perInsiderValue = totalDollarVolume / distinctBuyers;
+  //
+  // Numerator and denominator MUST describe the same set of trades. They used to
+  // not: the denominator counted every eligible insider ever on the aggregate
+  // while the cluster multiplier counted only the last 30 days, so adding two
+  // genuine but old, small buys diluted the average and LOWERED the score —
+  // 2 fresh $1M buys scored 39.4, the same two plus two 200-day-old $10k buys
+  // scored 31.7. Both sides now use the 30-day window, with the full set as a
+  // fallback when nothing datable falls inside it (so an aggregate whose dates
+  // all failed to parse is still scored rather than divided by zero).
+  const useRecentWindow = recentInsiders.size > 0;
+  const distinctBuyers = useRecentWindow ? recentInsiders.size : Math.max(allInsiders.size, 1);
+  const windowVolume = useRecentWindow ? recentVolume : totalDollarVolume;
+  const perInsiderValue = windowVolume / distinctBuyers;
   const dollarVolumePoints = getDollarVolumePoints(perInsiderValue, agg.marketCap);
 
   // Step 4 — earnings timing.
@@ -755,15 +845,29 @@ export function scoreTicker(agg: TickerAggregate, config: ScoringConfig = DEFAUL
   const insiderRaw =
     rankWeight * dollarVolumePoints * typeModifier * clusterMultiplier * insiderTiming.multiplier * vixMultiplier;
   const optionsRaw = opts.score * optionsTimingMultiplier;
-  const coreCombined =
-    (insiderRaw * freshnessMultiplier + optionsRaw * optionsFreshness) * trackRecordMultiplier * valuationMultiplier;
+  const legSum = insiderRaw * freshnessMultiplier + optionsRaw * optionsFreshness;
+  // Context multipliers scale CONVICTION, so they may only ever amplify a
+  // positive reading. Applied to a net-negative leg sum (put-dominated flow
+  // outweighing a small insider buy) they inverted: with a politician score
+  // added afterwards, a track record of 0.85 scored 69.2 while a track record of
+  // 0.20 scored 73.1 — a better insider record produced a WORSE score. Same for
+  // valuation (overvalued −30% → 72.6, undervalued +45% → 69.8). Below zero the
+  // multipliers are simply not applied; the function stays continuous at 0 and
+  // is now monotonically non-decreasing in both.
+  const contextMultiplier = trackRecordMultiplier * valuationMultiplier;
+  const coreCombined = legSum > 0 ? legSum * contextMultiplier : legSum;
 
   const combinedLive = coreCombined + politicianResult.score;
   const combinedLegacy = coreCombined + politicianLegacy.score;
 
   // Saturating normalization (see SCORE_HALF_SATURATION).
-  const normLive = (Math.max(combinedLive, 0) / (Math.max(combinedLive, 0) + config.scoreHalfSaturation)) * 100;
-  const normLegacy = (Math.max(combinedLegacy, 0) / (Math.max(combinedLegacy, 0) + config.scoreHalfSaturation)) * 100;
+  // `finiteOr(…, 0)` before the saturation, not after: a non-finite composite
+  // would otherwise make the ratio NaN and every downstream comparison silently
+  // false (including the WATCH gate and getConvictionLevel).
+  const satLive = Math.max(finiteOr(combinedLive, 0), 0);
+  const satLegacy = Math.max(finiteOr(combinedLegacy, 0), 0);
+  const normLive = (satLive / (satLive + config.scoreHalfSaturation)) * 100;
+  const normLegacy = (satLegacy / (satLegacy + config.scoreHalfSaturation)) * 100;
 
   const classicCombo = detectCombo(eligible, agg.options);
   // MEGA already implies insider+options alignment — treat as combo for flags/notifications.

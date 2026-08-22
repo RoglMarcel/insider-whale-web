@@ -738,11 +738,27 @@ export interface TxClassification {
  */
 export function classifyTransaction(raw: string): TxClassification {
   const s = (raw ?? '').toLowerCase().trim();
-  const code = s.charAt(0);
+  /**
+   * The SEC transaction CODE — only when the string actually IS a code, i.e. a
+   * bare letter ("P") or a letter followed by a separator ("P - Purchase",
+   * "S/Sale", "A: Award"). Taking `s.charAt(0)` unconditionally applied the code
+   * table to arbitrary prose and misread real events:
+   *   "Acquisition"   → 'a' → Stock Award,           modifier 0 (a BUY, dropped)
+   *   "Automatic Buy" → 'a' → Stock Award,           modifier 0 (a BUY, dropped)
+   *   "Cash Purchase" → 'c' → Derivative Conversion, modifier 0.2
+   *   "Common Stock"  → 'c' → Derivative Conversion, modifier 0.2
+   *   "Dir"           → 'd' → Sale,                  modifier 0
+   * All four transaction-type strings present in the live database
+   * ("P - Purchase", "Buy", "Purchase", "Purchase(A)") classify identically
+   * before and after this change, so nothing in the stored history moves.
+   */
+  const code = /^[a-z]([^a-z].*)?$/.test(s) ? s.charAt(0) : '';
   const has = (...t: string[]) => t.some((x) => s.includes(x));
 
-  // 10b5-1 pre-scheduled plans
-  if (has('10b5-1', '10b5', 'planned')) {
+  // 10b5-1 pre-scheduled plans. "automatic" belongs here: it is the wording
+  // Insider-Monitor's AB/AS codes expand to, and a plan trade carries little
+  // information regardless of which word a source uses for it.
+  if (has('10b5-1', '10b5', 'planned', 'automatic')) {
     if (has('sale', 'sell', 'dispos')) return { modifier: 0.0, label: '10b5-1 Sale', tier: 'excluded' };
     return { modifier: 0.4, label: '10b5-1 Buy', tier: 'reduced' };
   }
@@ -893,7 +909,15 @@ export function getFreshnessMultiplier(ageDays: number | null, decayRate = 0.115
   // multiplier to signals whose dates failed to parse, while a real, correctly
   // dated 10-day-old buy was discounted to ~0.32 — i.e. missing data outscored
   // present data. An undateable signal is treated as maximally stale instead.
-  if (ageDays == null) return floor;
+  // NaN takes the same path (`NaN < 1` is false, so it used to fall through to
+  // `exp(-rate·NaN)` = NaN and from there into the score).
+  if (ageDays == null || !Number.isFinite(ageDays)) return floor;
+  if (!Number.isFinite(decayRate) || !Number.isFinite(floor)) return 1.0;
+  // A NEGATIVE age means the trade is dated in the future — always a parsing
+  // error, never a real Form 4. It used to read as maximally fresh (×1.0), so a
+  // date mis-parsed by a year became the freshest signal in the system. Treat it
+  // like an undateable one.
+  if (ageDays < 0) return floor;
   if (ageDays < 1) return 1.0;
   // Smooth exponential (half-life ≈ 6 days) instead of step cliffs, so a
   // signal no longer loses 30–50% of its insider leg overnight crossing a
@@ -938,7 +962,9 @@ export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
 export type FreshnessLevel = 'fresh' | 'recent' | 'aging' | 'stale';
 
 export function getFreshnessLevel(ageDays: number | null): FreshnessLevel {
-  if (ageDays == null) return 'stale';
+  // Unknown, non-finite and future-dated all mean "we cannot date this" — the
+  // badge must agree with getFreshnessMultiplier, which floors all three.
+  if (ageDays == null || !Number.isFinite(ageDays) || ageDays < 0) return 'stale';
   if (ageDays < 1) return 'fresh';
   if (ageDays <= 3) return 'recent';
   if (ageDays <= 7) return 'aging';
@@ -1167,7 +1193,7 @@ export const MAX_SINGLE_OPTION_POINTS = MAX_OPTION_BASE_POINTS * 1.6 * 1.5 * 1.4
  * Display ceiling for the summed per-direction options score: best print plus
  * a geometric tail (best + ½·2nd + ¼·3rd + … < 2× best).
  */
-export const MAX_OPTIONS_SCORE_TOTAL = MAX_SINGLE_OPTION_POINTS * 2; // 157.248
+export const MAX_OPTIONS_SCORE_TOTAL = MAX_SINGLE_OPTION_POINTS * 2; // 227.136
 
 // Track-record reliability controls (Feature 6). A win rate over a handful of
 // trades is mostly noise, so the scoring multiplier ignores insiders below a
@@ -1179,7 +1205,8 @@ export const TRACK_RECORD_SHRINKAGE_K = 3;
 
 /**
  * Bayesian-shrunk win rate: (wins + k·0.5) / (n + k). Pulls small samples toward
- * 0.5 so a 1-for-1 record reads ~0.62, not 1.0, while a 30-for-40 stays near 0.74.
+ * 0.5 so a 1-for-1 record reads ~0.625, not 1.0, while a 30-for-40 reads ~0.733
+ * instead of 0.75.
  */
 export function shrunkAccuracy(wins: number, total: number, k = TRACK_RECORD_SHRINKAGE_K): number {
   if (total <= 0) return 0.5;

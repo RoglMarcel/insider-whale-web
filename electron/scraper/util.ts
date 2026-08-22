@@ -9,7 +9,10 @@ export function parseMoney(raw?: string | null): number {
   if (raw == null) return 0;
   const trimmed = String(raw).trim();
   if (!trimmed) return 0;
-  const negative = /^\(.*\)$/.test(trimmed) || trimmed.startsWith('-');
+  // Financial sites render the sign as a typographic minus (U+2212) or an
+  // en/em dash as often as an ASCII hyphen. Reading only '-' silently turned
+  // "−34.2%" into +34.2 — which flips, for example, the 52-week-drawdown sign.
+  const negative = /^\(.*\)$/.test(trimmed) || /^[-−‒–—]/.test(trimmed);
   // First number in the string, plus a k/m/b magnitude suffix ONLY when it
   // immediately follows the digits. This anchors the suffix to the numeric token,
   // so "1,000 mln" parses as 1000 (not 1e9) and a stray letter elsewhere is ignored,
@@ -83,8 +86,81 @@ export function sanitizeTradeAmounts(
     if (s > MAX_SANE_SHARES || s <= 0) return null;
   }
   if (!(v > 0)) return null;
-  if (s > 0 && p == null) p = v / s;
+  if (s > 0 && p == null) {
+    // Deriving the price here used to bypass the MAX_SANE_SHARE_PRICE check
+    // above, so the function could RETURN a price it would itself reject —
+    // e.g. (shares 1, value $5M) → price $5M/share. Feeding that output back in
+    // then returned null, making the whole function non-idempotent (and, via
+    // the caller, scoring non-idempotent: 57.1 on the first pass, 0 on the
+    // second). An implausible derived price means the SHARE COUNT is unreliable,
+    // not that the trade is fake — the value column still stands, and price is
+    // display-only, so drop just the price.
+    const derived = v / s;
+    if (derived <= MAX_SANE_SHARE_PRICE) p = derived;
+  }
   return { shares: s, price: p, value: v };
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Ticker validation / canonicalization
+// ──────────────────────────────────────────────────────────────────────────
+
+/**
+ * A US-listed equity symbol: 1–5 letters, optionally a share-class suffix
+ * (`BRK.B`, `LEN-B`). Deliberately letters-only — every symbol that failed this
+ * rule in the live database was garbage, never a real ticker:
+ * `-` (a Quiver dash cell carrying a $6M trade), `NVDAEARNINGS` (an
+ * InsiderFinance grid label scored as a $5.4M call), `3.MONTHMATURE`,
+ * `GLASFUNDS`, `TE1` (Capitol Trades bond rows), and the Finviz
+ * doubled-first-letter symbols `DDGICA` / `GGLIBA` / `LLILAK` / `FFCNCA`.
+ */
+const TICKER_SHAPE = /^[A-Z]{1,5}([.\-][A-Z]{1,2})?$/;
+
+/** True if `raw` looks like a real equity symbol (see TICKER_SHAPE). */
+export function isValidTicker(raw?: string | null): boolean {
+  return TICKER_SHAPE.test(canonicalTicker(raw));
+}
+
+/**
+ * Canonical form of a symbol: uppercase, and the share-class separator
+ * normalized to a DOT. Sources disagree — SEC/Yahoo write `BRK-B`, OpenInsider
+ * and stockanalysis.com write `BRK.B` — and without this the same company was
+ * carried as two tickers (`BRK.B`, `BRK-A`, plus the corrupted `BBRK-A`), each
+ * with its own signal, and `isBigPlayer('BRK-B')` was false while
+ * `isBigPlayer('BRK.B')` was true.
+ *
+ * The dot form is chosen because `BIG_PLAYERS` and stockanalysis.com already use
+ * it; `yahooTicker()` converts back for the price APIs.
+ */
+export function canonicalTicker(raw?: string | null): string {
+  return cleanTicker(raw).replace(/-/g, '.');
+}
+
+/** Symbol in the form Yahoo Finance's chart API expects (`BRK.B` → `BRK-B`). */
+export function yahooTicker(raw?: string | null): string {
+  return canonicalTicker(raw).replace(/\./g, '-');
+}
+
+/**
+ * Canonicalize every row's ticker and drop the ones that are not symbols at all.
+ * Returns the rejects so a run can REPORT how much it threw away instead of
+ * discarding it silently — a scraper whose ticker column moves would otherwise
+ * look like a scraper that simply found nothing.
+ */
+export function sanitizeTickerRows<T extends { ticker: string }>(
+  rows: readonly T[],
+): { kept: T[]; rejected: string[] } {
+  const kept: T[] = [];
+  const rejected: string[] = [];
+  for (const row of rows) {
+    const ticker = canonicalTicker(row.ticker);
+    if (!isValidTicker(ticker)) {
+      rejected.push(String(row.ticker ?? ''));
+      continue;
+    }
+    kept.push(ticker === row.ticker ? row : { ...row, ticker });
+  }
+  return { kept, rejected };
 }
 
 export function parseDate(raw?: string | null): string {
