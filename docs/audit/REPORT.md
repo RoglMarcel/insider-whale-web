@@ -168,6 +168,8 @@ der Code (u. a. `finalScore` als Legacy-Formel, `MAX_POSSIBLE_RAW ≈ 2126` stat
 
 ### 4.1 Die zwei Skalen in `getDollarVolumePoints` (H1)
 
+> **Umgesetzt am 2026-08-23 als Variante C — siehe §10.**
+
 Der Faktor trägt **60,0 % der Varianz** von `log(insiderRaw)` und wechselt je nach
 Datenverfügbarkeit die Einheit. Derselbe $5M-CEO-Kauf: **57,1 (WATCH)** ohne
 bekannte Marktkapitalisierung, **8,7 (LOW)** bei 2 Billionen. Abdeckung 65,9 %.
@@ -385,3 +387,94 @@ Labelfenster von rund 37 Tagen passen ~1,85 nicht überlappende 20-Tage-Fenster
 hinein; für die marktweite Komponente ist das effektive n näher an 2 als an 330.
 Ein zweidimensionales Clustering (Ticker × Woche) wäre der nächste ehrliche
 Schritt an der Statistik.
+
+---
+
+## 10. Nachtrag (2026-08-23) — H1, Variante C: Abdeckung statt Umskalierung
+
+§4.1 hat drei Varianten vermessen und C empfohlen: die Abdeckung von
+`marketCap` erhöhen, statt die Ersatzskala anders zu parametrisieren. Umgesetzt
+ist C. **Keine Konstante wurde geändert.**
+
+### 10.1 Die Ursache war nicht, was sie zu sein schien
+
+Die Annahme war „der Abruf scheitert bei 34 % der Ticker". Gemessen:
+
+| | Anzahl |
+|---|---:|
+| Ticker in `signals` | 689 |
+| Zeilen in `ticker_meta` | 449 |
+| davon **mit** `market_cap` | 424 (**94,4 %**) |
+| Ticker **ohne jede** `ticker_meta`-Zeile | **240** |
+| davon mit verdoppeltem Anfangsbuchstaben | **143 (59,6 %)** |
+
+Wo eine Zeile existiert, funktioniert der Abruf zu 94 %. Die Lücke sind Ticker,
+die **nie eine Zeile bekommen haben** — und 143 davon sind exakt die
+Ticker-Korruption aus §2. **Die Ticker-Reparatur ist damit der größte Teil der
+Abdeckungs-Korrektur; sie war schon gebaut, nur nicht als solche erkannt.**
+
+Der Rest ist Budget-Verhungern. Die Anreicherungsphase läuft unter einem harten
+60-Sekunden-Budget. Die 240 dauerhaft scheiternden Ticker wurden bei **jedem
+Lauf** erneut versucht — bis zu drei Requests pro Ticker, ohne dass ein
+Fehlschlag je gespeichert wurde. Das Budget war damit strukturell aufgebraucht,
+bevor legitime Ticker an die Reihe kamen. Genau deshalb stagnierte die Abdeckung
+bei 449.
+
+Live gegen stockanalysis.com verifiziert:
+
+| Symbol | Status | Ergebnis |
+|---|---|---|
+| `AALK` (korrupt) | 404 | echter Fehlschlag, ab jetzt negativ gecacht |
+| `ALK` (repariert) | 200 | **4,51 Mrd.** — die Reparatur liefert die Kapitalisierung |
+| `ABBV` (verhungert) | 200 | **468,22 Mrd.** — war nie kaputt, kam nur nie dran |
+| `LLY`, `AAPL` (echt verdoppelt) | 200 | 1,12 Bio. / 4,51 Bio. — die Registry-Prüfung schützt sie korrekt |
+| `BRK.B` (Anteilsklasse) | 200 | 1,06 Bio. — die URL-Form stimmt bereits |
+| `QQQ`, `SPY`, `FB` | 200 **+ Redirect** | ETF bzw. umbenannt — 200, aber die Seite parst zu nichts |
+
+Stichprobe über die de-doppelten Ticker: **14 von 15** liefern eine echte
+Marktkapitalisierung.
+
+### 10.2 Was gebaut wurde
+
+1. **Negatives Caching.** Ein definitiver Fehlschlag wird als Zeile ohne Daten
+   mit frischem `fetched_at` festgehalten („wir haben nachgesehen"). Die Regel
+   steckt in `classifyStockPageResponse` (`scraper/util.ts`), damit sie ohne Netz
+   testbar ist: 404/410 → `missing`; 200 **mit Redirect** → `missing` (ETF,
+   Umbenennung); alles andere Nicht-2xx → `transient`, **niemals** gecacht.
+   Ein Timeout oder ein 429 darf einen echten Ticker nicht für 24 h stilllegen —
+   dieselbe Unterscheidung, die der Track-Record-Cache schon dokumentiert.
+2. **Rangfolge.** Die Anreicherung arbeitet die Aggregate jetzt nach Bedeutung ab
+   (Insider-Volumen bzw. größte Optionsprämie). `prewarmTrackRecords` und der
+   Finviz-Fallback ranken längst; ausgerechnet die Phase, die `marketCap`
+   erzeugt, tat es nicht. Läuft das Budget aus, trifft der Schnitt nun die
+   unwichtigsten Aggregate statt einer beliebigen Array-Position.
+3. **Sichtbarkeit.** Jeder Lauf meldet die Abdeckung (`n/m aggregate(s) have a
+   marketCap`) und **warnt, wenn das 60-s-Budget vorher ausläuft**. Vorher endete
+   die Phase stumm — die Stagnation bei 449 hätte auffallen müssen und konnte es
+   nicht.
+4. **Negativ gecachte Ticker überspringen auch den Finviz-Fallback.** Sonst wäre
+   dasselbe verschwendete Budget nur in eine andere Phase gewandert.
+
+### 10.3 Bewusst NICHT gebaut
+
+- **Kein ETF-Endpunkt** (`/etf/<ticker>/`). Für QQQ oder SPY gäbe es dort ein
+  Fondsvolumen, aber „Insider-Kauf in % der Marktkapitalisierung" ist für einen
+  ETF keine sinnvolle Größe — es sind Kongress-Trades ohne Insider. Sie werden
+  negativ gecacht und kosten nichts mehr.
+- **Kein „leeres Parse-Ergebnis = Fehlschlag".** Das wäre die bequemere Regel und
+  die gefährlichste: am Tag einer HTML-Änderung von stockanalysis.com würde sie
+  das **gesamte** Universum für eine volle TTL negativ cachen. Deshalb hängt die
+  Cachebarkeit am Redirect, einer strukturellen Eigenschaft des Symbols, nicht am
+  Parse-Ergebnis.
+
+### 10.4 Rest-Lücke, offen und benannt
+
+Geschlossene Fonds wie `PCF` liefern 200 **ohne** Redirect, haben aber keine
+Marktkapitalisierungs-Zeile. Sie werden nach der obigen Regel korrekt nicht
+negativ gecacht und daher weiter bei jedem Lauf abgerufen. Das ist eine Handvoll
+Ticker und der bewusst gewählte Preis dafür, die gefährliche Regel aus §10.3
+nicht zu bauen.
+
+Die tatsächliche Abdeckung nach diesen Änderungen lässt sich erst nach einem
+echten Scrape-Lauf beziffern — sie hängt am Netz, nicht am Code. Die neue
+Log-Ausgabe macht sie ab dann bei jedem Lauf sichtbar.

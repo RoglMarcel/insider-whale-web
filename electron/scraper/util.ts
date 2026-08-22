@@ -472,3 +472,30 @@ export function colIndex(headers: string[], aliases: string[]): number {
 export function cell(row: string[], idx: number): string {
   return idx >= 0 && idx < row.length ? row[idx] : '';
 }
+
+export type StockPageVerdict = 'ok' | 'missing' | 'transient';
+
+/**
+ * What a stockanalysis.com `/stocks/<ticker>/` response means for the
+ * enrichment cache. Split out from the fetch so the DECISION is testable
+ * without a network — getting it wrong is silent and expensive in both
+ * directions.
+ *
+ * - `ok`        — a real stock page; parse it.
+ * - `missing`   — the symbol has no stock page here and will not grow one:
+ *                a bad ticker (404/410), or a 200 that REDIRECTED away from
+ *                `/stocks/` because the symbol is an ETF (QQQ, SPY → `/etf/…`)
+ *                or a renamed listing (FB → META). Stable, therefore cacheable.
+ * - `transient` — 429, 5xx, anything else. NEVER cacheable: caching one blip
+ *                suppresses a real ticker for the whole TTL, the same trap the
+ *                track-record cache already documents.
+ *
+ * Note what is deliberately NOT a signal here: "the parse came back empty".
+ * Keying cacheability on an empty parse would negative-cache the entire
+ * universe for a full TTL the day the site changes its HTML.
+ */
+export function classifyStockPageResponse(status: number, redirected: boolean): StockPageVerdict {
+  if (status === 404 || status === 410) return 'missing';
+  if (status < 200 || status >= 300) return 'transient';
+  return redirected ? 'missing' : 'ok';
+}

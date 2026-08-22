@@ -26,7 +26,7 @@ import {
   DEFAULT_SCORING_CONFIG,
 } from '../../src/types';
 import { launchBrowser, createContext, installChromium, type InsiderScraper, type OptionsScraper } from './browser';
-import { sanitizeTickerRows } from './util';
+import { sanitizeTickerRows, classifyStockPageResponse } from './util';
 import { scoreTicker, isScoringEligible, getRankWeight, normalizeAggregateTrades } from '../scoring';
 import {
   insertSignals,
@@ -574,10 +574,42 @@ export interface StockAnalysisData {
   earningsTiming?: 'AMC' | 'BMO';
   marketCap?: number;
   sector?: string;
+  /**
+   * The symbol has no page here at all (definitive 404) — as opposed to a
+   * transient failure. Only a definitive miss may be cached negatively; caching
+   * a timeout or a 429 would suppress a real ticker for the whole TTL. Same
+   * distinction the track-record cache already makes.
+   */
+  notFound?: boolean;
 }
 
 /** Enrichment values change at most daily; cached rows older than this refetch. */
 const TICKER_META_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Order the enrichment phase by how much the score actually depends on the
+ * answer. The phase runs under a hard 60s budget, so when the budget runs out
+ * the cut-off has to fall on the aggregates that need enrichment least —
+ * otherwise which tickers get a `marketCap` is decided by array position.
+ *
+ * That matters more than it looks: `marketCap` is what selects the ladder in
+ * `getDollarVolumePoints`, and the absolute fallback ladder scores the same buy
+ * several times higher than the cap-relative one. An arbitrary cut-off means an
+ * arbitrary subset of signals is scored on the generous scale.
+ *
+ * `prewarmTrackRecords` and the Finviz fallback already rank their work; this
+ * phase was the only one that did not. Politician-only aggregates carry neither
+ * trades nor options and therefore sort last, which is correct — they are
+ * dropped as content-free after scoring anyway.
+ */
+function rankedForEnrichment(aggregates: TickerAggregate[]): TickerAggregate[] {
+  const weight = (agg: TickerAggregate): number => {
+    const insider = agg.trades.filter(isScoringEligible).reduce((s, t) => s + (t.value || 0), 0);
+    const options = agg.options.reduce((m, o) => Math.max(m, o.premiumTotal ?? o.notional ?? 0), 0);
+    return Math.max(insider, options);
+  };
+  return [...aggregates].sort((a, b) => weight(b) - weight(a));
+}
 
 /** Whole-calendar-day countdown to a YYYY-MM-DD date (0 = today, negative = past). */
 function daysUntil(dateIso: string): number | null {
@@ -608,7 +640,12 @@ export async function fetchStockAnalysisEarnings(ticker: string): Promise<StockA
     // Hard timeout: undici's defaults allow a stalled socket to hang for
     // minutes, and this runs inside the scrape's enrichment phase.
     const resp = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(10_000) });
-    if (!resp.ok) return null;
+    // Cacheability of a miss is decided in one place (util) so it can be
+    // unit-tested without a network. Measured: AALK 404s, QQQ/SPY/FB return
+    // 200 but redirect away from /stocks/, ALK and ABBV are real 200s.
+    const verdict = classifyStockPageResponse(resp.status, resp.redirected);
+    if (verdict === 'missing') return { notFound: true };
+    if (verdict === 'transient') return null;
     const html = await resp.text();
     // stockanalysis.com wraps labels in anchors and sprinkles framework comment
     // markers between label and value; strip comments, then match the label
@@ -1071,8 +1108,8 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
       //    daily), then stockanalysis.com for cache misses. Bounded concurrency so a
       //    big batch doesn't fire 100+ simultaneous requests (rate-limit/socket burst),
       //    plus a total phase budget so a degraded host can't stall the scrape.
-      await withTimeout<void>(
-        mapLimit(aggregates, 6, async (agg) => {
+      const enrichmentCompleted = await withTimeout<boolean>(
+        mapLimit(rankedForEnrichment(aggregates), 6, async (agg) => {
           let cached: ReturnType<typeof getTickerMeta> = null;
           try {
             cached = getTickerMeta(agg.ticker, TICKER_META_TTL_MS);
@@ -1103,9 +1140,12 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
               if (cached.earningsTiming === 'AMC' || cached.earningsTiming === 'BMO') {
                 agg.earningsTiming = cached.earningsTiming;
               }
-            } else {
+            } else if (cached.marketCap != null || cached.sector != null) {
               remainingTickers.push(agg.ticker); // earnings still missing → Finviz fallback
             }
+            // else: a negative-cache row (nothing found at all). Sending it to
+            // the Playwright fallback every run is the same wasted budget in a
+            // different phase.
             return;
           }
           const e = await fetchStockAnalysisEarnings(agg.ticker);
@@ -1163,11 +1203,36 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
             } catch {
               /* cache is best-effort */
             }
+          } else if (e?.notFound) {
+            // Negative cache. Without it, a symbol with no page here — a bad
+            // ticker, an ETF, a delisted name — is retried on EVERY run at up to
+            // three requests each. 240 of 689 tickers were in exactly that state
+            // (143 of them the doubled-ticker corruption), and those retries
+            // consumed the whole 60s budget every run, which is why enrichment
+            // plateaued at 449. A row with no data but a fresh `fetched_at`
+            // records "we looked, there is nothing".
+            try {
+              upsertTickerMeta({ ticker: agg.ticker });
+            } catch {
+              /* cache is best-effort */
+            }
           }
-        }),
+        }).then(() => true),
         60_000,
-        undefined,
+        false,
       );
+      // Enrichment coverage is not cosmetic: a missing marketCap silently moves
+      // a signal onto the ABSOLUTE ladder in getDollarVolumePoints, which scores
+      // the same buy several times higher than the cap-relative one. Coverage
+      // had plateaued at 449 of 689 tickers with nothing reporting it.
+      const withCap = aggregates.filter((a) => a.marketCap != null).length;
+      console.log(`[scraper] enrichment: ${withCap}/${aggregates.length} aggregate(s) have a marketCap`);
+      if (!enrichmentCompleted) {
+        console.warn(
+          '[scraper] enrichment budget (60s) expired before every aggregate was processed — ' +
+            'the ranking puts the least significant ones last, but coverage is incomplete',
+        );
+      }
 
       // 2. Fallback to Finviz Playwright quote page scraper for any remaining tickers
       if (remainingTickers.length) {

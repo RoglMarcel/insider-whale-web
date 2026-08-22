@@ -11,6 +11,7 @@ import {
   yahooTicker,
   sanitizeTickerRows,
   repairDoubledTicker,
+  classifyStockPageResponse,
   MAX_SANE_TRADE_VALUE,
   MAX_SANE_SHARE_PRICE,
   MAX_SANE_SHARES,
@@ -242,5 +243,43 @@ describe('repairDoubledTicker (Finviz logo-glyph corruption)', () => {
     const out = sanitizeTickerRows([{ ticker: 'AALK' }]);
     expect(out.kept.map((r) => r.ticker)).toEqual(['AALK']);
     expect(out.repaired).toBe(0);
+  });
+});
+
+/**
+ * The cacheability verdict decides whether a failed enrichment is remembered.
+ * Too eager and one layout change negative-caches the whole universe for a TTL;
+ * too shy and dead symbols are refetched on every run — which is what consumed
+ * the 60s enrichment budget and pinned marketCap coverage at 449 of 689.
+ */
+describe('classifyStockPageResponse', () => {
+  it('treats a real, non-redirected page as parseable', () => {
+    expect(classifyStockPageResponse(200, false)).toBe('ok');
+  });
+
+  it('treats 404 and 410 as a permanent miss', () => {
+    expect(classifyStockPageResponse(404, false)).toBe('missing');
+    expect(classifyStockPageResponse(410, false)).toBe('missing');
+  });
+
+  it('treats a 200 that redirected away from /stocks/ as a permanent miss', () => {
+    // Measured against the live site: ETFs (QQQ, SPY) and renamed listings
+    // (FB → META) all answer 200 AND redirect, then parse to nothing.
+    expect(classifyStockPageResponse(200, true)).toBe('missing');
+  });
+
+  it('never marks a rate limit or a server error as cacheable', () => {
+    for (const status of [429, 500, 502, 503, 504]) {
+      expect(classifyStockPageResponse(status, false)).toBe('transient');
+      expect(classifyStockPageResponse(status, true)).toBe('transient');
+    }
+  });
+
+  it('assigns exactly one verdict to every status code', () => {
+    for (let status = 100; status < 600; status++) {
+      for (const redirected of [true, false]) {
+        expect(['ok', 'missing', 'transient']).toContain(classifyStockPageResponse(status, redirected));
+      }
+    }
   });
 });
