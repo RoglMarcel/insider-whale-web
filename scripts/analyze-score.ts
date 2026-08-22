@@ -243,7 +243,8 @@ function main(): void {
     console.log(`No DB at ${dbPath}.`);
     return;
   }
-  initDatabase(dbPath);
+  // Read-only: this is a report, and the file it reads is committed history.
+  initDatabase(dbPath, { readonly: true });
 
   console.log('Score-Kalibrierung — realisiertes SPY-relatives Alpha je Score.\n');
   console.log('„mit Inhalt" = Zeilen mit einem Insider-Leg ODER einem Options-Score.');

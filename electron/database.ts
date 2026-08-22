@@ -402,7 +402,21 @@ export function runMigrations(database: Database.Database): void {
 // Lifecycle
 // ──────────────────────────────────────────────────────────────────────────
 
-export function initDatabase(dbPath: string): Database.Database {
+/**
+ * Open the database.
+ *
+ * `readonly: true` is for ANALYSIS tools. Without it a report script goes
+ * through the full write path — backup, `CREATE TABLE`, migrations, trade
+ * backfill — against a file that in this repo is committed history with ~4,000
+ * irreplaceable labeled outcomes. Running `analyze:score` really did add a
+ * column to `data/insider-tracker.db`. Read-only mode also fails loudly if the
+ * schema is behind, which is the right outcome for a tool that only reads.
+ */
+export function initDatabase(dbPath: string, opts?: { readonly?: boolean }): Database.Database {
+  if (opts?.readonly) {
+    db = new Database(dbPath, { readonly: true });
+    return db;
+  }
   // Snapshot before opening/migrating so a bad migration can't wipe history.
   backupDatabaseBeforeMigration(dbPath);
   db = new Database(dbPath);
