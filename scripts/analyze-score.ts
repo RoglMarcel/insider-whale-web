@@ -38,7 +38,7 @@
  */
 import path from 'node:path';
 import fs from 'node:fs';
-import { initDatabase, closeDatabase, getScoreOutcomeRows } from '../electron/database';
+import { initDatabase, closeDatabase, getScoreOutcomeRows, getFactorActivity } from '../electron/database';
 
 const HORIZONS = [5, 10, 20];
 const BUCKETS: [number, number][] = [
@@ -288,6 +288,30 @@ function main(): void {
     reportSet('ALLE', rows);
     console.log('  Out-of-Sample (zeitlicher Split, nur Zeilen mit Inhalt):');
     outOfSample(withContent);
+    console.log('');
+  }
+
+  // ── Factor activity ────────────────────────────────────────────────────
+  // A component with zero variance is NOT refuted; it was never testable.
+  // Printing it next to the IC is what keeps those two claims apart.
+  const activity = getFactorActivity();
+  if (activity.length && activity[0].total > 0) {
+    console.log('=== Faktor-Aktivität über alle gespeicherten Signale ===');
+    console.log('  (wie oft weicht der Faktor überhaupt von seinem Neutralwert ab?)');
+    for (const f of [...activity].sort((a, b) => b.active - a.active)) {
+      const share = (f.active / f.total) * 100;
+      const verdict =
+        share === 0
+          ? 'INAKTIV — nicht widerlegt, nie testbar'
+          : share < 2
+            ? 'nahezu inaktiv'
+            : share < 10
+              ? 'selten aktiv'
+              : 'aktiv';
+      console.log(
+        `  ${f.name.padEnd(26)} ${String(f.active).padStart(6)}/${f.total}  ${share.toFixed(1).padStart(5)}%  ${verdict}`,
+      );
+    }
     console.log('');
   }
 

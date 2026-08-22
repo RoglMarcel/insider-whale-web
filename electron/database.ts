@@ -1359,6 +1359,47 @@ export function getScoreOutcomeRows(
     .all(horizon) as { score: number; alpha: number; entryDate: string; ticker: string; breakdown: string | null }[];
 }
 
+/**
+ * How often each scoring factor actually DEVIATES from its neutral value across
+ * the stored signals. A factor that never moves is not disproven — it was never
+ * testable — and that distinction has to be visible, or "no measured alpha" gets
+ * read as "no alpha".
+ */
+export function getFactorActivity(): { name: string; active: number; total: number }[] {
+  const rows = getDb()
+    .prepare(`SELECT score_breakdown FROM signals WHERE score_breakdown IS NOT NULL`)
+    .all() as { score_breakdown: string }[];
+  const counters: Record<string, number> = {};
+  const bump = (k: string, on: boolean) => {
+    counters[k] = (counters[k] ?? 0) + (on ? 1 : 0);
+  };
+  let total = 0;
+  for (const r of rows) {
+    let b: Record<string, unknown> = {};
+    try {
+      b = (JSON.parse(r.score_breakdown) as Record<string, unknown>) ?? {};
+    } catch {
+      continue;
+    }
+    total++;
+    const num = (k: string, dflt: number) => (typeof b[k] === 'number' ? (b[k] as number) : dflt);
+    bump('Insider rank', num('rankWeight', 0) > 0);
+    bump('Dollar volume', num('dollarVolumePoints', 0) > 1);
+    bump('Transaction type', num('typeModifier', 1) !== 1);
+    bump('Cluster', num('clusterMultiplier', 1) !== 1);
+    bump('Earnings timing (insider)', num('timingMultiplier', 1) !== 1);
+    bump('Earnings timing (options)', num('optionsTimingMultiplier', 1) !== 1);
+    bump('Options flow', num('optionsScore', 0) !== 0);
+    bump('Freshness', num('freshnessMultiplier', 1) !== 1);
+    bump('VIX', num('vixMultiplier', 1) !== 1);
+    bump('Track record', num('trackRecordMultiplier', 1) !== 1);
+    bump('Valuation', num('valuationMultiplier', 1) !== 1);
+    bump('Corroboration mult', num('comboBonus', 0) !== 0);
+    bump('Politician leg', num('politicianScore', 0) !== 0);
+  }
+  return Object.entries(counters).map(([name, active]) => ({ name, active, total }));
+}
+
 export function getSignalRowsForBacktest(): BacktestSignalRow[] {
   return getDb()
     .prepare(
