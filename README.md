@@ -23,7 +23,60 @@ the project without rediscovering the same context.
 - Releases are built locally (`npm run dist:win`) and uploaded to GitHub
   Releases; pushing to `main` is what redeploys the website.
 
-- **v1.2.1** (Current)
+- **v1.2.2** (Current) — line-by-line audit of the scoring model and the pipeline
+  - **Test suite where there was none.** Vitest + 288 tests: every pure function,
+    every threshold from *both* sides, and the invariants the model only ever
+    claimed in comments (score finite and in `[0,100]` for any input, no `NaN`
+    anywhere, every multiplier exactly `1.0` when neutral, scoring pure and
+    deterministic, options score `< 2×` the best print, monotone in each factor).
+    Plus a golden file of 15 fixed aggregates so any model change becomes visible.
+  - **CI quality gate.** `scrape.yml` was the only workflow — no typecheck, no
+    test, no scoring check anywhere before deploy. New `ci.yml` runs typecheck,
+    tests, `verify:scoring` and both builds on every push and PR.
+  - **`npm run typecheck` now actually covers `scripts/` and `tests/`** (~5000
+    previously unchecked lines, including `verify-scoring.ts` and
+    `analyze-score.ts`). It surfaced 18 real type errors, all fixed.
+  - **Scoring correctness.** `NaN` could reach `finalScore` (and then read as
+    `LOW`); `scoreTicker` mutated its input and was **not idempotent** — a trade
+    with 1 share and a $5M value scored 57.1 on the first call and 0 on the
+    second, which is exactly what the shadow-config path does; the context
+    multipliers **inverted** on a net-negative leg sum (a 0.85 track record scored
+    73.1 where a 0.20 record scored… higher, 73.1 vs 69.2); `perInsiderValue`
+    divided by *all* insiders while the cluster counted only the last 30 days, so
+    two extra genuine old buys *lowered* the score 39.4 → 31.7. All fixed, with a
+    measured blast radius of **1 of 689 live signals** and no tier change.
+  - **The "the score is inverted" finding is largely a measurement artifact.**
+    55% of the labeled 10-day rows had no scoring content at all (a ticker that
+    entered only because one member of Congress bought it), they are mega-cap
+    heavy and occupy the whole low end of the score range, and observations are
+    strongly clustered by ticker (ρ ≈ 0.45–0.77). Partitioning the sample and
+    correcting for the effective sample size turns `IC(10d) = −0.079, t = −3.00`
+    into `t = −1.95`, and restricting to real signals turns `IC(20d) = −0.149,
+    t = −4.51` into `IC = −0.015, t = −0.20`. What remains is honest and weaker:
+    within real signals the score does **not** rank, and the insider universe
+    trailed SPY by ~1.7% over 20 days in this regime. See
+    `tmp/audit/MONOTONICITY.md`.
+  - **Garbage tickers no longer become signals.** `-` (carrying a $6M trade),
+    `NVDAEARNINGS` (a $5.4M "call" scoring 17.3), `3.MONTHMATURE`, `GLASFUNDS`,
+    `TE1`, plus Finviz's doubled-first-letter symbols (`BBRK-A`, `DDGICA`,
+    `GGLIBA`, `LLILAK`, `FFCNCA`). Shared shape validation + share-class
+    canonicalization; the Finviz repair now reads the quote link positionally
+    instead of by cell text, which is why it kept missing exactly those symbols.
+  - **A missing transaction-type column no longer means "open-market buy".**
+  - **Data-quality monitor.** Per source and run: rows, unparseable tickers and
+    dates, missing values, unknown types, missing roles — persisted, warned about
+    above 20%, and shown as an "unusable" column in Source Health. A source whose
+    column moves used to look perfectly healthy by row count.
+  - **`npm run analyze:score` ran nowhere locally** (hard-coded `node` against an
+    Electron-ABI build). It now picks the runtime that can load the native module.
+  - **The breakdown UI told three lies:** it showed `raw / maxPossibleRaw` next to
+    the score as if normalization were linear (6% displayed where the score was
+    61.8), it printed the *legacy* flat politician bonuses (+45/+25/+20) for a
+    model that applies gated soft multipliers (×1.25/×1.18/×1.15), and it never
+    showed the options timing multiplier at all.
+  - Full audit under `tmp/audit/` (inventory, dataflow, formula-by-formula math,
+    factor plausibility, monotonicity hypotheses, engineering findings, report).
+- **v1.2.1**
   - **German / English UI.** Language switch in the header, where the light/dark
     toggle used to be (the app is dark-only now). 320 keys in `src/lib/i18n.ts`;
     `en` is the source of truth and `de` is typed as `Record<TKey, string>`, so a
@@ -116,12 +169,21 @@ the project without rediscovering the same context.
     measurable; options 9.5%, cluster 8.1%, track record 3.8%, combo 1.7%,
     **VIX 0%, valuation 0%** → not measurable. The earlier "no alpha" verdict for
     those was largely *unmeasurable*, not *disproven*.
+    - Note (v1.2.2 audit): these percentages measure how often a component
+      *varies*, which is not the same as its share of the score's spread. Measured
+      against `log(insiderRaw)` the variance shares are: dollar volume 60.0%,
+      insider rank 18.3%, freshness 13.3%, cluster 7.9%, earnings timing 0.7%.
   - **`npm run analyze:score` — does a high score mean anything?** Spearman IC with
     SE/t-stat plus per-bucket alpha and hit rate. First result on real data: the
     score is **non-monotonic** — IC is significantly NEGATIVE at 10d (−0.079, t=−3.0)
     and 20d (−0.149, t=−4.5), driven by the 20–59 band underperforming (−2.6% to
     −3.5%), while 60+ looks strong (+2.5% to +9.8%) on samples far too small (n=2–15)
     to trust. Recalibrating on this would be overfitting; more data is the only fix.
+    - **Correction (v1.2.2 audit):** this reading does not survive scrutiny. The
+      sample mixed real signals with content-free rows, and the SE ignored that
+      observations cluster by ticker. Corrected: `t(10d) = −1.95` (not −3.0), and
+      restricted to real signals `IC(20d) = −0.015, t = −0.20` (not −0.149,
+      −4.51). See `tmp/audit/MONOTONICITY.md`.
 - **v1.1.12**
   - **GuruFocus disabled in `publish:web`.** It hard-fails every run on a Cloudflare
     challenge that never clears (headed retry included) — and the repeated attempts
@@ -629,69 +691,147 @@ Relevant implementation:
 
 ## Scoring Model
 
-Implemented in `electron/scoring.ts`.
+Implemented in `electron/scoring.ts`; the shared constants and pure helpers live
+in `src/types/index.ts`. Both are dependency-free and fully unit-tested
+(`npm test` — 288 tests including the invariants below).
 
-High-level formula:
+### The formula, exactly as the code computes it
 
 ```text
 insiderRaw =
-  rankWeight
-  * dollarVolumePoints      // avg buy per insider, normalized by market cap when known
-  * transactionTypeModifier
-  * clusterMultiplier
-  * insiderEarningsMultiplier
-  * vixMultiplier           // smooth ramp 1.0→1.15 as VIX goes 20→35
+  rankWeight                 // 1…10, from the insider's title
+  * dollarVolumePoints       // 1…20; per-insider average over the LAST 30 DAYS,
+                             //   market-cap-relative when the cap is known,
+                             //   absolute dollar buckets when it is not
+  * transactionTypeModifier  // 0…1, value-weighted over eligible trades
+  * clusterMultiplier        // 1.0 / 1.5 / 2.0 / 3.0 for 1 / 2 / 3 / 4+ insiders
+  * insiderEarningsMultiplier// 1.0…2.34
+  * vixMultiplier            // smooth ramp 1.0 → 1.15 as VIX goes 20 → 35
 
 optionsRaw =
-  detailedOptionsScore
-  * optionsEarningsMultiplier
+  detailedOptionsScore       // signed: bullish minus bearish, geometric decay
+  * optionsEarningsMultiplier// 1.0…2.0
 
-combined =
-  (insiderRaw * insiderFreshness + optionsRaw * optionsFreshness)
-  * trackRecordMultiplier   // shrunk, market-relative insider win rate (min sample)
+legSum =
+  insiderRaw * insiderFreshness + optionsRaw * optionsFreshness
 
-finalScore =
-  clamp(100 * combined / (combined + SCORE_HALF_SATURATION) + comboBonus, 0, 100)
+coreCombined =
+  legSum > 0
+    ? legSum * trackRecordMultiplier * valuationMultiplier   // 0.85…1.2 · 0.9…1.15
+    : legSum                        // context multipliers never amplify a
+                                    // contra-signal (see "Monotonicity" below)
+
+combined = coreCombined + politicianScore          // congressional leg, >= 0
+
+norm     = 100 * max(combined, 0) / (max(combined, 0) + SCORE_HALF_SATURATION)
+
+finalScore =                                       // LIVE model (v1.0.46+)
+  clamp(norm >= CORROBORATION_GATE && softMult > 1 ? norm * softMult : norm, 0, 100)
+
+legacyScore =                                      // shadow comparison only
+  clamp(norm_legacy + flatComboBonus, 0, 100)
 ```
 
-Notes on realism (Tier-2 calibration):
+`softMult` is the corroboration multiplier — `1.20` for a classic
+insider+options combo, `1.18` / `1.15` / `1.25` for the three politician-combo
+tiers — and the tiers do **not** multiply with each other (`Math.max`, never a
+product). `CORROBORATION_GATE` is `50`, i.e. a corroboration bonus applies only
+once the signal already reads at WATCH on its own; below that the badge shows but
+the score is untouched.
 
-- **Buy size is scored relative to market cap** (per-insider average, decorrelated
-  from the cluster count) so a $5M buy reads as huge for a $200M company and noise
-  for a $2T one. Falls back to absolute dollar buckets when cap is unknown.
-- **Each component decays on its own clock** — the insider leg by the trade date,
-  the options leg by its live scrape time — so a stale insider buy no longer
-  discounts fresh options flow.
-- **VIX** uses a smooth 20→35 ramp instead of a hard cliff at 25.
-- **Track record** is the S&P-relative win rate (alpha), Bayesian-shrunk and gated
-  by a minimum sample, pre-warmed during the scrape so it actually participates.
+### Normalization
 
-`combined` is mapped to 0–100 by a **saturating curve** (`SCORE_HALF_SATURATION ≈ 105`),
-anchored so a strong-but-plausible signal (~420 raw) reads right at the HIGH
-threshold and stronger signals spread toward 100 without hard clipping. The earlier
-`/ MAX_POSSIBLE_RAW` linear normalization divided by the product of every factor's
-theoretical maximum (≈2126) — a combination that essentially never co-occurs — which
-crushed real insider signals into single digits and let the flat `comboBonus` decide
-the tier on its own. `MAX_POSSIBLE_RAW` is now kept only as a display reference.
+`combined` maps to 0–100 through a **saturating curve**:
 
-Conviction:
+```text
+score = 100 · raw / (raw + SCORE_HALF_SATURATION),  SCORE_HALF_SATURATION = 105
+```
+
+anchored so a strong-but-plausible signal — a top-exec buy in a ~3-insider cluster
+heading into earnings, ≈ 420 raw — lands exactly on the HIGH threshold
+(`100·420/525 = 80`). Note the consequence: the curve only asymptotes toward 100,
+so even the theoretical maximum of every factor at once (`MAX_POSSIBLE_RAW ≈
+2855.04`) yields **96.45**, and a score of 100 is reachable only via the
+corroboration multiplier and the final clamp.
+
+The earlier `/ MAX_POSSIBLE_RAW` linear normalization divided by the product of
+every factor's theoretical maximum — a combination that essentially never
+co-occurs — which crushed real insider signals into single digits and let the flat
+combo bonus decide the tier on its own. `MAX_POSSIBLE_RAW` is kept only as a
+display reference.
+
+### Invariants (enforced by `tests/invariants.test.ts`)
+
+- `finalScore` is a finite number in `[0, 100]` for **every** input, including
+  `NaN`, `Infinity`, empty aggregates and future-dated trades.
+- No `NaN` or `Infinity` ever reaches the score or any breakdown field.
+- Every multiplier returns exactly `1.0` on neutral input.
+- Scoring is **pure**: it never mutates the aggregate, and two calls with the
+  same input and the same clock return bit-identical results.
+- The per-direction options score is strictly below `2 ×` the best single print.
+- The score is monotone non-decreasing in track record, valuation, VIX, the
+  number of buying insiders, buy size and bullish premium; monotone
+  non-increasing in signal age; and adding a bearish print never raises it.
+
+### Monotonicity caveats that are deliberate
+
+- The corroboration gate is a **step**: at `norm = 49.9` the score is 49.9, at
+  `50.0` it is 60.0. Monotone, but a 20% jump at the threshold.
+- The options earnings multiplier amplifies **bearish** flow too — a
+  put-dominated tape into earnings reads as more negative, not less.
+- `getDollarVolumePoints` uses two different scales depending on whether the
+  market cap is known. The same $5M CEO buy scores 14 points (score 57.1) with no
+  cap and 1 point (score 8.7) on a $2T cap. Market-cap coverage is ~62%, and this
+  factor carries ~60% of the variance of `log(insiderRaw)`, so a meaningful part
+  of the score's spread reflects **data availability**. This is a known open
+  issue, documented in `tmp/audit/MONOTONICITY.md` (H1); it has not been changed,
+  because every candidate fix moves scores broadly and that is a product
+  decision, not a cleanup.
+
+### Conviction tiers
 
 - `HIGH`: score >= 80
 - `WATCH`: score >= 50
 - `LOW`: score < 50
 
-Major scoring factors:
+### What the calibration data does and does not say
 
-- Insider role rank.
-- Dollar volume.
-- Transaction type weighting.
-- Cluster buying.
-- Earnings countdown.
-- Detailed options flow.
-- Combo signal bonus.
-- Insider track record.
-- Freshness/time decay.
-- VIX boost when VIX > 25.
+`npm run label:outcomes` records realized SPY-relative alpha for ripened signals;
+`npm run analyze:score` reports the Spearman IC. Read that report with three
+things in mind, all of which it now prints itself:
+
+1. Rows with **no scoring content** (no eligible insider trade and no options
+   score — e.g. a ticker that entered only because one member of Congress bought
+   it) are a different universe and are reported separately. They were 55% of the
+   10-day sample and dominated the low end of the score range.
+2. Observations are **not independent** — the same ticker recurs daily and the
+   holding periods overlap (measured intra-cluster correlation ρ ≈ 0.45 at 10d,
+   ρ ≈ 0.77 at 20d). The report derives an effective sample size and computes `t`
+   from it; on the full sample this turns `t(10d) = −3.00` into `−1.95`.
+3. All labeled outcomes come from a **single market regime** (2026-07 to 2026-08).
+   The out-of-sample split is a time split *within* that regime — it shows
+   stability, not generalization. An improvement measured on this data is not
+   evidence of an edge.
+
+### Major scoring factors
+
+| Factor | Range | Variance share of `log(insiderRaw)` |
+|---|---|---|
+| Dollar volume (per insider, 30d) | 1–20 pts | 60.0% |
+| Insider role rank | 1–10 | 18.3% |
+| Freshness / time decay | 0.15–1.0 | 13.3% |
+| Cluster buying | 1.0–3.0 | 7.9% |
+| Earnings countdown (insider leg) | 1.0–2.34 | 0.7% |
+| Transaction type weighting | 0–1.0 | 0.0% (acts as a filter) |
+| Insider track record | 0.85–1.2 | −0.2% |
+| VIX (ramp from 20, not a cliff at 25) | 1.0–1.15 | **0.0% — never active in the data so far** |
+| Valuation | 0.9–1.15 | **0.0% — dormant, no provider wired** |
+| Detailed options flow | signed | own leg |
+| Congressional leg | additive, >= 0 | rarely non-zero |
+| Corroboration multiplier | 1.0–1.25 | **never fired in 10,541 stored signals** |
+
+The three "never active" rows are **not disproven** — they were never testable.
+They are kept and instrumented rather than removed.
 
 ## Feature Summary
 
