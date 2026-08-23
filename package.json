@@ -29,6 +29,7 @@
     "backtest:opportunistic": "esbuild scripts/backtest-opportunistic.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --outfile=tmp/backtest-opportunistic.cjs && electron tmp/backtest-opportunistic.cjs",
     "postinstall": "electron-builder install-app-deps",
     "analyze:score": "esbuild scripts/analyze-score.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --alias:electron=./scripts/electron-stub.ts --outfile=tmp/analyze-score.cjs && node scripts/run-node-or-electron.cjs tmp/analyze-score.cjs",
+    "backfill:tickers": "esbuild scripts/backfill-tickers.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --external:playwright --alias:electron=./scripts/electron-stub.ts --outfile=tmp/backfill-tickers.cjs && node scripts/run-node-or-electron.cjs tmp/backfill-tickers.cjs",
     "rescore:history": "esbuild scripts/rescore-history.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --alias:electron=./scripts/electron-stub.ts --outfile=tmp/rescore-history.cjs && node scripts/run-node-or-electron.cjs tmp/rescore-history.cjs",
     "test": "vitest run",
     "test:watch": "vitest",
