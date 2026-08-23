@@ -1,5 +1,5 @@
 import { useStore, type View } from '@/store/useStore';
-import { GridIcon, StarIcon, HistoryIcon, SettingsIcon, NewsIcon } from '@/components/UI/icons';
+import { GridIcon, StarIcon, HistoryIcon, SettingsIcon, NewsIcon, BriefcaseIcon } from '@/components/UI/icons';
 import { isWeb } from '@/lib/ipc';
 import { useI18n } from '@/hooks/useI18n';
 import type { TKey } from '@/lib/i18n';
@@ -14,10 +14,17 @@ interface Tab {
 /** Same destinations as the sidebar, in the same order. */
 const TABS: Tab[] = [
   { key: 'dashboard', label: 'nav.alerts', icon: GridIcon },
+  // Six tabs on the desktop build leaves ~60px each at 360px, so this one uses
+  // the SHORT label. Shortening the word is the right trade — shrinking the
+  // touch target is not.
+  { key: 'portfolio', label: 'nav.portfolioShort', icon: BriefcaseIcon },
   { key: 'news', label: 'nav.newsShort', icon: NewsIcon, desktopOnly: true },
   { key: 'watchlist', label: 'nav.watchlistShort', icon: StarIcon },
   { key: 'history', label: 'nav.history', icon: HistoryIcon },
-  { key: 'settings', label: 'nav.settings', icon: SettingsIcon },
+  // 'Einstellungen' is 13 characters; with the portfolio tab added it no longer
+  // fits ~60px and overflowed the bar at 360px. Shortening the WORD is the right
+  // trade — shrinking the touch target is not.
+  { key: 'settings', label: 'nav.settingsShort', icon: SettingsIcon },
 ];
 
 const VISIBLE_TABS = TABS.filter((tb) => !(isWeb && tb.desktopOnly));

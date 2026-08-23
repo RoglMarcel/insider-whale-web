@@ -4,6 +4,7 @@ import { api, isElectron, isWeb } from '@/lib/ipc';
 import { Layout } from '@/components/Layout/Layout';
 import { Dashboard } from '@/components/Dashboard/Dashboard';
 import { WatchlistView } from '@/components/Watchlist/WatchlistView';
+import { PortfolioView } from '@/components/Portfolio/PortfolioView';
 import { HistoryView } from '@/components/History/HistoryView';
 import { SettingsPanel } from '@/components/Settings/SettingsPanel';
 import { NewsView } from '@/components/News/NewsView';
@@ -116,6 +117,7 @@ export default function App() {
         )}
 
         {view === 'dashboard' && <Dashboard />}
+        {view === 'portfolio' && <PortfolioView />}
         {view === 'watchlist' && <WatchlistView />}
         {view === 'history' && <HistoryView />}
         {/* News lives only in the desktop app — the hosted build has no X scraper. */}

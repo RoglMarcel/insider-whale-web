@@ -14,7 +14,7 @@ import { DEFAULT_SETTINGS, DEFAULT_FILTER } from '@/types';
 import { api } from '@/lib/ipc';
 import { type Lang, initialLanguage, persistLanguage } from '@/lib/i18n';
 
-export type View = 'dashboard' | 'watchlist' | 'history' | 'news' | 'settings';
+export type View = 'dashboard' | 'portfolio' | 'watchlist' | 'history' | 'news' | 'settings';
 export type Theme = 'light' | 'dark';
 
 const FILTER_KEY = 'signalFilter';

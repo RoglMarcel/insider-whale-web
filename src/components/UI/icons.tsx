@@ -54,6 +54,15 @@ export const GridIcon = (p: IconProps) => (
   </svg>
 );
 
+/** Briefcase — the Portfolio tab. Same 24×24 stroke geometry as the rest. */
+export const BriefcaseIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <rect x="2" y="7" width="20" height="14" rx="2" />
+    <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+    <path d="M2 12h20" />
+  </svg>
+);
+
 export const StarIcon = ({ filled, ...p }: IconProps & { filled?: boolean }) => (
   <svg {...base(p)} fill={filled ? 'currentColor' : 'none'}>
     <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />

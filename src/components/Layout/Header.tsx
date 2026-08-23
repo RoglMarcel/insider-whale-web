@@ -11,6 +11,7 @@ import type { TKey } from '@/lib/i18n';
 
 const VIEW_META: Record<string, { title: TKey; subtitle: TKey }> = {
   dashboard: { title: 'view.dashboard.title', subtitle: 'view.dashboard.subtitle' },
+  portfolio: { title: 'view.portfolio.title', subtitle: 'view.portfolio.subtitle' },
   news: { title: 'view.news.title', subtitle: 'view.news.subtitle' },
   watchlist: { title: 'view.watchlist.title', subtitle: 'view.watchlist.subtitle' },
   history: { title: 'view.history.title', subtitle: 'view.history.subtitle' },

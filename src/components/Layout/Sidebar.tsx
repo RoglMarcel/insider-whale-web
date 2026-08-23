@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useStore, type View } from '@/store/useStore';
-import { GridIcon, StarIcon, HistoryIcon, SettingsIcon, NewsIcon } from '@/components/UI/icons';
+import { GridIcon, StarIcon, HistoryIcon, SettingsIcon, NewsIcon, BriefcaseIcon } from '@/components/UI/icons';
 
 import { api, isWeb } from '@/lib/ipc';
 import { useI18n } from '@/hooks/useI18n';
@@ -16,6 +16,9 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { key: 'dashboard', label: 'nav.alerts', icon: GridIcon },
+  // The testing portfolio sits directly under the alerts it is built from, and
+  // exists in BOTH builds — the hosted one reads the published curve.
+  { key: 'portfolio', label: 'nav.portfolio', icon: BriefcaseIcon },
   // News is scraped from X by the desktop app into its local database; the
   // hosted build has neither that scraper nor the rows, so the tab was always
   // an empty view there.
