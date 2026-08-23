@@ -1,6 +1,6 @@
 import type { PerformanceReport, PerformanceTierStats, PerformanceBucketStats } from '../src/types';
 import { getSignalRowsForBacktest } from './database';
-import { yahooTicker } from './scraper/util';
+import { fetchAdjCloseSeries } from './prices';
 
 /**
  * In-app calibration report — replays stored signals against realized forward
@@ -16,8 +16,6 @@ const MIN_GAP_DAYS = 5;
 const MAX_OBSERVATIONS = 400;
 const ENTRY_SEARCH_DAYS = 4;
 const EXIT_SEARCH_DAYS = 5;
-const YF_UA =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
 let recomputeInFlight = false;
 
@@ -42,35 +40,13 @@ interface Series {
   px: Map<string, number>;
 }
 
-interface YahooChart {
-  chart?: {
-    result?: Array<{ timestamp?: number[]; indicators?: { adjclose?: Array<{ adjclose?: Array<number | null> }> } }>;
-  };
-}
-
+/** Adjusted-close series in the shape this module indexes by date. */
 async function fetchSeries(symbol: string, fromYmd: string): Promise<Series | null> {
-  try {
-    const period1 = Math.floor((ymdUtcMs(fromYmd) - 10 * 86_400_000) / 1000);
-    const period2 = Math.floor(Date.now() / 1000) + 86_400;
-    // Yahoo writes share classes with a DASH (BRK-B); the pipeline canonicalizes
-    // to the dot form, so without this every class-share signal silently failed
-    // to resolve a price series and was dropped from the calibration.
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooTicker(symbol) || symbol)}?interval=1d&period1=${period1}&period2=${period2}`;
-    const res = await fetch(url, { headers: { 'User-Agent': YF_UA }, signal: AbortSignal.timeout(12_000) });
-    if (!res.ok) return null;
-    const json = (await res.json()) as YahooChart;
-    const result = json.chart?.result?.[0];
-    const ts = result?.timestamp ?? [];
-    const adj = result?.indicators?.adjclose?.[0]?.adjclose ?? [];
-    const px = new Map<string, number>();
-    ts.forEach((t, i) => {
-      const v = adj[i];
-      if (v != null && Number.isFinite(v) && v > 0) px.set(new Date(t * 1000).toISOString().slice(0, 10), v);
-    });
-    return px.size ? { dates: [...px.keys()].sort(), px } : null;
-  } catch {
-    return null;
-  }
+  const points = await fetchAdjCloseSeries(symbol, { fromYmd });
+  if (!points?.length) return null;
+  const px = new Map<string, number>();
+  for (const p of points) px.set(p.date, p.px);
+  return { dates: [...px.keys()].sort(), px };
 }
 
 function firstOnOrAfter(series: Series, target: string, maxDays: number): string | null {

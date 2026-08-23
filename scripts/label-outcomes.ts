@@ -19,7 +19,7 @@
  */
 import path from 'node:path';
 import fs from 'node:fs';
-import { yahooTicker } from '../electron/scraper/util';
+import { fetchAdjCloseSeries, priceOnOrAfter, PRICE_REQUEST_GAP_MS, sleep } from '../electron/prices';
 import {
   initDatabase,
   closeDatabase,
@@ -31,53 +31,18 @@ import {
 } from '../electron/database';
 
 const HORIZONS = [5, 10, 20] as const; // calendar days forward
-const UA =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
-const REQUEST_GAP_MS = 120;
 const MAX_TICKERS_PER_RUN = Number(process.env.LABEL_MAX_TICKERS ?? 250);
 
 type Series = { date: string; px: number }[];
 const cache = new Map<string, Series | null>();
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
 async function fetchSeries(ticker: string): Promise<Series | null> {
   if (cache.has(ticker)) return cache.get(ticker)!;
-  await sleep(REQUEST_GAP_MS);
-  try {
-    // Share classes reach Yahoo in the dash form (BRK-B); the pipeline stores
-    // the canonical dot form, so this conversion is what lets those signals be
-    // labeled at all.
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooTicker(ticker) || ticker)}?interval=1d&range=1y`;
-    const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(15_000) });
-    if (!res.ok) {
-      cache.set(ticker, null);
-      return null;
-    }
-    const json = (await res.json()) as any;
-    const r = json?.chart?.result?.[0];
-    const ts: number[] = r?.timestamp ?? [];
-    const adj: (number | null)[] = r?.indicators?.adjclose?.[0]?.adjclose ?? [];
-    const out: Series = [];
-    ts.forEach((t, i) => {
-      const v = adj[i];
-      if (v != null && Number.isFinite(v) && v > 0) {
-        out.push({ date: new Date(t * 1000).toISOString().slice(0, 10), px: v });
-      }
-    });
-    const series = out.length ? out : null;
-    cache.set(ticker, series);
-    return series;
-  } catch {
-    cache.set(ticker, null);
-    return null;
-  }
-}
-
-/** First close on or after `date` (entry), and the close ≥ `date + horizon` (exit). */
-function priceOnOrAfter(s: Series, date: string): { date: string; px: number } | null {
-  for (const p of s) if (p.date >= date) return p;
-  return null;
+  await sleep(PRICE_REQUEST_GAP_MS);
+  const points = await fetchAdjCloseSeries(ticker, { range: '1y' });
+  const series = points?.length ? points : null;
+  cache.set(ticker, series);
+  return series;
 }
 
 function addDays(ymd: string, days: number): string {

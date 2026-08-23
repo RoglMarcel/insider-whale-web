@@ -19,6 +19,11 @@ import {
   type ScoringConfig,
   type PoliticianTrade,
   type DataQualityReport,
+  type PortfolioConfig,
+  type PortfolioEquityPoint,
+  type PortfolioEvent,
+  type PortfolioPosition,
+  DEFAULT_PORTFOLIO_CONFIG,
   DEFAULT_SETTINGS,
   filterSignals,
   isBigPlayer,
@@ -77,6 +82,70 @@ function backupDatabaseBeforeMigration(dbPath: string): void {
     console.error('[database] pre-migration backup failed (continuing):', err);
   }
 }
+
+/**
+ * Testing-portfolio tables (v1.4.0). Kept as its own constant so SCHEMA and
+ * runMigrations() cannot drift apart — the migration path is what runs against
+ * the committed history DB, and a table that existed only in SCHEMA would never
+ * appear there.
+ */
+export const PORTFOLIO_SCHEMA = `
+-- ── Testing portfolio (v1.4.0) ────────────────────────────────────────────
+-- Adjusted-close cache. Every price the portfolio ever uses is read from here,
+-- so a Yahoo outage cannot silently reshape the stored curve and two runs on
+-- the same day cost one request per ticker, not one per lookup.
+CREATE TABLE IF NOT EXISTS price_history (
+  ticker TEXT NOT NULL,
+  date TEXT NOT NULL,            -- YYYY-MM-DD
+  adj_close REAL NOT NULL,       -- split- and dividend-adjusted CLOSE only
+  fetched_at DATETIME,
+  PRIMARY KEY (ticker, date)
+);
+
+CREATE TABLE IF NOT EXISTS portfolio_positions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ticker TEXT NOT NULL,
+  signal_id INTEGER,
+  entry_date TEXT NOT NULL,
+  entry_price REAL NOT NULL,     -- including slippage
+  shares REAL NOT NULL,
+  cost_basis REAL NOT NULL,
+  entry_score REAL NOT NULL,
+  target_weight REAL NOT NULL,
+  high_water_close REAL,
+  exit_date TEXT,
+  exit_price REAL,
+  exit_reason TEXT,              -- take_profit | stop_loss | trailing | time | data_missing
+  realized_pnl REAL,
+  spy_entry REAL,
+  spy_exit REAL,                 -- benchmark over EXACTLY the same holding period
+  UNIQUE (ticker, entry_date)
+);
+
+CREATE TABLE IF NOT EXISTS portfolio_equity (
+  date TEXT PRIMARY KEY,
+  cash REAL NOT NULL,
+  spy_cash_value REAL NOT NULL,
+  positions_value REAL NOT NULL,
+  equity REAL NOT NULL,
+  equity_idle REAL NOT NULL,
+  benchmark REAL NOT NULL,
+  open_positions INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS portfolio_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  date TEXT NOT NULL,
+  kind TEXT NOT NULL,            -- buy | sell | skipped_no_cash | skipped_cap | data_missing | suspect_price
+  ticker TEXT,
+  score REAL,
+  amount REAL,
+  note TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_pf_positions_ticker ON portfolio_positions(ticker, entry_date);
+CREATE INDEX IF NOT EXISTS idx_pf_events_date ON portfolio_events(date);
+`;
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS signals (
@@ -289,7 +358,7 @@ CREATE TABLE IF NOT EXISTS live_news (
   scraped_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_live_news_timestamp ON live_news(timestamp);
-`;
+` + PORTFOLIO_SCHEMA;
 
 // ──────────────────────────────────────────────────────────────────────────
 // Migrations — additive, idempotent. SQLite does NOT support
@@ -396,6 +465,11 @@ export function runMigrations(database: Database.Database): void {
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_itr_name ON insider_track_records(insider_name);
   `);
+
+  // Testing portfolio (v1.4.0). Purely additive: four new tables that never
+  // touch signals / signal_outcomes, which carry ~4,500 irreplaceable labeled
+  // rows in the committed history DB.
+  database.exec(PORTFOLIO_SCHEMA);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -1807,4 +1881,426 @@ export function pruneOldData(retentionDays = 365): void {
   // Checkpoint + truncate the WAL after the bulk delete, or the sidecar -wal
   // file grows unbounded on a long-lived install with a single connection.
   getDb().pragma('wal_checkpoint(TRUNCATE)');
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Testing portfolio (v1.4.0) — price cache, curve, trades, events, config
+// ──────────────────────────────────────────────────────────────────────────
+
+export interface PriceRow {
+  ticker: string;
+  date: string;
+  adjClose: number;
+}
+
+/**
+ * Write a freshly fetched series.
+ *
+ * REPLACE, not DO NOTHING: adjusted closes are restated for the WHOLE history
+ * whenever a split or dividend happens, so keeping old rows and appending new
+ * ones would weld a pre-split series onto a post-split one and manufacture a
+ * −50% gap that trips every stop. A ticker's rows therefore always come from a
+ * single fetch and are internally consistent.
+ */
+export function upsertPriceRows(rows: readonly PriceRow[]): number {
+  if (!rows.length) return 0;
+  const stmt = getDb().prepare(
+    `INSERT INTO price_history (ticker, date, adj_close, fetched_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(ticker, date) DO UPDATE SET adj_close = excluded.adj_close, fetched_at = excluded.fetched_at`,
+  );
+  const now = new Date().toISOString();
+  const tx = getDb().transaction((batch: readonly PriceRow[]) => {
+    for (const r of batch) stmt.run(r.ticker, r.date, r.adjClose, now);
+  });
+  tx(rows);
+  return rows.length;
+}
+
+/** ticker → (date → adjusted close), from `date >= fromYmd`. */
+export function getPriceBook(tickers: readonly string[], fromYmd: string): Record<string, Record<string, number>> {
+  const out: Record<string, Record<string, number>> = {};
+  if (!tickers.length) return out;
+  const stmt = getDb().prepare(
+    `SELECT date, adj_close FROM price_history WHERE ticker = ? AND date >= ? ORDER BY date`,
+  );
+  for (const t of tickers) {
+    const rows = stmt.all(t, fromYmd) as { date: string; adj_close: number }[];
+    if (!rows.length) continue;
+    const series: Record<string, number> = {};
+    for (const r of rows) series[r.date] = r.adj_close;
+    out[t] = series;
+  }
+  return out;
+}
+
+/** Newest cached close per ticker plus when it was last fetched. */
+export function getPriceCoverage(): Record<string, { last: string; n: number; fetchedAt: string | null }> {
+  const rows = getDb()
+    .prepare(
+      `SELECT ticker, MAX(date) AS last, COUNT(*) AS n, MAX(fetched_at) AS fetchedAt
+       FROM price_history GROUP BY ticker`,
+    )
+    .all() as { ticker: string; last: string; n: number; fetchedAt: string | null }[];
+  const out: Record<string, { last: string; n: number; fetchedAt: string | null }> = {};
+  for (const r of rows) out[r.ticker] = { last: r.last, n: r.n, fetchedAt: r.fetchedAt };
+  return out;
+}
+
+/** Newest close in the whole cache — the "prices as of" stamp in the UI. */
+export function getPriceAsOf(): string | null {
+  const row = getDb().prepare(`SELECT MAX(date) AS d FROM price_history`).get() as { d: string | null } | undefined;
+  return row?.d ?? null;
+}
+
+export interface PortfolioCandidateRow {
+  ticker: string;
+  score: number;
+  /** ISO timestamp for `signals`, YYYY-MM-DD for `signal_outcomes`. */
+  seenAt: string;
+  signalId: number | null;
+}
+
+/**
+ * Live candidates: the FIRST sighting of a ticker on a scrape day (MIN(id)), so
+ * the score is the one that was actionable at that moment. Taking the day's max
+ * would pick the best of N intraday scores after the fact — the same selection
+ * bias `getOutcomeCandidates` and `computePerformanceReport` already guard against.
+ */
+export function getPortfolioSignalCandidates(minScore: number): PortfolioCandidateRow[] {
+  return getDb()
+    .prepare(
+      `SELECT id AS signalId, ticker, score, scraped_at AS seenAt
+       FROM signals
+       WHERE id IN (SELECT MIN(id) FROM signals GROUP BY ticker, substr(scraped_at, 1, 10))
+         AND score >= ?
+       ORDER BY scraped_at`,
+    )
+    .all(minScore) as PortfolioCandidateRow[];
+}
+
+/**
+ * Backfill candidates from the labeled outcomes. These are real signals that
+ * were measured at the time (score is never recomputed there), and they reach
+ * five weeks further back than `signals`, whose rows rotate out.
+ */
+export function getPortfolioOutcomeCandidates(minScore: number): PortfolioCandidateRow[] {
+  return getDb()
+    .prepare(
+      `SELECT ticker, MAX(score) AS score, entry_date AS seenAt, NULL AS signalId
+       FROM signal_outcomes
+       WHERE score >= ?
+       GROUP BY ticker, entry_date
+       ORDER BY entry_date`,
+    )
+    .all(minScore) as PortfolioCandidateRow[];
+}
+
+/** Every ticker that could ever qualify — the price-fetch worklist. */
+export function getPortfolioUniverse(minScore: number): string[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT DISTINCT ticker FROM signals WHERE score >= ?
+       UNION
+       SELECT DISTINCT ticker FROM signal_outcomes WHERE score >= ?`,
+    )
+    .all(minScore, minScore) as { ticker: string }[];
+  return rows.map((r) => r.ticker).sort();
+}
+
+/** Earliest date any candidate could have been acted on. */
+export function getPortfolioHistoryStart(minScore: number): string | null {
+  const row = getDb()
+    .prepare(
+      `SELECT MIN(d) AS d FROM (
+         SELECT MIN(substr(scraped_at, 1, 10)) AS d FROM signals WHERE score >= ?
+         UNION ALL
+         SELECT MIN(entry_date) AS d FROM signal_outcomes WHERE score >= ?
+       )`,
+    )
+    .get(minScore, minScore) as { d: string | null } | undefined;
+  return row?.d ?? null;
+}
+
+/** First day the LIVE `signals` table can speak for — the backfill/live border. */
+export function getPortfolioLiveStart(): string | null {
+  const row = getDb().prepare(`SELECT MIN(substr(scraped_at, 1, 10)) AS d FROM signals`).get() as
+    | { d: string | null }
+    | undefined;
+  return row?.d ?? null;
+}
+
+// ── Curve ──
+
+interface EquityRow {
+  date: string;
+  cash: number;
+  spy_cash_value: number;
+  positions_value: number;
+  equity: number;
+  equity_idle: number;
+  benchmark: number;
+  open_positions: number;
+}
+
+const toEquityPoint = (r: EquityRow): PortfolioEquityPoint => ({
+  date: r.date,
+  cash: r.cash,
+  spyCashValue: r.spy_cash_value,
+  positionsValue: r.positions_value,
+  equity: r.equity,
+  equityIdle: r.equity_idle,
+  benchmark: r.benchmark,
+  openPositions: r.open_positions,
+});
+
+export function getPortfolioEquity(): PortfolioEquityPoint[] {
+  return (getDb().prepare(`SELECT * FROM portfolio_equity ORDER BY date`).all() as EquityRow[]).map(toEquityPoint);
+}
+
+/**
+ * Append-only. A day that has already been written is NEVER rewritten, which is
+ * what makes the published curve immutable: a later price restatement can change
+ * what a re-simulation *would* produce, but it cannot retroactively move a point
+ * a reader has already seen. Returns how many days were newly written.
+ */
+export function insertPortfolioEquity(points: readonly PortfolioEquityPoint[]): number {
+  if (!points.length) return 0;
+  const stmt = getDb().prepare(
+    `INSERT INTO portfolio_equity (date, cash, spy_cash_value, positions_value, equity, equity_idle, benchmark, open_positions)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(date) DO NOTHING`,
+  );
+  let written = 0;
+  const tx = getDb().transaction((batch: readonly PortfolioEquityPoint[]) => {
+    for (const p of batch) {
+      written += stmt.run(
+        p.date,
+        p.cash,
+        p.spyCashValue,
+        p.positionsValue,
+        p.equity,
+        p.equityIdle,
+        p.benchmark,
+        p.openPositions,
+      ).changes;
+    }
+  });
+  tx(points);
+  return written;
+}
+
+interface PositionRow {
+  id: number;
+  ticker: string;
+  signal_id: number | null;
+  entry_date: string;
+  entry_price: number;
+  shares: number;
+  cost_basis: number;
+  entry_score: number;
+  target_weight: number;
+  high_water_close: number | null;
+  exit_date: string | null;
+  exit_price: number | null;
+  exit_reason: string | null;
+  realized_pnl: number | null;
+  spy_entry: number | null;
+  spy_exit: number | null;
+}
+
+export function getPortfolioPositions(): PortfolioPosition[] {
+  const rows = getDb()
+    .prepare(`SELECT * FROM portfolio_positions ORDER BY entry_date, ticker`)
+    .all() as PositionRow[];
+  return rows.map((r) => ({
+    id: r.id,
+    ticker: r.ticker,
+    signalId: r.signal_id,
+    entryDate: r.entry_date,
+    entryPrice: r.entry_price,
+    shares: r.shares,
+    costBasis: r.cost_basis,
+    entryScore: r.entry_score,
+    targetWeight: r.target_weight,
+    highWaterClose: r.high_water_close,
+    exitDate: r.exit_date,
+    exitPrice: r.exit_price,
+    exitReason: (r.exit_reason as PortfolioPosition['exitReason']) ?? null,
+    realizedPnl: r.realized_pnl,
+    spyEntry: r.spy_entry,
+    spyExit: r.spy_exit,
+  }));
+}
+
+/**
+ * Positions and events are a PROJECTION of the same deterministic simulation
+ * the curve comes from, not an independent record, so they are rewritten whole
+ * on every run. The curve itself stays append-only (see insertPortfolioEquity).
+ */
+export function replacePortfolioPositions(positions: readonly PortfolioPosition[]): void {
+  const db = getDb();
+  const stmt = db.prepare(
+    `INSERT INTO portfolio_positions
+       (ticker, signal_id, entry_date, entry_price, shares, cost_basis, entry_score, target_weight,
+        high_water_close, exit_date, exit_price, exit_reason, realized_pnl, spy_entry, spy_exit)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const tx = db.transaction((batch: readonly PortfolioPosition[]) => {
+    db.prepare(`DELETE FROM portfolio_positions`).run();
+    for (const p of batch) {
+      stmt.run(
+        p.ticker,
+        p.signalId,
+        p.entryDate,
+        p.entryPrice,
+        p.shares,
+        p.costBasis,
+        p.entryScore,
+        p.targetWeight,
+        p.highWaterClose,
+        p.exitDate,
+        p.exitPrice,
+        p.exitReason,
+        p.realizedPnl,
+        p.spyEntry,
+        p.spyExit,
+      );
+    }
+  });
+  tx(positions);
+}
+
+export function getPortfolioEvents(limit = 500): PortfolioEvent[] {
+  const rows = getDb()
+    .prepare(`SELECT date, kind, ticker, score, amount, note FROM portfolio_events ORDER BY date DESC, id DESC LIMIT ?`)
+    .all(limit) as { date: string; kind: string; ticker: string | null; score: number | null; amount: number | null; note: string | null }[];
+  return rows.map((r) => ({
+    date: r.date,
+    kind: r.kind as PortfolioEvent['kind'],
+    ticker: r.ticker,
+    score: r.score,
+    amount: r.amount,
+    note: r.note,
+  }));
+}
+
+/**
+ * Replace the simulation-derived events. `suspect_price` rows are deliberately
+ * spared: they record what a PRICE FETCH rejected, which no later simulation can
+ * reproduce, and losing them would erase the only evidence that a bad data point
+ * was caught rather than acted on.
+ */
+export function replacePortfolioEvents(events: readonly PortfolioEvent[]): void {
+  const db = getDb();
+  const stmt = db.prepare(
+    `INSERT INTO portfolio_events (date, kind, ticker, score, amount, note) VALUES (?, ?, ?, ?, ?, ?)`,
+  );
+  const tx = db.transaction((batch: readonly PortfolioEvent[]) => {
+    db.prepare(`DELETE FROM portfolio_events WHERE kind <> 'suspect_price'`).run();
+    for (const e of batch) stmt.run(e.date, e.kind, e.ticker, e.score, e.amount, e.note);
+  });
+  tx(events);
+}
+
+/** Append rejected price points, ignoring ones already recorded. */
+export function insertPortfolioSuspectEvents(events: readonly PortfolioEvent[]): number {
+  if (!events.length) return 0;
+  const db = getDb();
+  const known = new Set(
+    (
+      db
+        .prepare(`SELECT date, ticker FROM portfolio_events WHERE kind = 'suspect_price'`)
+        .all() as { date: string; ticker: string | null }[]
+    ).map((r) => `${r.date}|${r.ticker ?? ''}`),
+  );
+  const stmt = db.prepare(
+    `INSERT INTO portfolio_events (date, kind, ticker, score, amount, note) VALUES (?, 'suspect_price', ?, ?, ?, ?)`,
+  );
+  let n = 0;
+  const tx = db.transaction((batch: readonly PortfolioEvent[]) => {
+    for (const e of batch) {
+      const key = `${e.date}|${e.ticker ?? ''}`;
+      if (known.has(key)) continue;
+      known.add(key);
+      stmt.run(e.date, e.ticker, e.score, e.amount, e.note);
+      n++;
+    }
+  });
+  tx(events);
+  return n;
+}
+
+/**
+ * Full reset of the SIMULATION. `price_history`, `signals` and `signal_outcomes`
+ * are deliberately untouched — the prices are an expensive, reusable cache and
+ * the other two are the irreplaceable history the whole app is built on.
+ */
+export function clearPortfolio(): void {
+  const db = getDb();
+  const tx = db.transaction(() => {
+    db.prepare(`DELETE FROM portfolio_equity`).run();
+    db.prepare(`DELETE FROM portfolio_positions`).run();
+    db.prepare(`DELETE FROM portfolio_events`).run();
+  });
+  tx();
+}
+
+// ── Config + run metadata (one JSON blob each, beside the app settings) ──
+
+const PORTFOLIO_CONFIG_KEY = 'portfolio_config';
+const PORTFOLIO_META_KEY = 'portfolio_meta';
+
+export function getPortfolioConfig(): PortfolioConfig {
+  const row = getDb().prepare(`SELECT value FROM app_settings WHERE key = ?`).get(PORTFOLIO_CONFIG_KEY) as
+    | { value: string }
+    | undefined;
+  return { ...DEFAULT_PORTFOLIO_CONFIG, ...safeParse<Partial<PortfolioConfig>>(row?.value ?? null, {}) };
+}
+
+export function setPortfolioConfig(partial: Partial<PortfolioConfig>): PortfolioConfig {
+  const merged: PortfolioConfig = { ...getPortfolioConfig(), ...partial };
+  getDb()
+    .prepare(
+      `INSERT INTO app_settings (key, value) VALUES (?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    )
+    .run(PORTFOLIO_CONFIG_KEY, JSON.stringify(merged));
+  return merged;
+}
+
+/**
+ * The parameter set the STORED curve was built with, plus the run counters.
+ * Persisted next to the curve so a chart can never display parameters it was
+ * not computed with.
+ */
+export interface PortfolioRunMeta {
+  config: PortfolioConfig;
+  builtAt: string;
+  backfillStart: string | null;
+  liveStart: string | null;
+  skippedNoCash: number;
+  skippedCap: number;
+  missingPrices: number;
+  suspectPrices: number;
+  untradableTickers: string[];
+  restatedDays: number;
+}
+
+export function getPortfolioRunMeta(): PortfolioRunMeta | null {
+  const row = getDb().prepare(`SELECT value FROM app_settings WHERE key = ?`).get(PORTFOLIO_META_KEY) as
+    | { value: string }
+    | undefined;
+  if (!row?.value) return null;
+  const parsed = safeParse<PortfolioRunMeta | null>(row.value, null);
+  return parsed && parsed.config ? parsed : null;
+}
+
+export function setPortfolioRunMeta(meta: PortfolioRunMeta): void {
+  getDb()
+    .prepare(
+      `INSERT INTO app_settings (key, value) VALUES (?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    )
+    .run(PORTFOLIO_META_KEY, JSON.stringify(meta));
 }

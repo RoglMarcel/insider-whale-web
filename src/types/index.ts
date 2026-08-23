@@ -1329,6 +1329,292 @@ export const DEFAULT_SETTINGS: AppSettings = {
 };
 
 // ──────────────────────────────────────────────────────────────────────────
+// Testing portfolio (v1.4.0) — a simulated, rule-based book that "invests" in
+// the terminal's strongest signals and is plotted against SPY.
+//
+// The whole point is that a sceptic can audit it, so every knob is a NAMED
+// constant here (one place, no magic numbers downstream) and every one of them
+// is overridable at runtime through PortfolioConfig.
+// ──────────────────────────────────────────────────────────────────────────
+
+/**
+ * Entry threshold. Deliberately NOT `CONVICTION_THRESHOLDS.high` (80): in the
+ * whole stored history the highest score ever written is 76.6 and nothing has
+ * ever reached 80, so reusing that constant would build a portfolio that never
+ * trades. 74 is the level at which the labeled outcomes still show a clear
+ * alpha edge while producing a non-empty sample.
+ */
+export const PORTFOLIO_ENTRY_SCORE = 74;
+/** Score points above the threshold that double the base weight. */
+export const PORTFOLIO_SCORE_SPAN = 16;
+export const PORTFOLIO_BASE_WEIGHT = 0.05;
+export const PORTFOLIO_MIN_WEIGHT = 0.03;
+export const PORTFOLIO_MAX_WEIGHT = 0.1;
+export const PORTFOLIO_MAX_POSITIONS = 20;
+/** Below this the remaining cash is not worth a trade — the signal is skipped. */
+export const PORTFOLIO_MIN_TICKET = 100;
+/** Same ticker is locked out for this long after a sale (kills alarm loops). */
+export const PORTFOLIO_REENTRY_COOLDOWN_DAYS = 10;
+export const PORTFOLIO_TAKE_PROFIT = 0.2;
+/** Magnitude, not a signed number: a -10% stop is `0.10`. */
+export const PORTFOLIO_STOP_LOSS = 0.1;
+export const PORTFOLIO_MAX_HOLD_DAYS = 30;
+export const PORTFOLIO_TRAIL_ARM = 0.15;
+export const PORTFOLIO_TRAIL_DISTANCE = 0.1;
+/** 5 bps = 0.05% per side, charged on every fill including the SPY cash leg. */
+export const PORTFOLIO_SLIPPAGE_BPS = 5;
+export const PORTFOLIO_STARTING_CASH = 10_000;
+/**
+ * Search window for a tradable close. A date without a price is not a trading
+ * day; beyond this many calendar days the series is treated as gone.
+ */
+export const PORTFOLIO_PRICE_SEARCH_DAYS = 5;
+/**
+ * UTC hour at/after which a sighting counts as POST-CLOSE, so the signal can
+ * only be acted on at the NEXT session's close.
+ *
+ * 20:00 UTC is 16:00 New York during EDT. Under EST the real close is 21:00
+ * UTC, so this errs one hour early for four winter months — it can only ever
+ * delay an entry, never advance one, which is the only direction that is safe.
+ * Deriving it from a live timezone lookup would make the curve depend on the
+ * machine's tz database, and reproducibility matters more than that hour.
+ * Measured: 2,201 of 12,728 stored sightings are at/after 20:00 UTC, so this is
+ * not a theoretical case.
+ */
+export const PORTFOLIO_SESSION_CLOSE_UTC_HOUR = 20;
+
+export type PortfolioCashPolicy = 'spy' | 'idle';
+export type PortfolioExitReason = 'take_profit' | 'stop_loss' | 'trailing' | 'time' | 'data_missing';
+export type PortfolioEventKind =
+  | 'buy'
+  | 'sell'
+  | 'skipped_no_cash'
+  | 'skipped_cap'
+  | 'data_missing'
+  | 'suspect_price';
+
+export interface PortfolioConfig {
+  startingCash: number;
+  entryScore: number;
+  scoreSpan: number;
+  baseWeight: number;
+  minWeight: number;
+  maxWeight: number;
+  maxPositions: number;
+  minTicket: number;
+  reentryCooldownDays: number;
+  takeProfit: number;
+  /** Positive magnitude (0.10 = a -10% stop). */
+  stopLoss: number;
+  maxHoldDays: number;
+  trailArm: number;
+  trailDistance: number;
+  slippageBps: number;
+  /**
+   * Where uninvested capital sits. `spy` makes the book "S&P 500 + signal
+   * overlay", so the gap to the benchmark IS the contribution of the signals
+   * and nothing else. `idle` leaves it as 0%-yield cash.
+   */
+  cashPolicy: PortfolioCashPolicy;
+}
+
+export const DEFAULT_PORTFOLIO_CONFIG: PortfolioConfig = {
+  startingCash: PORTFOLIO_STARTING_CASH,
+  entryScore: PORTFOLIO_ENTRY_SCORE,
+  scoreSpan: PORTFOLIO_SCORE_SPAN,
+  baseWeight: PORTFOLIO_BASE_WEIGHT,
+  minWeight: PORTFOLIO_MIN_WEIGHT,
+  maxWeight: PORTFOLIO_MAX_WEIGHT,
+  maxPositions: PORTFOLIO_MAX_POSITIONS,
+  minTicket: PORTFOLIO_MIN_TICKET,
+  reentryCooldownDays: PORTFOLIO_REENTRY_COOLDOWN_DAYS,
+  takeProfit: PORTFOLIO_TAKE_PROFIT,
+  stopLoss: PORTFOLIO_STOP_LOSS,
+  maxHoldDays: PORTFOLIO_MAX_HOLD_DAYS,
+  trailArm: PORTFOLIO_TRAIL_ARM,
+  trailDistance: PORTFOLIO_TRAIL_DISTANCE,
+  slippageBps: PORTFOLIO_SLIPPAGE_BPS,
+  cashPolicy: 'spy',
+};
+
+/** Where a candidate signal came from — decides how its entry date is derived. */
+export type PortfolioSignalSource = 'signal' | 'outcome';
+
+export interface PortfolioCandidate {
+  ticker: string;
+  /** Earliest calendar date whose CLOSE was still ahead of the sighting. */
+  earliestDate: string;
+  score: number;
+  signalId: number | null;
+  source: PortfolioSignalSource;
+}
+
+export interface PortfolioPosition {
+  id: number;
+  ticker: string;
+  signalId: number | null;
+  entryDate: string;
+  /** Fill price including slippage. */
+  entryPrice: number;
+  shares: number;
+  costBasis: number;
+  entryScore: number;
+  targetWeight: number;
+  highWaterClose: number | null;
+  exitDate: string | null;
+  exitPrice: number | null;
+  exitReason: PortfolioExitReason | null;
+  realizedPnl: number | null;
+  spyEntry: number | null;
+  spyExit: number | null;
+}
+
+/** An open position enriched with today's mark — never stored, always derived. */
+export interface PortfolioOpenPosition extends PortfolioPosition {
+  lastPrice: number | null;
+  marketValue: number;
+  unrealizedPct: number | null;
+  weight: number;
+  holdDays: number;
+  /** Which barrier is closest right now, and how far away it is (fraction). */
+  nearestBarrier: PortfolioExitReason | null;
+  nearestBarrierPct: number | null;
+}
+
+export interface PortfolioClosedPosition extends PortfolioPosition {
+  holdDays: number;
+  returnPct: number;
+  /** Realized return minus SPY over EXACTLY the same holding period. */
+  tradeAlpha: number | null;
+}
+
+export interface PortfolioEquityPoint {
+  date: string;
+  cash: number;
+  spyCashValue: number;
+  positionsValue: number;
+  /** Headline NAV under the ACTIVE cash policy. */
+  equity: number;
+  /** Same rules, uninvested capital left as cash — the honest cash-drag line. */
+  equityIdle: number;
+  /** SPY buy and hold, same start day, same starting cash, same entry slippage. */
+  benchmark: number;
+  openPositions: number;
+}
+
+export interface PortfolioEvent {
+  date: string;
+  kind: PortfolioEventKind;
+  ticker: string | null;
+  score: number | null;
+  amount: number | null;
+  note: string | null;
+}
+
+export type PortfolioWindowKey = '7d' | '30d' | '6m' | '1y' | 'max';
+
+/** Window lengths in CALENDAR days. `max` is "since the first day". */
+export const PORTFOLIO_WINDOWS: { key: PortfolioWindowKey; days: number | null }[] = [
+  { key: '7d', days: 7 },
+  { key: '30d', days: 30 },
+  { key: '6m', days: 182 },
+  { key: '1y', days: 365 },
+  { key: 'max', days: null },
+];
+
+export interface PortfolioWindowStat {
+  key: PortfolioWindowKey;
+  /** Fractional return, or null when the history is shorter than the window. */
+  portfolio: number | null;
+  benchmark: number | null;
+  diff: number | null;
+  /** Calendar days of history still missing before this window can be computed. */
+  daysRemaining: number | null;
+  /** Trading-day observations inside the window (drives the small-sample hint). */
+  n: number;
+}
+
+export interface PortfolioMetric {
+  portfolio: number | null;
+  benchmark: number | null;
+  diff: number | null;
+  /** Days of history still missing; null when the metric is computable. */
+  daysRemaining: number | null;
+}
+
+export interface PortfolioTradeStats {
+  total: number;
+  closed: number;
+  open: number;
+  winRate: number | null;
+  avgHoldDays: number | null;
+  avgWin: number | null;
+  avgLoss: number | null;
+  best: { ticker: string; returnPct: number } | null;
+  worst: { ticker: string; returnPct: number } | null;
+  /** THE headline number: mean per-trade alpha vs SPY over identical windows. */
+  avgTradeAlpha: number | null;
+  alphaN: number;
+  /** Share of NAV currently in signal positions (excludes parked SPY cash). */
+  investedRatio: number;
+}
+
+export interface PortfolioStats {
+  spanDays: number;
+  windows: PortfolioWindowStat[];
+  cagr: PortfolioMetric;
+  maxDrawdown: PortfolioMetric;
+  volatility: PortfolioMetric;
+  sharpe: PortfolioMetric;
+  trades: PortfolioTradeStats;
+}
+
+/** Minimum history (calendar days) before these derived numbers mean anything. */
+export const PORTFOLIO_MIN_DAYS_CAGR = 90;
+export const PORTFOLIO_MIN_DAYS_SHARPE = 60;
+/** Below this many observations a cell is flagged as a small sample. */
+export const PORTFOLIO_SMALL_SAMPLE_N = 20;
+
+export interface PortfolioMeta {
+  /** False until a run has actually produced a curve. */
+  available: boolean;
+  firstDate: string | null;
+  lastDate: string | null;
+  /** First day of the run, reconstructed from stored signal history. */
+  backfillStart: string | null;
+  /** First day whose candidates came from live `signals` rows. */
+  liveStart: string | null;
+  lastRun: string | null;
+  skippedNoCash: number;
+  skippedCap: number;
+  missingPrices: number;
+  suspectPrices: number;
+  /** Tickers that qualified but had no usable price series. */
+  untradableTickers: string[];
+  /**
+   * Stored days whose re-simulation no longer matches, because Yahoo restated
+   * the adjusted closes (a split/dividend rescales the WHOLE history). The
+   * stored curve is authoritative and stays frozen; this counts the drift.
+   */
+  restatedDays: number;
+  /** Newest close available from the price cache. */
+  priceAsOf: string | null;
+  /** True when this state came from a static publish (web build). */
+  readOnly: boolean;
+  note: string | null;
+}
+
+export interface PortfolioState {
+  config: PortfolioConfig;
+  meta: PortfolioMeta;
+  equity: PortfolioEquityPoint[];
+  open: PortfolioOpenPosition[];
+  closed: PortfolioClosedPosition[];
+  events: PortfolioEvent[];
+  stats: PortfolioStats;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // IPC surface (implemented by preload, consumed by renderer)
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -1383,6 +1669,17 @@ export interface InsiderTrackerAPI {
   performance: {
     getLatest: () => Promise<PerformanceReport | null>;
     recompute: () => Promise<PerformanceReport>;
+  };
+  /**
+   * Testing portfolio. On the hosted build `sync`/`rebuild`/`setConfig` are
+   * no-ops that return the published state — the curve is computed by CI, not
+   * by the browser — and the UI hides the buttons there (see `PortfolioMeta.readOnly`).
+   */
+  portfolio: {
+    getState: () => Promise<PortfolioState>;
+    sync: () => Promise<PortfolioState>;
+    rebuild: () => Promise<PortfolioState>;
+    setConfig: (config: Partial<PortfolioConfig>) => Promise<PortfolioState>;
   };
   shadow: {
     get: () => Promise<Partial<ScoringConfig> | null>;
