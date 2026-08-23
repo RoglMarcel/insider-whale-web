@@ -354,13 +354,35 @@ const agg: TickerAggregate = { ticker: 'TEST', trades: baseTrades, options: [big
 const scored = scoreTicker(agg);
 check('typeModifier 1.0 (all open-market)', scored.breakdown.typeModifier, 1);
 check('clusterMultiplier 3.0 (4 insiders)', scored.breakdown.clusterMultiplier, 3);
-check('insider timing 2.34 (3d + finance)', Math.round(scored.breakdown.timingMultiplier * 100) / 100, 2.34);
+// 1.8 for "earnings in 0-5 days", and NO finance bonus on top: the only finance
+// insider here is a CFO, whose rank weight of 8 already pays for seeing the
+// numbers first. Charging the x1.3 as well counted that fact twice
+// (docs/audit/FACTORS.md §1, resolved in v1.5.0).
+check('insider timing 1.8 (3d, CFO finance bonus NOT double-counted)', Math.round(scored.breakdown.timingMultiplier * 100) / 100, 1.8);
+// The bonus still exists — it applies to a finance insider the rank does not
+// already reward.
+const treasurerAgg: TickerAggregate = { ...agg, trades: [...baseTrades, mk('Erin', 'Treasurer', 120_000)] };
+check(
+  'insider timing 2.34 (3d + a finance insider the rank does NOT reward)',
+  Math.round(scoreTicker(treasurerAgg).breakdown.timingMultiplier * 100) / 100,
+  2.34,
+);
+// An unparsed title is UNKNOWN (weight 4), not the lowest rank (was 1).
+check('unknown role weight 4', getRankWeight('').weight, 4);
+check('unknown role category', getRankWeight('').category, 'unknown');
+// Dormant factors are reported rather than silently neutral.
+check(
+  'valuation reported dormant (no fair-value provider)',
+  (scored.breakdown.dormantFactors ?? []).some((d) => d.factor === 'valuationMultiplier'),
+  true,
+);
+check('VIX not dormant when a reading exists', (scored.breakdown.dormantFactors ?? []).some((d) => d.factor === 'vixMultiplier'), false);
 approx('vix multiplier ≈ 1.10 (ramp at VIX 30)', scored.breakdown.vixMultiplier, 1.1, 0.01);
 check('freshness 1.0 (today)', scored.breakdown.freshnessMultiplier, 1);
 check('comboSignal true', scored.comboSignal, true);
 check('legacyScore ≥ live score (flat bonus was larger)', (scored.legacyScore ?? 0) >= scored.score - 0.1, true);
 // Soft mult ×1.2 on high base still clamps near 100 → HIGH
-approx('final score high with soft mult', scored.score, 100, 5);
+approx('final score high with soft mult', scored.score, 90, 6);
 check('conviction HIGH', scored.convictionLevel, 'HIGH');
 check('legacy flat score near 100', (scored.legacyScore ?? 0) >= 95, true);
 

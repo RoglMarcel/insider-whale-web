@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
+  earnsFinanceTimingBonus,
   getRankWeight,
+  UNKNOWN_ROLE_WEIGHT,
   getDollarVolumePoints,
   getClusterMultiplier,
   getInsiderTimingMultiplier,
@@ -54,8 +56,8 @@ describe('getRankWeight', () => {
     ['Vice President', 3, 'vp'],
     ['General Counsel', 3, 'vp'],
     ['Treasurer', 3, 'vp'],
-    ['', 1, 'other'],
-    ['Employee', 1, 'other'],
+    ['', 4, 'unknown'],
+    ['Employee', 4, 'unknown'],
   ];
   for (const [role, weight, category] of cases) {
     it(`${JSON.stringify(role)} → ${weight} (${category})`, () => {
@@ -75,10 +77,49 @@ describe('getRankWeight', () => {
     expect(getRankWeight('CFO, CEO').weight).toBe(10);
   });
   it('null/undefined do not throw', () => {
-    expect(getRankWeight(undefined as unknown as string).weight).toBe(1);
+    expect(getRankWeight(undefined as unknown as string).weight).toBe(4);
+  });
+
+  it('an unparsed role is UNKNOWN, not the lowest rank', () => {
+    // The old floor of 1 scored a missing title like the most junior insider in
+    // the company. 4 is the modal recognised rank in the stored history.
+    for (const r of ['', '   ', 'Employee', 'Consultant', 'Shareholder']) {
+      expect(getRankWeight(r).weight).toBe(UNKNOWN_ROLE_WEIGHT);
+      expect(getRankWeight(r).category).toBe('unknown');
+    }
+    // …but it never outranks a role we DID recognise.
+    expect(UNKNOWN_ROLE_WEIGHT).toBeLessThanOrEqual(getRankWeight('10% Owner').weight);
+    expect(UNKNOWN_ROLE_WEIGHT).toBeLessThan(getRankWeight('CFO').weight);
+    expect(UNKNOWN_ROLE_WEIGHT).toBeLessThan(getRankWeight('CEO').weight);
   });
   it('never exceeds the ceiling assumed by MAX_POSSIBLE_RAW', () => {
     for (const r of cases.map((c) => c[0])) expect(getRankWeight(r).weight).toBeLessThanOrEqual(10);
+  });
+});
+
+describe('earnsFinanceTimingBonus — the rank/finance double-count', () => {
+  it('withholds the bonus where the RANK already pays for being finance', () => {
+    // A CFO is weighted 8 against a director's 4 precisely because they see the
+    // numbers first; charging the ×1.3 pre-earnings bonus as well counted that
+    // one fact twice in the same multiplicative chain.
+    for (const r of ['CFO', 'Chief Financial Officer', 'CFO, Director']) {
+      expect(isFinanceInsider(r)).toBe(true);
+      expect(getRankWeight(r).category).toBe('cfo');
+      expect(earnsFinanceTimingBonus(r)).toBe(false);
+    }
+  });
+
+  it('keeps the bonus where the rank does NOT encode it', () => {
+    // Ranked like any other officer, so "finance insider days before earnings"
+    // is genuinely new information about them.
+    for (const r of ['Treasurer', 'VP, Finance', 'Chief Accounting Officer', 'Controller']) {
+      expect(isFinanceInsider(r)).toBe(true);
+      expect(earnsFinanceTimingBonus(r)).toBe(true);
+    }
+  });
+
+  it('never fires for a non-finance role', () => {
+    for (const r of ['CEO', 'Director', 'CTO', '']) expect(earnsFinanceTimingBonus(r)).toBe(false);
   });
 });
 

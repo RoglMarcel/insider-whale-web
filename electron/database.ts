@@ -24,6 +24,8 @@ import {
   type PortfolioEvent,
   type PortfolioPosition,
   DEFAULT_PORTFOLIO_CONFIG,
+  PORTFOLIO_CONFIG_VERSION,
+  PORTFOLIO_V1_EXIT_DEFAULTS,
   DEFAULT_SETTINGS,
   filterSignals,
   isBigPlayer,
@@ -335,7 +337,7 @@ CREATE TABLE IF NOT EXISTS ticker_meta (
 CREATE TABLE IF NOT EXISTS signal_outcomes (
   ticker TEXT NOT NULL,
   entry_date TEXT NOT NULL,      -- YYYY-MM-DD, max(trade, filing, first-seen)
-  horizon INTEGER NOT NULL,      -- calendar days forward (5 / 10 / 20)
+  horizon INTEGER NOT NULL,      -- calendar days forward (5 … 180; see label-outcomes.ts)
   entry_price REAL,
   exit_price REAL,
   ret REAL,                      -- (exit/entry) - 1
@@ -505,6 +507,20 @@ export function initDatabase(dbPath: string, opts?: { readonly?: boolean }): Dat
     backfillInsiderTradesFromSignals();
   } catch (err) {
     console.error('[db] insider-trade backfill failed (non-fatal):', err);
+  }
+  // Exit-rule defaults changed in v1.5.0; an existing overlay would mask them.
+  // Best-effort like the backfill: a config that cannot be reconciled must not
+  // stop the app from starting.
+  try {
+    const res = migratePortfolioConfig();
+    if (res && (res.migrated.length || res.kept.length)) {
+      console.log(
+        `[db] portfolio config -> v${PORTFOLIO_CONFIG_VERSION}: reset to new defaults [${res.migrated.join(', ') || '-'}], ` +
+          `kept your own values for [${res.kept.join(', ') || '-'}]`,
+      );
+    }
+  } catch (err) {
+    console.error('[db] portfolio config migration failed (non-fatal):', err);
   }
   return db;
 }
@@ -1350,6 +1366,44 @@ export function getOutcomeCandidates(): OutcomeCandidate[] {
 }
 
 /** Horizons already labeled, so a re-run only fetches what is genuinely missing. */
+/**
+ * Signals that were labeled at SOME horizon in the past and can still ripen at a
+ * longer one.
+ *
+ * `getOutcomeCandidates` reads `signals`, which is a rolling scrape window — on
+ * this database it holds nine days. That was invisible while the longest horizon
+ * was 20 days and every horizon ripened inside the retention window. It stops
+ * being invisible the moment a 40-, 90- or 180-day horizon is added: by the time
+ * such a horizon ripens, the row that would have produced the label is long gone,
+ * and the labeler writes NOTHING no matter how long it runs. Measured: extending
+ * HORIZONS alone produced 0 new rows, because 0 candidates had an entry date
+ * older than nine days.
+ *
+ * `signal_outcomes` is the durable record — it keeps (ticker, entry_date, score,
+ * conviction, breakdown) for every signal ever labeled. Reading candidates back
+ * out of it lets a signal first seen in July finally get its 40-day label in
+ * August. The score is the one stored AT SIGNAL TIME, so nothing inherits
+ * hindsight, and `MAX(score)` matches how the portfolio's own candidate query
+ * collapses a (ticker, date) group.
+ */
+export function getOutcomeBackfillCandidates(): OutcomeCandidate[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT ticker, entry_date AS entryDate, MAX(score) AS score, conviction, breakdown
+       FROM signal_outcomes
+       GROUP BY ticker, entry_date
+       ORDER BY entry_date`,
+    )
+    .all() as { ticker: string; entryDate: string; score: number; conviction: string | null; breakdown: string | null }[];
+  return rows.map((r) => ({
+    ticker: r.ticker,
+    entryDate: r.entryDate,
+    score: r.score,
+    conviction: r.conviction,
+    breakdown: r.breakdown,
+  }));
+}
+
 export function getLabeledKeys(): Set<string> {
   const rows = getDb()
     .prepare(`SELECT ticker, entry_date, horizon FROM signal_outcomes`)
@@ -2256,6 +2310,73 @@ export function getPortfolioConfig(): PortfolioConfig {
     | { value: string }
     | undefined;
   return { ...DEFAULT_PORTFOLIO_CONFIG, ...safeParse<Partial<PortfolioConfig>>(row?.value ?? null, {}) };
+}
+
+const PORTFOLIO_CONFIG_VERSION_KEY = 'portfolio_config_version';
+
+/**
+ * Reconcile an EXISTING runtime overlay with a change to the shipped defaults.
+ *
+ * `getPortfolioConfig` merges `app_settings.portfolio_config` OVER
+ * `DEFAULT_PORTFOLIO_CONFIG`, and the rules editor writes the WHOLE merged
+ * object back — so once anyone has opened that editor even to change the
+ * starting cash, every exit rule is pinned in the database and a new constant
+ * in `src/types` never reaches that installation. That is the entire reason
+ * this function exists.
+ *
+ * What it does, once per version bump:
+ *   - a stored exit value that still equals the v1 default is DELETED from the
+ *     overlay, so the new default shows through (and so will the next one);
+ *   - a stored exit value that differs is a deliberate choice and is KEPT.
+ *
+ * Deleting rather than overwriting is the point: the overlay ends up holding
+ * only what the user actually decided.
+ */
+export function migratePortfolioConfig(): { migrated: string[]; kept: string[] } | null {
+  const db = getDb();
+  const versionRow = db.prepare(`SELECT value FROM app_settings WHERE key = ?`).get(PORTFOLIO_CONFIG_VERSION_KEY) as
+    | { value: string }
+    | undefined;
+  if (Number(versionRow?.value) >= PORTFOLIO_CONFIG_VERSION) return null;
+
+  const stamp = (): void => {
+    db.prepare(
+      `INSERT INTO app_settings (key, value) VALUES (?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    ).run(PORTFOLIO_CONFIG_VERSION_KEY, String(PORTFOLIO_CONFIG_VERSION));
+  };
+
+  const row = db.prepare(`SELECT value FROM app_settings WHERE key = ?`).get(PORTFOLIO_CONFIG_KEY) as
+    | { value: string }
+    | undefined;
+  const stored = safeParse<Record<string, unknown> | null>(row?.value ?? null, null);
+  if (!stored) {
+    // Nothing has ever been overridden — the new defaults already apply.
+    stamp();
+    return { migrated: [], kept: [] };
+  }
+
+  const migrated: string[] = [];
+  const kept: string[] = [];
+  for (const [key, v1] of Object.entries(PORTFOLIO_V1_EXIT_DEFAULTS)) {
+    if (!(key in stored)) continue;
+    if (stored[key] === v1) {
+      delete stored[key];
+      migrated.push(key);
+    } else {
+      kept.push(key);
+    }
+  }
+
+  const tx = db.transaction(() => {
+    db.prepare(
+      `INSERT INTO app_settings (key, value) VALUES (?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    ).run(PORTFOLIO_CONFIG_KEY, JSON.stringify(stored));
+    stamp();
+  });
+  tx();
+  return { migrated, kept };
 }
 
 export function setPortfolioConfig(partial: Partial<PortfolioConfig>): PortfolioConfig {

@@ -7,15 +7,21 @@ import {
   earliestEntryDate,
   evaluateExit,
   firstTradableDay,
+  nearestBarrier,
   positionSize,
+  realizedDailyVol,
   rebase,
+  resolveBarriers,
   simulatePortfolio,
   toClosedPosition,
   type PortfolioSimInput,
 } from '../src/lib/portfolio-rules';
+import { translate, type Lang } from '../src/lib/i18n';
 import {
   DEFAULT_PORTFOLIO_CONFIG,
   PORTFOLIO_ENTRY_SCORE,
+  PORTFOLIO_TRADING_DAYS_PER_CALENDAR_DAY,
+  PORTFOLIO_V1_EXIT_DEFAULTS,
   type PortfolioCandidate,
   type PortfolioConfig,
 } from '../src/types';
@@ -142,41 +148,52 @@ describe('slippage', () => {
 
 describe('triple barrier', () => {
   const base = { entryPrice: 100, close: 100, highWaterClose: 100, holdDays: 1 };
+  /**
+   * The v1.4.0 barrier set, pinned EXPLICITLY. These tests are about the
+   * mechanism — epsilon handling, priority when several break at once — not
+   * about which numbers ship, and riding on the defaults made them silently
+   * change meaning when the defaults did. The shipped set is asserted
+   * separately in "shipped exit rules" below.
+   */
+  const v1 = cfg({ ...PORTFOLIO_V1_EXIT_DEFAULTS });
+  const ev = (ctx: Partial<typeof base>) => evaluateExit({ ...base, ...ctx }, v1);
 
   it('takes profit at +20%', () => {
-    expect(evaluateExit({ ...base, close: 119.9, highWaterClose: 119.9 })).toBeNull();
-    expect(evaluateExit({ ...base, close: 120, highWaterClose: 120 })).toBe('take_profit');
+    expect(ev({ close: 119.9, highWaterClose: 119.9 })).toBeNull();
+    // 120 / 100 - 1 is 0.19999999999999996 in IEEE-754 — without BARRIER_EPS a
+    // position sitting EXACTLY on the target never takes profit.
+    expect(ev({ close: 120, highWaterClose: 120 })).toBe('take_profit');
   });
 
   it('stops out at −10%', () => {
-    expect(evaluateExit({ ...base, close: 90.1 })).toBeNull();
-    expect(evaluateExit({ ...base, close: 90 })).toBe('stop_loss');
+    expect(ev({ close: 90.1 })).toBeNull();
+    expect(ev({ close: 90 })).toBe('stop_loss');
   });
 
   it('times out at 30 calendar days', () => {
-    expect(evaluateExit({ ...base, holdDays: 29 })).toBeNull();
-    expect(evaluateExit({ ...base, holdDays: 30 })).toBe('time');
+    expect(ev({ holdDays: 29 })).toBeNull();
+    expect(ev({ holdDays: 30 })).toBe('time');
   });
 
   it('arms the trailing stop only above +15%', () => {
     // +14% peak, then a 10% give-back — not armed, so no trailing exit.
-    expect(evaluateExit({ ...base, highWaterClose: 114, close: 102.6 })).toBeNull();
+    expect(ev({ highWaterClose: 114, close: 102.6 })).toBeNull();
     // +15% peak and 10% below it → armed and triggered.
-    expect(evaluateExit({ ...base, highWaterClose: 115, close: 103.5 })).toBe('trailing');
+    expect(ev({ highWaterClose: 115, close: 103.5 })).toBe('trailing');
   });
 
   it('trails from the high-water close, not from the entry', () => {
-    expect(evaluateExit({ ...base, highWaterClose: 150, close: 136 })).toBe('take_profit');
-    expect(evaluateExit({ ...base, highWaterClose: 150, close: 134 })).toBe('trailing');
+    expect(ev({ highWaterClose: 150, close: 136 })).toBe('take_profit');
+    expect(ev({ highWaterClose: 150, close: 134 })).toBe('trailing');
   });
 
   it('prefers the pessimistic barrier when several break at once', () => {
     // A day that is both below the stop and (via the high water) below the trail.
-    expect(evaluateExit({ ...base, highWaterClose: 130, close: 89 })).toBe('stop_loss');
+    expect(ev({ highWaterClose: 130, close: 89 })).toBe('stop_loss');
     // Trailing and take-profit together → trailing (the lower exit price).
-    expect(evaluateExit({ ...base, highWaterClose: 140, close: 125 })).toBe('trailing');
+    expect(ev({ highWaterClose: 140, close: 125 })).toBe('trailing');
     // Time and take-profit together → take-profit is the more specific reason.
-    expect(evaluateExit({ ...base, close: 125, highWaterClose: 125, holdDays: 40 })).toBe('take_profit');
+    expect(ev({ close: 125, highWaterClose: 125, holdDays: 40 })).toBe('take_profit');
   });
 
   it('honours a reconfigured barrier set', () => {
@@ -187,6 +204,153 @@ describe('triple barrier', () => {
     expect(evaluateExit({ ...base, close: 85 }, c)).toBe('stop_loss');
     expect(evaluateExit({ ...base, holdDays: 10 }, c)).toBe('time');
   });
+});
+
+describe('shipped exit rules (v1.5.0)', () => {
+  const base = { entryPrice: 100, close: 100, highWaterClose: 100, holdDays: 1 };
+
+  it('has NO take-profit — the upside is genuinely uncapped, not set to 999%', () => {
+    expect(DEFAULT_PORTFOLIO_CONFIG.takeProfit).toBeNull();
+    // A ten-bagger keeps running as long as it never gives back the trail.
+    expect(evaluateExit({ ...base, close: 1000, highWaterClose: 1000 })).toBeNull();
+    expect(evaluateExit({ ...base, close: 1e9, highWaterClose: 1e9 })).toBeNull();
+  });
+
+  it('stops out at −25% and times out at 90 calendar days', () => {
+    expect(evaluateExit({ ...base, close: 75.1 })).toBeNull();
+    expect(evaluateExit({ ...base, close: 75 })).toBe('stop_loss');
+    expect(evaluateExit({ ...base, holdDays: 89 })).toBeNull();
+    expect(evaluateExit({ ...base, holdDays: 90 })).toBe('time');
+  });
+
+  it('trails 20% below the high water once +25%', () => {
+    expect(evaluateExit({ ...base, highWaterClose: 124, close: 99.2 })).toBeNull(); // not armed
+    expect(evaluateExit({ ...base, highWaterClose: 125, close: 100 })).toBe('trailing');
+  });
+});
+
+describe('disabled barriers', () => {
+  const base = { entryPrice: 100, close: 100, highWaterClose: 100, holdDays: 1 };
+
+  it('never takes profit when takeProfit is null', () => {
+    const c = cfg({ takeProfit: null, trailArm: 5, maxHoldDays: 9999 });
+    expect(evaluateExit({ ...base, close: 1_000_000, highWaterClose: 1_000_000 }, c)).toBeNull();
+  });
+
+  it('never stops out when stopLoss is null', () => {
+    const c = cfg({ stopLoss: null, maxHoldDays: 9999 });
+    expect(evaluateExit({ ...base, close: 0.01 }, c)).toBeNull();
+  });
+
+  it('falls through to the time stop when BOTH price barriers are off', () => {
+    const c = cfg({ takeProfit: null, stopLoss: null, trailArm: 1e9, maxHoldDays: 30 });
+    expect(evaluateExit({ ...base, close: 5, holdDays: 29 }, c)).toBeNull();
+    expect(evaluateExit({ ...base, close: 5, holdDays: 30 }, c)).toBe('time');
+  });
+
+  it('still honours the epsilon at the boundary of an ENABLED barrier', () => {
+    // Same IEEE-754 trap as +20%: 125 / 100 - 1 is exact, but 90 / 72 - 1 is
+    // 0.25000000000000011 and 0.7 * 100 is 70.00000000000001.
+    const c = cfg({ takeProfit: 0.25, stopLoss: 0.3 });
+    expect(evaluateExit({ ...base, entryPrice: 72, close: 90, highWaterClose: 90 }, c)).toBe('take_profit');
+    expect(evaluateExit({ ...base, close: 0.7 * 100 }, c)).toBe('stop_loss');
+  });
+
+  it('offers no nearest-barrier candidate for a disabled barrier', () => {
+    const ctx = { entryPrice: 100, close: 100, highWaterClose: 100, holdDays: 1 };
+    // Default set: no take-profit, so the stop is the only price barrier.
+    expect(nearestBarrier(ctx)?.reason).toBe('stop_loss');
+    // Both off and the trail unarmed → no price barrier exists at all.
+    expect(nearestBarrier(ctx, cfg({ takeProfit: null, stopLoss: null, trailArm: 1e9 }))).toBeNull();
+    // Take-profit back on and much closer than the stop → it wins again.
+    expect(nearestBarrier(ctx, cfg({ takeProfit: 0.02 }))?.reason).toBe('take_profit');
+  });
+});
+
+describe('volatility-scaled barriers', () => {
+  const base = { entryPrice: 100, close: 100, highWaterClose: 100, holdDays: 1 };
+
+  it('measures realised daily volatility, and refuses to guess on thin history', () => {
+    const days = calendar('2026-01-05', 80);
+    // A deterministic ±2% zig-zag: sd of log returns is |ln(1.02)| exactly.
+    const zig: Record<string, number> = {};
+    days.forEach((d, i) => {
+      zig[d] = i % 2 === 0 ? 100 : 102;
+    });
+    const sigma = realizedDailyVol(zig, days[79], 60);
+    expect(sigma).not.toBeNull();
+    // 61 closes → 60 returns, alternating ±ln(1.02) so the mean is exactly 0;
+    // the SAMPLE sd divides by n−1, hence the √(60/59).
+    expect(sigma!).toBeCloseTo(Math.log(1.02) * Math.sqrt(60 / 59), 9);
+    // Only a handful of closes → null, NOT 0. A zero sigma would collapse every
+    // scaled barrier onto the entry price and stop the position out instantly.
+    expect(realizedDailyVol(zig, days[4], 60)).toBeNull();
+    expect(realizedDailyVol(undefined, days[79], 60)).toBeNull();
+  });
+
+  it('scales the barrier by sigma over the TIME-STOP horizon', () => {
+    const sigmaDaily = 0.02;
+    const c = cfg({ maxHoldDays: 90, sigmaBarriers: { stop: 1, target: 2, trailArm: null, trailDistance: null } });
+    const sigmaH = sigmaDaily * Math.sqrt(90 * PORTFOLIO_TRADING_DAYS_PER_CALENDAR_DAY);
+    const b = resolveBarriers(c, sigmaDaily);
+    expect(b.scaled).toBe(true);
+    expect(b.stopLoss!).toBeCloseTo(sigmaH, 12);
+    expect(b.takeProfit!).toBeCloseTo(2 * sigmaH, 12);
+    // …and the exit rule uses those levels, not the fixed percentages.
+    expect(evaluateExit({ ...base, close: 100 * (1 - sigmaH), sigmaDaily }, c)).toBe('stop_loss');
+    expect(evaluateExit({ ...base, close: 100 * (1 - sigmaH) + 0.01, sigmaDaily }, c)).toBeNull();
+    // Without a sigma in the context the same close is nowhere near the FIXED
+    // −25% stop — which is exactly the fallback, and worth pinning.
+    expect(evaluateExit({ ...base, close: 100 * (1 - sigmaH) }, c)).toBeNull();
+  });
+
+  it('falls back to the fixed percentages when no sigma could be estimated', () => {
+    const c = cfg({ stopLoss: 0.25, sigmaBarriers: { stop: 1, target: null, trailArm: null, trailDistance: null } });
+    const b = resolveBarriers(c, null);
+    expect(b.scaled).toBe(false);
+    expect(b.stopLoss).toBe(0.25);
+    // A barrier that cannot be computed must not become a barrier that never fires.
+    expect(evaluateExit({ ...base, close: 75, sigmaDaily: null }, c)).toBe('stop_loss');
+  });
+});
+
+describe('how a disabled barrier reads', () => {
+  // The rules card composes the exits line from parts. The type system already
+  // forces every consumer to handle `takeProfit: null` — `p1(config.takeProfit)`
+  // stopped compiling the moment the field became nullable — but it cannot stop
+  // the SENTENCE from being wrong. This pins the wording in both languages.
+  const line = (c: PortfolioConfig, lang: Lang): string =>
+    [
+      c.takeProfit == null
+        ? translate(lang, 'pf.rules.exitNoTakeProfit')
+        : translate(lang, 'pf.rules.exitTakeProfit', { tp: c.takeProfit * 100 }),
+      c.stopLoss == null
+        ? translate(lang, 'pf.rules.exitNoStopLoss')
+        : translate(lang, 'pf.rules.exitStopLoss', { sl: c.stopLoss * 100 }),
+      translate(lang, 'pf.rules.exitTrailing', { trailDist: c.trailDistance * 100, trailArm: c.trailArm * 100 }),
+      translate(lang, 'pf.rules.exitTime', { hold: c.maxHoldDays }),
+    ].join(' · ');
+
+  for (const lang of ['en', 'de'] as const) {
+    it(`[${lang}] states that there is no take profit, without printing a level`, () => {
+      const shipped = line(DEFAULT_PORTFOLIO_CONFIG, lang);
+      const noTp = translate(lang, 'pf.rules.exitNoTakeProfit');
+      expect(shipped).toContain(noTp);
+      // No digits anywhere in the "there is no barrier" phrases — a disabled
+      // barrier that still shows a percentage is the failure this exists to stop.
+      expect(noTp).not.toMatch(/\d/);
+      expect(translate(lang, 'pf.rules.exitNoStopLoss')).not.toMatch(/\d/);
+      // The barriers that ARE in force still print theirs.
+      expect(shipped).toContain('25');
+      expect(shipped).toContain('90');
+    });
+
+    it(`[${lang}] prints the level again once a take profit is switched back on`, () => {
+      const withTp = line(cfg({ takeProfit: 0.35 }), lang);
+      expect(withTp).not.toContain(translate(lang, 'pf.rules.exitNoTakeProfit'));
+      expect(withTp).toContain('35');
+    });
+  }
 });
 
 describe('no look-ahead', () => {
@@ -333,8 +497,11 @@ describe('book invariants', () => {
   it('locks a ticker out for the cooldown after a sale', () => {
     const days = calendar('2026-01-05', 30);
     // Straight to a take-profit on day 2, then a fresh signal three days later.
+    // The take-profit is set EXPLICITLY: the shipped book has none, and this
+    // test is about the cooldown, not about which barrier caused the sale.
     const res = simulatePortfolio(
       input({
+        config: cfg({ takeProfit: 0.2 }),
         tradingDays: days,
         spy: flat(days, 500),
         prices: { AAA: path(days, [100, 100, 130, 130, 130, 130, 130, 130, 130, 130, 130]) },
@@ -500,6 +667,7 @@ describe('trade alpha', () => {
     const days = calendar('2026-01-05', 12);
     const res = simulatePortfolio(
       input({
+        config: cfg({ takeProfit: 0.2 }), // explicit: the shipped book has none
         tradingDays: days,
         spy: path(days, [500, 505, 510, 515, 520, 525, 530, 535, 540, 545, 550, 555]),
         prices: { AAA: path(days, [100, 100, 100, 100, 125, 125, 125, 125, 125, 125, 125, 125]) },

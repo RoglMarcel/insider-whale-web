@@ -225,6 +225,15 @@ without anyone doing anything.
 
 ## 5. Parameter sweep
 
+> **Superseded for the exit rules (v1.5.0).** The tables below were produced with
+> the v1.4.0 barrier set (+20% / −10% / 30 d) and a sweep whose longest hold row
+> could not bind inside a 31-session window. The exit parameters were re-derived
+> from the published literature in
+> [EXIT-STRATEGY.md](EXIT-STRATEGY.md); §7 there explains why the decay pattern
+> recorded in §7.1 below is not a horizon result. The entry-threshold and
+> cash-policy findings here still stand.
+
+
 `npm run portfolio:sweep` (read-only). Window 2026-07-10 → 2026-08-21, 31
 sessions, 56 candidate sightings at score ≥ 60, 24 tickers. **Benchmark over the
 same window: +1.43%.**
@@ -359,6 +368,15 @@ The brief's defaults are implemented exactly as written. These are the places
 where the measurements point somewhere else.
 
 ### 7.1 The time stop is probably too long — but not provably
+
+> **Reversed in v1.5.0.** This recommendation was drawn from a sweep whose 45-day
+> and 60-day rows printed identical numbers, because the time stop never bound
+> inside a 31-session window — they were the same experiment twice, not two
+> horizons. The insider-trading literature measures the drift over six to twelve
+> months, and the marginal alpha is still positive at day 250. The time stop went
+> to **90 calendar days**. Full argument and sources:
+> [EXIT-STRATEGY.md](EXIT-STRATEGY.md) §7. The text below is kept as the record
+> of what was believed at v1.4.0.
 
 **Implemented: 30 calendar days (as specified). Recommended: 20, or 10.**
 

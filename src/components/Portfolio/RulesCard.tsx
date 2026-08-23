@@ -83,13 +83,19 @@ export function RulesCard({
             />
             <Line
               label={t('pf.rules.exits')}
-              value={t('pf.rules.exitsValue', {
-                tp: p1(config.takeProfit),
-                sl: p1(config.stopLoss),
-                trailDist: p1(config.trailDistance),
-                trailArm: p1(config.trailArm),
-                hold: config.maxHoldDays,
-              })}
+              value={[
+                config.takeProfit == null
+                  ? t('pf.rules.exitNoTakeProfit')
+                  : t('pf.rules.exitTakeProfit', { tp: p1(config.takeProfit) }),
+                config.stopLoss == null
+                  ? t('pf.rules.exitNoStopLoss')
+                  : t('pf.rules.exitStopLoss', { sl: p1(config.stopLoss) }),
+                t('pf.rules.exitTrailing', {
+                  trailDist: p1(config.trailDistance),
+                  trailArm: p1(config.trailArm),
+                }),
+                t('pf.rules.exitTime', { hold: config.maxHoldDays }),
+              ].join(' · ')}
             />
             <Line
               label={t('pf.rules.limits')}

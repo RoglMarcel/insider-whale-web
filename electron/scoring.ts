@@ -1,6 +1,7 @@
 import type {
   RawInsiderTrade,
   OptionsActivity,
+  DormantFactor,
   ScoreBreakdown,
   ConvictionLevel,
   TickerAggregate,
@@ -192,7 +193,37 @@ export function getRankWeight(roleRaw: string): { weight: number; category: stri
   if (isVice || hasWord('gc') || has('officer', 'senior', 'head of', 'general counsel', 'secretary', 'treasurer')) {
     return { weight: 3, category: 'vp' };
   }
-  return { weight: 1, category: 'other' };
+  // A role we cannot parse is UNKNOWN, not junior.
+  //
+  // This used to return weight 1 — the floor — so a missing or unrecognised
+  // title scored like the least important insider in the company. Nothing
+  // supports that: an unparsed title is a scraping gap, not a demotion, and it
+  // hits 4.5% of the 8,343 stored signals that have an insider leg.
+  //
+  // 4 is the MODE of the rank weights over the 7,967 rows whose role IS
+  // recognised (42.9% at weight 4; median 5, mean 6.08). The mode is the
+  // conservative choice of the three: it assumes the most common insider we
+  // actually see — a director — and it never lets an unknown title outrank a
+  // known one. Measured over thousands of rows, not fitted to any trade outcome.
+  return { weight: UNKNOWN_ROLE_WEIGHT, category: 'unknown' };
+}
+
+/** See the note in `getRankWeight` — the modal recognised rank, not the floor. */
+export const UNKNOWN_ROLE_WEIGHT = 4;
+
+/**
+ * Does this role earn the pre-earnings FINANCE bonus on top of its rank weight?
+ *
+ * A CFO already carries rank weight 8 against a director's 4, so paying the
+ * ×1.3 finance bonus as well counted one fact — "this person sees the numbers
+ * before anyone else" — twice in the same multiplicative chain
+ * (`docs/audit/FACTORS.md` §1). The rank keeps that information; the bonus is
+ * withdrawn where the rank already encodes it, and kept where it does not: a
+ * Controller, a Treasurer or a VP Finance is ranked 3–4 like any other officer,
+ * and for them "finance insider, days before earnings" is genuinely new.
+ */
+export function earnsFinanceTimingBonus(role: string): boolean {
+  return isFinanceInsider(role) && getRankWeight(role).category !== 'cfo';
 }
 
 export function isFinanceInsider(role: string): boolean {
@@ -731,7 +762,7 @@ export function scoreTicker(agg: TickerAggregate, config: ScoringConfig = DEFAUL
       topRole = role || t.role || null;
       topName = t.insiderName;
     }
-    if (isFinanceInsider(t.role)) hasFinance = true;
+    if (earnsFinanceTimingBonus(t.role)) hasFinance = true;
     const mod = classifyTransaction(t.transactionType).modifier;
     const w = Math.max(t.value > 0 && t.value <= MAX_SANE_TRADE_VALUE ? t.value : 1, 1);
     weightedMod += mod * w;
@@ -967,6 +998,26 @@ export function scoreTicker(agg: TickerAggregate, config: ScoringConfig = DEFAUL
   }
   notes.push(`Legacy flat-bonus score (shadow): ${legacyScore.toFixed(1)}`);
 
+  // Which of the neutral-valued factors were neutral because their INPUT was
+  // missing? A 1.0 that means "no data" is a different statement from a 1.0
+  // that means "the data says neutral", and the audit could not tell them apart.
+  const dormantFactors: DormantFactor[] = [];
+  if (agg.vix == null || !Number.isFinite(agg.vix)) {
+    dormantFactors.push({ factor: 'vixMultiplier', reason: 'no VIX reading (stale or unfetched)' });
+  }
+  if (agg.upsidePct == null || !Number.isFinite(agg.upsidePct)) {
+    // Both fair-value providers were removed, so this is permanent for now. It
+    // also costs a permanently unreachable 5 points in `computeConfidence`,
+    // which is why a fully enriched signal tops out at 95 rather than 100.
+    dormantFactors.push({ factor: 'valuationMultiplier', reason: 'no fair-value estimate available' });
+  }
+  if (classicCombo && !multApplies) {
+    dormantFactors.push({
+      factor: 'comboBonus',
+      reason: `corroboration gate: base ${normLive.toFixed(0)} < ${CORROBORATION_GATE}`,
+    });
+  }
+
   const breakdown: ScoreBreakdown = {
     rankWeight,
     dollarVolumePoints,
@@ -989,6 +1040,7 @@ export function scoreTicker(agg: TickerAggregate, config: ScoringConfig = DEFAUL
     confidence: computeConfidence(agg, eligible),
     politicianScore: politicianResult.score,
     politicianComboTier,
+    dormantFactors,
     notes,
   };
 

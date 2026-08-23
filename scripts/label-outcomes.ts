@@ -23,6 +23,7 @@ import { fetchAdjCloseSeries, priceOnOrAfter, PRICE_REQUEST_GAP_MS, sleep } from
 import {
   initDatabase,
   closeDatabase,
+  getOutcomeBackfillCandidates,
   getOutcomeCandidates,
   getLabeledKeys,
   upsertSignalOutcomes,
@@ -30,7 +31,19 @@ import {
   type SignalOutcome,
 } from '../electron/database';
 
-const HORIZONS = [5, 10, 20] as const; // calendar days forward
+/**
+ * Calendar days forward. Extended from [5, 10, 20] in v1.5.0.
+ *
+ * 20 days was shorter than every horizon the insider-trading literature
+ * measures (six to twelve months), so the labeled set could not see the drift
+ * it is supposed to be evidence about — it could only ever confirm that the
+ * short end decays. The long horizons ripen on their own as the history grows;
+ * `insider_trades` starts 2026-04-10, so 180 is not measurable yet and simply
+ * writes nothing until it is. Nothing here is retroactive: prices come from
+ * adjusted closes that backfill historically, so a horizon added today labels
+ * every signal old enough to have ripened.
+ */
+const HORIZONS = [5, 10, 20, 40, 60, 90, 120, 180] as const; // calendar days forward
 const MAX_TICKERS_PER_RUN = Number(process.env.LABEL_MAX_TICKERS ?? 250);
 
 type Series = { date: string; px: number }[];
@@ -59,7 +72,19 @@ async function main(): Promise<void> {
   }
   initDatabase(dbPath);
 
-  const candidates = getOutcomeCandidates().filter((c) => /^\d{4}-\d{2}-\d{2}$/.test(c.entryDate));
+  // `signals` is a rolling scrape window (nine days on the shipped history), so
+  // on its own it can only ever ripen the SHORTEST horizons. The durable record
+  // of everything ever labeled is `signal_outcomes`; unioning it in is what makes
+  // the 40/60/90/120/180-day horizons reachable at all. Live rows win on a
+  // duplicate key, because they carry the freshest breakdown snapshot.
+  const bySignal = getOutcomeCandidates().filter((c) => /^\d{4}-\d{2}-\d{2}$/.test(c.entryDate));
+  const seenKeys = new Set(bySignal.map((c) => `${c.ticker}|${c.entryDate}`));
+  const candidates = [
+    ...bySignal,
+    ...getOutcomeBackfillCandidates().filter(
+      (c) => /^\d{4}-\d{2}-\d{2}$/.test(c.entryDate) && !seenKeys.has(`${c.ticker}|${c.entryDate}`),
+    ),
+  ];
   const labeled = getLabeledKeys();
   const today = new Date().toISOString().slice(0, 10);
 
@@ -73,7 +98,8 @@ async function main(): Promise<void> {
     ...new Set([...todo].sort((a, b) => b.entryDate.localeCompare(a.entryDate)).map((c) => c.ticker)),
   ].slice(0, MAX_TICKERS_PER_RUN);
   console.log(
-    `[label] candidates=${candidates.length} · already labeled=${labeled.size} · ripe+missing=${todo.length} · tickers this run=${tickers.length}`,
+    `[label] candidates=${candidates.length} (${bySignal.length} live + ${candidates.length - bySignal.length} from signal_outcomes) · ` +
+      `already labeled=${labeled.size} · ripe+missing=${todo.length} · tickers this run=${tickers.length}`,
   );
   if (!tickers.length) {
     report();
@@ -143,7 +169,7 @@ function report(): void {
       // Power rule of thumb: SE(IC) ≈ 1/√n → n≈780 detects IC 0.10 at 80% power.
       const need = 780;
       const pct = Math.min(100, Math.round((h.n / need) * 100));
-      console.log(`  ${String(h.horizon).padStart(2)}d Horizont: n=${String(h.n).padStart(5)}   ${pct}% des Ziels (n≈${need} für IC 0.10)`);
+      console.log(`  ${String(h.horizon).padStart(3)}d Horizont: n=${String(h.n).padStart(5)}   ${pct}% des Ziels (n≈${need} für IC 0.10)`);
     }
   }
   if (components.length && components[0].total > 0) {

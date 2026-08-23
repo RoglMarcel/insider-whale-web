@@ -890,6 +890,8 @@ here is worth nothing; an honest negative one is worth a lot. Everything below
 exists so a sceptic can check the arithmetic rather than trust the chart.
 
 Full write-up, current figures and the parameter sweep: [`docs/portfolio/REPORT.md`](docs/portfolio/REPORT.md).
+Where the **exit rules** come from — the insider-return literature, the settings
+table and the holding-period curve: [`docs/portfolio/EXIT-STRATEGY.md`](docs/portfolio/EXIT-STRATEGY.md).
 
 ### The rules
 
@@ -898,7 +900,7 @@ Full write-up, current figures and the parameter sweep: [`docs/portfolio/REPORT.
 | Starting capital | $10,000 |
 | Entry | score ≥ **74** on first sighting, at that session's closing price |
 | Position size | `clamp(5% × (1 + (score − 74) / 16), 3%, 10%)` of **current** equity — score 74 → 5.0%, 82 → 7.5%, 90+ → capped at 10% |
-| Exits (first barrier wins) | take profit **+20%**, stop loss **−10%**, trailing **10%** below the highest close once **+15%** up, time stop **30 calendar days** |
+| Exits (first barrier wins) | **no take profit — the upside is never capped**, stop loss **−25%**, trailing **20%** below the highest close once **+25%** up, time stop **90 calendar days** |
 | Priority when several break on one day | stop loss → trailing → take profit → time (the most pessimistic reading of a daily bar) |
 | Limits | max 20 open positions · one position per ticker, no averaging up · 10-day lockout after a sale · $100 minimum ticket |
 | Uninvested capital | held in **SPY** (`cashPolicy: 'spy'`) |
@@ -914,6 +916,21 @@ chart can never be labelled with values it was not computed from.
 **Why 74 and not `CONVICTION_THRESHOLDS.high` (80):** nothing in the stored
 history has ever scored above 76.6. Reusing that constant builds a book that
 never trades.
+
+**Why there is no take profit (v1.5.0):** individual stock returns are strongly
+right-skewed, so the minority of positions that run far past any round number
+carries more than the whole expected return — measured on our own labeled
+outcomes, the top decile of signals accounts for 145–732% of total alpha, and the
+rest nets negative. A +20% cap sold exactly those first while losers ran to the
+full stop, which is the disposition effect written into a config constant. The
+upside exit is the trailing stop, which cannot truncate a trend that is still
+going. Sources and arithmetic: [`docs/portfolio/EXIT-STRATEGY.md`](docs/portfolio/EXIT-STRATEGY.md).
+
+**Upgrading from v1.4.0:** the exit constants alone do not reach an installation
+that has ever used *Edit rules*, because `app_settings.portfolio_config` is merged
+over the defaults. A one-time migration resets exit values that still equal the
+v1.4.0 defaults and keeps any you changed yourself; the curve then needs one
+`npm run portfolio:sync` to be recomputed.
 
 **Why cash sits in SPY:** at roughly half an entry per trading day the book is
 mostly uninvested, and uninvested cash loses to a rising index by construction —
