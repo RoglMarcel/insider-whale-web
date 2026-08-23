@@ -413,6 +413,21 @@ describe('price gaps', () => {
     expect(res.events.filter((e) => e.kind === 'data_missing').length).toBe(1);
   });
 
+  it('treats a signal from the most recent session as pending, not missing', () => {
+    // Seen on the last day in the calendar: its search window has not elapsed,
+    // so there is nothing to conclude yet.
+    const res = simulatePortfolio(
+      input({
+        tradingDays: days,
+        spy: flat(days, 500),
+        prices: { AAA: flat(days.slice(0, days.length - 1), 100) },
+        candidates: [cand({ earliestDate: days[days.length - 1] })],
+      }),
+    );
+    expect(res.untradable).toEqual([]);
+    expect(res.events.filter((e) => e.kind === 'data_missing')).toEqual([]);
+  });
+
   it('has no series at all → not tradable, and the ticker is named', () => {
     const res = simulatePortfolio(
       input({ tradingDays: days, spy: flat(days, 500), prices: {}, candidates: [cand({ ticker: 'GONE' })] }),

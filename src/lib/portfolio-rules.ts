@@ -289,12 +289,18 @@ export function simulatePortfolio(input: PortfolioSimInput): PortfolioSimResult 
   //    deterministic and keeps the day loop free of price-search logic.
   const byDay = new Map<string, PortfolioCandidate[]>();
   const seen = new Map<string, PortfolioCandidate>();
+  const lastDay = days[days.length - 1];
   for (const c of [...input.candidates].sort(
     (a, b) => a.earliestDate.localeCompare(b.earliestDate) || b.score - a.score || a.ticker.localeCompare(b.ticker),
   )) {
     if (c.score < cfg.entryScore) continue;
     const day = firstTradableDay(c.ticker, c.earliestDate, days, input.prices);
     if (!day) {
+      // PENDING, not missing. A signal from the most recent session has not had
+      // its full search window yet — Friday evening's signal has no Monday close
+      // to buy at. Calling that "not tradable" would put a healthy ticker in the
+      // data-quality warning and then never take it back out.
+      if (addDaysYmd(c.earliestDate, PORTFOLIO_PRICE_SEARCH_DAYS) > lastDay) continue;
       untradable.add(c.ticker);
       events.push({
         date: c.earliestDate,

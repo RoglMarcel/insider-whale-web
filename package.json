@@ -1,7 +1,7 @@
 {
   "name": "insider-whale-terminal",
   "version": "1.3.0",
-  "description": "Insider & Whale Stock Signal Tracker \u2014 desktop app that scrapes insider trading and unusual options flow, scores conviction, and ranks tickers.",
+  "description": "Insider & Whale Stock Signal Tracker — desktop app that scrapes insider trading and unusual options flow, scores conviction, and ranks tickers.",
   "author": "Insider Tracker",
   "license": "MIT",
   "private": true,
@@ -33,7 +33,10 @@
     "rescore:history": "esbuild scripts/rescore-history.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --alias:electron=./scripts/electron-stub.ts --outfile=tmp/rescore-history.cjs && node scripts/run-node-or-electron.cjs tmp/rescore-history.cjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "golden:update": "esbuild scripts/gen-golden.ts --bundle --platform=node --format=cjs --outfile=tmp/gen-golden.cjs && node tmp/gen-golden.cjs"
+    "golden:update": "esbuild scripts/gen-golden.ts --bundle --platform=node --format=cjs --outfile=tmp/gen-golden.cjs && node tmp/gen-golden.cjs",
+    "portfolio:sync": "esbuild scripts/sync-portfolio.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --alias:electron=./scripts/electron-stub.ts --outfile=tmp/sync-portfolio.cjs && node scripts/run-node-or-electron.cjs tmp/sync-portfolio.cjs",
+    "portfolio:sweep": "esbuild scripts/portfolio-sweep.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --alias:electron=./scripts/electron-stub.ts --outfile=tmp/portfolio-sweep.cjs && node scripts/run-node-or-electron.cjs tmp/portfolio-sweep.cjs",
+    "verify:portfolio": "esbuild scripts/verify-portfolio.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --alias:electron=./scripts/electron-stub.ts --outfile=tmp/verify-portfolio.cjs && node scripts/run-node-or-electron.cjs tmp/verify-portfolio.cjs"
   },
   "dependencies": {
     "better-sqlite3": "^11.3.0",
