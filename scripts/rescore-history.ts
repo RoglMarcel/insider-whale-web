@@ -246,7 +246,7 @@ function bucketMeans(rows: Row[]): (number | null)[] {
 }
 
 function main(): void {
-  const dbPath = process.env.DB_PATH ?? path.resolve(process.cwd(), 'data', 'insider-tracker.db');
+  const dbPath = process.env.DB_PATH?.trim() || path.resolve(process.cwd(), 'data', 'insider-tracker.db');
   if (!fs.existsSync(dbPath)) {
     console.log(`Keine DB unter ${dbPath}.`);
     return;

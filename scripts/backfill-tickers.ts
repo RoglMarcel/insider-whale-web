@@ -49,7 +49,7 @@ interface Change {
 }
 
 async function main(): Promise<number> {
-  const dbPath = process.env.DB_PATH ?? path.resolve(process.cwd(), 'data', 'insider-tracker.db');
+  const dbPath = process.env.DB_PATH?.trim() || path.resolve(process.cwd(), 'data', 'insider-tracker.db');
   if (!fs.existsSync(dbPath)) {
     console.error(`Keine DB unter ${dbPath}.`);
     return 1;
