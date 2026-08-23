@@ -1,5 +1,6 @@
+import nodeFs from 'node:fs';
+import nodePath from 'node:path';
 import {
-  DEFAULT_PORTFOLIO_CONFIG,
   type PortfolioCandidate,
   type PortfolioClosedPosition,
   type PortfolioConfig,
@@ -272,6 +273,30 @@ export async function updatePortfolioConfig(partial: Partial<PortfolioConfig>): 
   return changed ? rebuildPortfolio() : syncPortfolio();
 }
 
+/**
+ * Publish the current state as `public/data/portfolio.json` for the hosted
+ * build. `readOnly` is stamped in here rather than in the UI: a browser can
+ * neither reach Yahoo nor write SQLite, so the tab must not offer Sync,
+ * Rebuild or the settings form there.
+ *
+ * Returns the number of points written. Never throws — publishing is the last
+ * thing a run does, and a full directory must not fail a completed simulation.
+ */
+export function writePortfolioJson(outDir: string): number {
+  try {
+    const state = getPortfolioState();
+    nodeFs.mkdirSync(outDir, { recursive: true });
+    nodeFs.writeFileSync(
+      nodePath.join(outDir, 'portfolio.json'),
+      JSON.stringify({ ...state, meta: { ...state.meta, readOnly: true } }),
+    );
+    return state.equity.length;
+  } catch (err) {
+    console.error('[portfolio] publishing portfolio.json failed (non-fatal):', err);
+    return 0;
+  }
+}
+
 // ── Read model ────────────────────────────────────────────────────────────
 
 export function getPortfolioState(): PortfolioState {
@@ -318,34 +343,5 @@ export function getPortfolioState(): PortfolioState {
     closed,
     events,
     stats: computeStats(equity, closed, open, runMeta?.config ?? config),
-  };
-}
-
-/** Empty, well-typed state for callers that have no database at all. */
-export function emptyPortfolioState(note: string | null = null): PortfolioState {
-  return {
-    config: DEFAULT_PORTFOLIO_CONFIG,
-    meta: {
-      available: false,
-      firstDate: null,
-      lastDate: null,
-      backfillStart: null,
-      liveStart: null,
-      lastRun: null,
-      skippedNoCash: 0,
-      skippedCap: 0,
-      missingPrices: 0,
-      suspectPrices: 0,
-      untradableTickers: [],
-      restatedDays: 0,
-      priceAsOf: null,
-      readOnly: false,
-      note,
-    },
-    equity: [],
-    open: [],
-    closed: [],
-    events: [],
-    stats: computeStats([], [], [], DEFAULT_PORTFOLIO_CONFIG),
   };
 }

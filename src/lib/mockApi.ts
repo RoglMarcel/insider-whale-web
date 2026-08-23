@@ -1,5 +1,5 @@
 import { DEFAULT_SETTINGS, filterSignals, LOGIN_PLATFORMS, type InsiderTrackerAPI, type AuthStatus } from '@/types';
-import { sampleSignals, sampleWatchlist, sampleLogs, sampleTrackRecord } from './sampleData';
+import { sampleSignals, sampleWatchlist, sampleLogs, sampleTrackRecord, samplePortfolio } from './sampleData';
 
 const mockAuthStatus = (): AuthStatus =>
   Object.fromEntries(LOGIN_PLATFORMS.map((p) => [p.key, { loggedIn: false, savedAt: null }]));
@@ -85,6 +85,12 @@ export const mockApi: InsiderTrackerAPI = {
   shadow: {
     get: async () => null,
     set: async () => null,
+  },
+  portfolio: {
+    getState: async () => samplePortfolio(),
+    sync: async () => samplePortfolio(),
+    rebuild: async () => samplePortfolio(),
+    setConfig: async () => samplePortfolio(),
   },
   performance: {
     getLatest: async () => null,

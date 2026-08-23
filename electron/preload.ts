@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
   InsiderTrackerAPI,
+  PortfolioConfig,
   ScrapeStatus,
   Signal,
 } from '../src/types';
@@ -60,6 +61,12 @@ const api: InsiderTrackerAPI = {
   performance: {
     getLatest: () => ipcRenderer.invoke(IPC.performanceGetLatest),
     recompute: () => ipcRenderer.invoke(IPC.performanceRecompute),
+  },
+  portfolio: {
+    getState: () => ipcRenderer.invoke(IPC.portfolioGetState),
+    sync: () => ipcRenderer.invoke(IPC.portfolioSync),
+    rebuild: () => ipcRenderer.invoke(IPC.portfolioRebuild),
+    setConfig: (config: Partial<PortfolioConfig>) => ipcRenderer.invoke(IPC.portfolioSetConfig, config),
   },
   shadow: {
     get: () => ipcRenderer.invoke(IPC.shadowGetConfig),

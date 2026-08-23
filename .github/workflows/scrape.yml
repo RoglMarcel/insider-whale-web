@@ -105,6 +105,13 @@ jobs:
         if: steps.mode.outputs.desktop != 'true'
         run: npm run label:outcomes || echo "labeling failed — continuing (never blocks the site)"
 
+      # Roll the testing portfolio forward and publish public/data/portfolio.json.
+      # Runs AFTER labeling (which fills signal_outcomes, the portfolio's backfill
+      # source) and BEFORE build:web (which bakes public/data into the bundle).
+      # Never gates the deploy: a Yahoo timeout must not cost the site a release.
+      - name: Sync testing portfolio
+        run: npm run portfolio:sync || echo "portfolio sync failed — continuing (never blocks the site)"
+
       # Optional phone push: set the repo secret NTFY_TOPIC (any hard-to-guess
       # string) and subscribe to it in the ntfy Android app. No-op if unset.
       - name: Notify new signals (ntfy)

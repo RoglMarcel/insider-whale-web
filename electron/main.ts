@@ -12,6 +12,7 @@ import type {
   SignalPerformance,
   AlertRule,
   ScoringConfig,
+  PortfolioConfig,
 } from '../src/types';
 import { CONVICTION_THRESHOLDS } from '../src/types';
 import { IPC } from './ipc-channels';
@@ -46,6 +47,7 @@ import {
   setShadowScoringConfig,
 } from './database';
 import { computePerformanceReport } from './performance';
+import { getPortfolioState, rebuildPortfolio, syncPortfolio, updatePortfolioConfig } from './portfolio';
 import { runScrape, getScrapeStatus, fetchStockAnalysisEarnings } from './scraper';
 import { publishToWeb } from './webPublish';
 import { launchBrowser, createContext } from './scraper/browser';
@@ -199,6 +201,16 @@ async function triggerScrape(): Promise<ScrapeResult> {
   notifyAlertHits(result.alertHits, mainWindow);
   notifyFilingEvents(result.filingEvents, mainWindow);
   broadcast(IPC.appSignalsUpdated, getLatestSignals());
+
+  // Roll the testing portfolio forward. Deliberately NOT awaited into the
+  // scrape's result: it talks to Yahoo, and a scrape that already succeeded
+  // must never be reported as failed because a price fetch timed out.
+  void syncPortfolio()
+    .then((r) => {
+      if (r.ok) console.log(`[main] portfolio: +${r.daysWritten} day(s), ${r.pricesFetched} series fetched`);
+      else console.log(`[main] portfolio not run: ${r.reason}`);
+    })
+    .catch((err) => console.error('[main] portfolio sync threw (non-fatal):', err));
 
   // Push the run to the web terminal. Deliberately NOT awaited into the scrape's
   // own result: publishing talks to git and the network, and a scrape that
@@ -586,6 +598,22 @@ function registerIpc(): void {
     insertBacktestRun(report);
     return report;
   });
+  // Testing portfolio. Sync/rebuild talk to Yahoo, so they are async; getState
+  // is a pure read and stays cheap enough to call on every tab switch.
+  ipcMain.handle(IPC.portfolioGetState, () => getPortfolioState());
+  ipcMain.handle(IPC.portfolioSync, async () => {
+    await syncPortfolio();
+    return getPortfolioState();
+  });
+  ipcMain.handle(IPC.portfolioRebuild, async () => {
+    await rebuildPortfolio();
+    return getPortfolioState();
+  });
+  ipcMain.handle(IPC.portfolioSetConfig, async (_e, config: Partial<PortfolioConfig>) => {
+    await updatePortfolioConfig(config);
+    return getPortfolioState();
+  });
+
   ipcMain.handle(IPC.alertsGetRules, () => getAlertRules());
   ipcMain.handle(IPC.alertsAddRule, (_e, rule: AlertRule) => {
     addAlertRule(rule);

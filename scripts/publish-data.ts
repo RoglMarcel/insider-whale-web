@@ -17,6 +17,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { initDatabase, closeDatabase, getLatestSignals, getScrapeLogs } from '../electron/database';
+import { writePortfolioJson } from '../electron/portfolio';
 
 function readVersion(): string {
   try {
@@ -69,13 +70,17 @@ function main(): void {
 
   fs.writeFileSync(path.join(outDir, 'signals.json'), JSON.stringify(signals));
   fs.writeFileSync(path.join(outDir, 'meta.json'), JSON.stringify(meta, null, 2));
+  // Whatever the portfolio engine last computed. This does NOT run the
+  // simulation (that is `npm run portfolio:sync`); it only makes sure the
+  // hosted tab has the stored state even when the sync step was skipped.
+  const pfPoints = writePortfolioJson(outDir);
   closeDatabase();
 
   const withOptions = signals.filter((s) => (s.optionsActivity?.length ?? 0) > 0).length;
   const combos = signals.filter((s) => s.comboSignal || s.breakdown?.politicianComboTier).length;
   console.log(
     `[publish-data] wrote ${signals.length} signal(s) from the history DB · ` +
-      `${withOptions} with options · ${combos} combo(s) · no scrape performed`,
+      `${withOptions} with options · ${combos} combo(s) · ${pfPoints} portfolio point(s) · no scrape performed`,
   );
 }
 

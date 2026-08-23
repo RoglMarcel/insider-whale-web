@@ -15,22 +15,10 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { initDatabase, closeDatabase } from '../electron/database';
-import { getPortfolioState, rebuildPortfolio, syncPortfolio } from '../electron/portfolio';
+import { getPortfolioState, rebuildPortfolio, syncPortfolio, writePortfolioJson } from '../electron/portfolio';
 
 const pct = (v: number | null | undefined): string =>
   v == null ? 'n/a' : `${v >= 0 ? '+' : ''}${(v * 100).toFixed(2)}%`;
-
-export function writePortfolioJson(outDir: string): number {
-  const state = getPortfolioState();
-  fs.mkdirSync(outDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(outDir, 'portfolio.json'),
-    // `readOnly` tells the web UI to hide the Sync / Rebuild / Settings controls
-    // rather than render buttons that cannot do anything in a browser.
-    JSON.stringify({ ...state, meta: { ...state.meta, readOnly: true } }),
-  );
-  return state.equity.length;
-}
 
 async function main(): Promise<void> {
   const dbPath = (process.env.DB_PATH ?? path.resolve(process.cwd(), 'data', 'insider-tracker.db')).trim();

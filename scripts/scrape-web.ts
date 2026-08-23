@@ -27,6 +27,7 @@ import {
   getScrapeLogs,
 } from '../electron/database';
 import { fetchVix } from '../electron/vix';
+import { writePortfolioJson } from '../electron/portfolio';
 import { DEFAULT_SETTINGS, SCRAPER_SOURCES, type AppSettings, type ScraperSource } from '../src/types';
 
 // Only robust, browser-optional sources by default. secform4/openinsider/
@@ -174,6 +175,9 @@ async function main(): Promise<void> {
 
   fs.writeFileSync(path.join(outDir, 'signals.json'), JSON.stringify(published));
   fs.writeFileSync(path.join(outDir, 'meta.json'), JSON.stringify(meta, null, 2));
+  // Stored portfolio state, so the tab has data even if the later
+  // `portfolio:sync` step fails. The simulation itself runs in that step.
+  writePortfolioJson(outDir);
 
   const withOptions = published.filter((s) => (s.optionsActivity?.length ?? 0) > 0).length;
   console.log(

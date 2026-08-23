@@ -15,6 +15,7 @@ import {
   type PortfolioMetric,
   type PortfolioOpenPosition,
   type PortfolioPosition,
+  type PortfolioState,
   type PortfolioStats,
   type PortfolioTradeStats,
   type PortfolioWindowStat,
@@ -586,6 +587,39 @@ export function toOpenPosition(
     holdDays: diffDaysYmd(p.entryDate, asOf),
     nearestBarrier: near?.reason ?? null,
     nearestBarrierPct: near?.distance ?? null,
+  };
+}
+
+/**
+ * A well-typed "nothing here yet" state. Lives in the pure module because both
+ * the main process and the browser build need it, and neither can import the
+ * other's copy.
+ */
+export function emptyPortfolioState(note: string | null = null): PortfolioState {
+  return {
+    config: DEFAULT_PORTFOLIO_CONFIG,
+    meta: {
+      available: false,
+      firstDate: null,
+      lastDate: null,
+      backfillStart: null,
+      liveStart: null,
+      lastRun: null,
+      skippedNoCash: 0,
+      skippedCap: 0,
+      missingPrices: 0,
+      suspectPrices: 0,
+      untradableTickers: [],
+      restatedDays: 0,
+      priceAsOf: null,
+      readOnly: false,
+      note,
+    },
+    equity: [],
+    open: [],
+    closed: [],
+    events: [],
+    stats: computeStats([], [], [], DEFAULT_PORTFOLIO_CONFIG),
   };
 }
 

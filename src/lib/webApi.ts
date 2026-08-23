@@ -1,11 +1,13 @@
 import {
   filterSignals,
   type InsiderTrackerAPI,
+  type PortfolioState,
   type ScrapeLogEntry,
   type Signal,
   type VixQuote,
   type WatchlistItem,
 } from '@/types';
+import { emptyPortfolioState } from './portfolio-rules';
 import { mockApi } from './mockApi';
 
 /**
@@ -51,6 +53,13 @@ async function loadSignals(force = false): Promise<Signal[]> {
 }
 
 const loadMeta = () => loadJson<Meta>('meta.json', {});
+
+/** Published portfolio state; an absent file means "not built yet", not an error. */
+const loadPortfolio = (): Promise<PortfolioState> =>
+  loadJson<PortfolioState>(
+    'portfolio.json',
+    emptyPortfolioState('The testing portfolio has not been published yet — it is built by the scheduled run.'),
+  ).then((s) => ({ ...s, meta: { ...s.meta, readOnly: true } }));
 
 // ── Per-device watchlist (localStorage) ──
 const WL_KEY = 'iwt.watchlist';
@@ -114,6 +123,19 @@ export const webApi: InsiderTrackerAPI = {
       writeWatchlist(readWatchlist().filter((i) => i.ticker.toUpperCase() !== t));
       return watchlistJoined();
     },
+  },
+  /**
+   * The curve is computed by the CI runner (`npm run portfolio:sync`) and
+   * published as a static file — a browser can neither reach Yahoo nor write
+   * SQLite. The mutating calls therefore return the published state unchanged,
+   * and `meta.readOnly` (set by the publisher) tells the UI to hide the
+   * controls instead of rendering buttons that do nothing.
+   */
+  portfolio: {
+    getState: () => loadPortfolio(),
+    sync: () => loadPortfolio(),
+    rebuild: () => loadPortfolio(),
+    setConfig: () => loadPortfolio(),
   },
   history: {
     // Real sessions, published in meta.json by the runner — this is what makes the

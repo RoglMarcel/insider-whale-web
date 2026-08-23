@@ -8,7 +8,12 @@ import type {
   ScoreBreakdown,
   PoliticianTrade,
   PoliticianComboTier,
+  PortfolioState,
+  PortfolioEquityPoint,
+  PortfolioPosition,
 } from '@/types';
+import { DEFAULT_PORTFOLIO_CONFIG } from '@/types';
+import { computeStats, toClosedPosition, toOpenPosition } from './portfolio-rules';
 
 /**
  * Sample data used ONLY in browser preview mode (when not running inside
@@ -256,5 +261,126 @@ export function sampleTrackRecord(name: string): InsiderTrackRecord {
       wasProfitable3m: ok,
       wasProfitable6m: ok,
     })),
+  };
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Testing portfolio — preview only
+// ──────────────────────────────────────────────────────────────────────────
+
+/**
+ * A deterministic sample curve for the vite-preview shell, which has neither a
+ * database nor a published JSON to read.
+ *
+ * Marked `available` but with an explicit note: the tab has to LOOK like the
+ * real thing so the layout can be judged, while never letting a reader mistake
+ * invented numbers for measured ones. The seeded pseudo-random walk keeps it
+ * stable across reloads — a curve that changed on every refresh would be the
+ * one part of this feature that is obviously fake.
+ */
+export function samplePortfolio(): PortfolioState {
+  const config = DEFAULT_PORTFOLIO_CONFIG;
+  const DAYS = 90;
+  // Mulberry32: tiny, seeded, and identical in every browser.
+  let seed = 0x9e3779b9;
+  const rnd = (): number => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+
+  const equity: PortfolioEquityPoint[] = [];
+  let pv = config.startingCash;
+  let bv = config.startingCash;
+  for (let i = 0; i < DAYS; i++) {
+    const date = isoDaysAgo(DAYS - i);
+    const market = (rnd() - 0.47) * 0.011;
+    bv *= 1 + market;
+    pv *= 1 + market + (rnd() - 0.45) * 0.006;
+    const positionsValue = i > 12 ? pv * 0.12 : 0;
+    const spyCashValue = pv - positionsValue;
+    equity.push({
+      date,
+      cash: 0,
+      spyCashValue: Math.round(spyCashValue * 100) / 100,
+      positionsValue: Math.round(positionsValue * 100) / 100,
+      equity: Math.round((spyCashValue + positionsValue) * 100) / 100,
+      equityIdle: Math.round(pv * 0.96 * 100) / 100,
+      benchmark: Math.round(bv * 100) / 100,
+      openPositions: i > 12 ? 2 : 0,
+    });
+  }
+
+  const raw: PortfolioPosition[] = [
+    ['NVDA', 78.2, 62, 32, 118.4, 141.2, 'take_profit'],
+    ['AMD', 75.1, 55, 25, 152.6, 137.1, 'stop_loss'],
+    ['LLY', 81.0, 40, 10, 742.1, 803.5, 'trailing'],
+    ['CRM', 74.4, 20, null, 268.0, null, null],
+  ].map((r, i) => {
+    const [ticker, score, agoIn, agoOut, entry, exit, reason] = r as [
+      string,
+      number,
+      number,
+      number | null,
+      number,
+      number | null,
+      PortfolioPosition['exitReason'],
+    ];
+    const weight = Math.min(config.maxWeight, config.baseWeight * (1 + (score - config.entryScore) / config.scoreSpan));
+    const shares = (config.startingCash * weight) / entry;
+    return {
+      id: i + 1,
+      ticker,
+      signalId: null,
+      entryDate: isoDaysAgo(agoIn),
+      entryPrice: entry,
+      shares,
+      costBasis: shares * entry,
+      entryScore: score,
+      targetWeight: weight,
+      highWaterClose: Math.max(entry, exit ?? entry) * 1.04,
+      exitDate: agoOut == null ? null : isoDaysAgo(agoOut),
+      exitPrice: exit,
+      exitReason: reason,
+      realizedPnl: exit == null ? null : shares * exit - shares * entry,
+      spyEntry: 500,
+      spyExit: exit == null ? null : 512,
+    };
+  });
+
+  const last = equity[equity.length - 1];
+  const closed = raw.filter((p) => p.exitDate).map(toClosedPosition);
+  const open = raw
+    .filter((p) => !p.exitDate)
+    .map((p) => toOpenPosition(p, p.entryPrice * 1.06, last.date, last.equity, config));
+
+  return {
+    config,
+    meta: {
+      available: true,
+      firstDate: equity[0].date,
+      lastDate: last.date,
+      backfillStart: equity[0].date,
+      liveStart: equity[30].date,
+      lastRun: new Date().toISOString(),
+      skippedNoCash: 1,
+      skippedCap: 0,
+      missingPrices: 2,
+      suspectPrices: 0,
+      untradableTickers: ['DELISTED'],
+      restatedDays: 0,
+      priceAsOf: last.date,
+      readOnly: true,
+      note: 'Preview mode — this curve is generated sample data, not a measured result.',
+    },
+    equity,
+    open,
+    closed,
+    events: [
+      { date: last.date, kind: 'buy', ticker: 'CRM', score: 74.4, amount: 512.3, note: null },
+      { date: equity[60].date, kind: 'skipped_no_cash', ticker: 'ABNB', score: 76.1, amount: 42.5, note: 'preview' },
+    ],
+    stats: computeStats(equity, closed, open, config),
   };
 }
