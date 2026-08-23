@@ -24,7 +24,17 @@ interface Field {
   step: number;
   min: number;
   max: number;
+  /**
+   * `true` for a barrier that can be switched OFF entirely (stored as `null`).
+   * "Off" is not the same as "set to 999%": the shipped book runs with no
+   * take-profit at all, and a disabled barrier must disappear from the rules
+   * card rather than show a number nothing will ever reach.
+   */
+  optional?: boolean;
 }
+
+/** Prefilled when a switched-off barrier is switched back on. */
+const BARRIER_FALLBACK: Record<string, number> = { takeProfit: 0.3, stopLoss: 0.25 };
 
 const FIELDS: Field[] = [
   { key: 'startingCash', label: 'pf.rules.capital', unit: 'raw', step: 500, min: 100, max: 10_000_000 },
@@ -36,8 +46,8 @@ const FIELDS: Field[] = [
   { key: 'maxPositions', label: 'pf.cfg.maxPositions', unit: 'raw', step: 1, min: 1, max: 200 },
   { key: 'minTicket', label: 'pf.cfg.minTicket', unit: 'raw', step: 25, min: 1, max: 100_000 },
   { key: 'reentryCooldownDays', label: 'pf.cfg.cooldown', unit: 'raw', step: 1, min: 0, max: 365 },
-  { key: 'takeProfit', label: 'pf.cfg.takeProfit', unit: 'pct', step: 1, min: 0.5, max: 500 },
-  { key: 'stopLoss', label: 'pf.cfg.stopLoss', unit: 'pct', step: 1, min: 0.5, max: 99 },
+  { key: 'takeProfit', label: 'pf.cfg.takeProfit', unit: 'pct', step: 1, min: 0.5, max: 500, optional: true },
+  { key: 'stopLoss', label: 'pf.cfg.stopLoss', unit: 'pct', step: 1, min: 0.5, max: 99, optional: true },
   { key: 'maxHoldDays', label: 'pf.cfg.maxHoldDays', unit: 'raw', step: 5, min: 1, max: 3650 },
   { key: 'trailArm', label: 'pf.cfg.trailArm', unit: 'pct', step: 1, min: 0.5, max: 500 },
   { key: 'trailDistance', label: 'pf.cfg.trailDistance', unit: 'pct', step: 1, min: 0.5, max: 99 },
@@ -64,8 +74,24 @@ export function PortfolioConfigForm({
   const { t } = useI18n();
   const [draft, setDraft] = useState<PortfolioConfig>(config);
 
-  const set = (key: keyof PortfolioConfig, value: number | PortfolioCashPolicy) =>
+  const set = (key: keyof PortfolioConfig, value: number | PortfolioCashPolicy | null) =>
     setDraft((d) => ({ ...d, [key]: value }));
+
+  /**
+   * Switching a barrier off keeps its last number in local state only, so
+   * switching it straight back on does not silently install a default the user
+   * never chose — and so `null` is what reaches the config.
+   */
+  const [parked, setParked] = useState<Record<string, number>>({});
+  const toggle = (f: Field, on: boolean) => {
+    const current = draft[f.key] as number | null;
+    if (on) {
+      set(f.key, parked[f.key] ?? BARRIER_FALLBACK[f.key] ?? toStored(f.min, f.unit));
+    } else {
+      if (current != null) setParked((m) => ({ ...m, [f.key]: current }));
+      set(f.key, null);
+    }
+  };
 
   // The clamp order matters: min must not exceed max, and the base has to sit
   // between them, or every position silently lands on a boundary.
@@ -77,27 +103,46 @@ export function PortfolioConfigForm({
   return (
     <div className="mt-4 rounded-xl p-3" style={{ border: '1px solid var(--border-glass)' }}>
       <div className="grid gap-x-4 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
-        {FIELDS.map((f) => (
-          <label key={f.key} className="flex items-center justify-between gap-2 text-xs">
-            <span className="text-secondary">{t(f.label)}</span>
-            <span className="flex shrink-0 items-center gap-1">
-              <input
-                type="number"
-                className="input w-24 px-2 py-1 text-right text-xs tabular-nums"
-                value={toDisplay(draft[f.key] as number, f.unit)}
-                step={f.step}
-                min={f.min}
-                max={f.max}
-                disabled={busy}
-                onChange={(e) => {
-                  const n = Number(e.target.value);
-                  if (Number.isFinite(n)) set(f.key, toStored(n, f.unit));
-                }}
-              />
-              <span className="w-7 text-secondary">{UNIT_SUFFIX[f.unit]}</span>
-            </span>
-          </label>
-        ))}
+        {FIELDS.map((f) => {
+          const raw = draft[f.key] as number | null;
+          const off = f.optional && raw == null;
+          return (
+            <label key={f.key} className="flex items-center justify-between gap-2 text-xs">
+              <span className="text-secondary">{t(f.label)}</span>
+              <span className="flex shrink-0 items-center gap-1">
+                {f.optional && (
+                  <input
+                    type="checkbox"
+                    className="mr-1"
+                    checked={!off}
+                    disabled={busy}
+                    aria-label={t(off ? 'pf.cfg.barrierOff' : 'pf.cfg.barrierOn')}
+                    title={t(off ? 'pf.cfg.barrierOff' : 'pf.cfg.barrierOn')}
+                    onChange={(e) => toggle(f, e.target.checked)}
+                  />
+                )}
+                {off ? (
+                  <span className="w-24 px-2 py-1 text-right text-xs text-secondary">{t('pf.cfg.barrierOff')}</span>
+                ) : (
+                  <input
+                    type="number"
+                    className="input w-24 px-2 py-1 text-right text-xs tabular-nums"
+                    value={toDisplay(raw ?? 0, f.unit)}
+                    step={f.step}
+                    min={f.min}
+                    max={f.max}
+                    disabled={busy}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      if (Number.isFinite(n)) set(f.key, toStored(n, f.unit));
+                    }}
+                  />
+                )}
+                <span className="w-7 text-secondary">{off ? '' : UNIT_SUFFIX[f.unit]}</span>
+              </span>
+            </label>
+          );
+        })}
 
         <label className="flex items-center justify-between gap-2 text-xs">
           <span className="text-secondary">{t('pf.rules.cash')}</span>

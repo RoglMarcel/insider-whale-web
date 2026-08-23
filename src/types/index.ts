@@ -162,8 +162,30 @@ export interface ScoreBreakdown {
   politicianScore?: number;
   /** Which politician-combo tier fired (or null). */
   politicianComboTier?: PoliticianComboTier | null;
+  /**
+   * Factors that returned their NEUTRAL value because their input was missing,
+   * not because the data said "neutral".
+   *
+   * `docs/audit/FACTORS.md` measured `vixMultiplier`, `valuationMultiplier` and
+   * `comboBonus` at 0.0% of score variance. That is not evidence against them —
+   * it is evidence that they never fired, and a ×1.0 that means "VIX unknown"
+   * had been indistinguishable from a ×1.0 that means "VIX is calm". Listing
+   * them makes a dead knob visible instead of silent, which is the difference
+   * between a factor that is dormant and a factor that is broken.
+   *
+   * Cosmetic only: nothing here changes a score.
+   */
+  dormantFactors?: DormantFactor[];
   /** Human-readable notes about which bonuses applied. */
   notes: string[];
+}
+
+/** Why a factor could not act. One entry per dormant factor. */
+export interface DormantFactor {
+  /** Breakdown field name, e.g. `vixMultiplier`. */
+  factor: string;
+  /** The missing input or blocking gate, in one short phrase. */
+  reason: string;
 }
 
 /** A scored, persisted signal for a single ticker. */
@@ -1355,12 +1377,68 @@ export const PORTFOLIO_MAX_POSITIONS = 20;
 export const PORTFOLIO_MIN_TICKET = 100;
 /** Same ticker is locked out for this long after a sale (kills alarm loops). */
 export const PORTFOLIO_REENTRY_COOLDOWN_DAYS = 10;
-export const PORTFOLIO_TAKE_PROFIT = 0.2;
-/** Magnitude, not a signed number: a -10% stop is `0.10`. */
-export const PORTFOLIO_STOP_LOSS = 0.1;
-export const PORTFOLIO_MAX_HOLD_DAYS = 30;
-export const PORTFOLIO_TRAIL_ARM = 0.15;
-export const PORTFOLIO_TRAIL_DISTANCE = 0.1;
+/**
+ * Take-profit: DISABLED (v1.5.0). Not "set very high" — genuinely off, because a
+ * fixed cap on the upside is a structural error rather than a badly tuned number.
+ *
+ * Individual stock returns are strongly right-skewed (Bessembinder 2018), so the
+ * minority of positions that run far past any round-number target carry more than
+ * the whole expected return of the book — modelled at 90 days and 50% annualised
+ * vol, paths above +20% contribute +10.2pp against a +5.0pp total, and a hard
+ * +20% cap turns that +5.0% into −0.2%. Selling winners on a fixed rung while
+ * losers run to the full stop is also the disposition effect (Odean 1998) written
+ * into code. The upside exit is the TRAILING stop, which is path-dependent and
+ * therefore cannot truncate a trend that is still going.
+ *
+ * Full derivation and sources: docs/portfolio/EXIT-STRATEGY.md.
+ */
+export const PORTFOLIO_TAKE_PROFIT: number | null = null;
+/**
+ * Magnitude, not a signed number: a -25% stop is `0.25`.
+ *
+ * Widened from 10%. A stop only adds expected return where returns are positively
+ * serially correlated (Kaminski & Lo 2014); at the 1-month horizon individual
+ * stocks are in the short-term REVERSAL regime (Jegadeesh 1990), which is exactly
+ * where a tight stop sells the bottom. −10% is also inside one horizon sigma for
+ * almost every ticker this terminal surfaces, so it fired on noise rather than on
+ * the thesis being wrong. What is left at −25% ≈ 1 sigma over a 90-day hold is a
+ * tail-risk brake (fraud, dilution, delisting), not an alpha rule.
+ */
+export const PORTFOLIO_STOP_LOSS: number | null = 0.25;
+/**
+ * Time stop, calendar days. Raised from 30.
+ *
+ * The insider-purchase drift is measured over SIX to TWELVE months across every
+ * large study (Jeng/Metrick/Zeckhauser 2003; Lakonishok/Lee 2001; Cohen/Malloy/
+ * Pomorski 2012). Half of the six-month abnormal return accrues in the first
+ * month, but the other half accrues over months two to six at a roughly CONSTANT
+ * ~1.5-2 bps per trading day — it does not decay to zero at day 30. Because our
+ * qualifying signals are scarce relative to the 20 position slots, the capital
+ * freed by an early exit parks in SPY at zero alpha by construction, so every
+ * extra day held at positive marginal alpha is a gain rather than an opportunity
+ * cost. 90 days is the conservative end of the literature's range, and the
+ * longest horizon this database can ever validate in-sample.
+ */
+export const PORTFOLIO_MAX_HOLD_DAYS = 90;
+/**
+ * Trailing stop — now the ONLY upside exit, so both legs were widened.
+ *
+ * At +15%/10% the trail gave back barely 0.4 horizon sigma, which on a 45%-vol
+ * ticker is noise; it would have closed most positions inside the first month and
+ * re-created the take-profit through the back door. This is the least
+ * evidence-backed pair in the set (see EXIT-STRATEGY.md §"what would change our
+ * mind") — no study tests trailing-stop geometry on insider signals.
+ */
+export const PORTFOLIO_TRAIL_ARM = 0.25;
+export const PORTFOLIO_TRAIL_DISTANCE = 0.2;
+/**
+ * Lookback for the realised-volatility estimate that the OPTIONAL sigma-scaled
+ * barriers use. 60 trading days is the conventional window: long enough to be
+ * stable, short enough to track a regime change.
+ */
+export const PORTFOLIO_SIGMA_LOOKBACK_DAYS = 60;
+/** Trading days per calendar day — converts a time stop into a sigma horizon. */
+export const PORTFOLIO_TRADING_DAYS_PER_CALENDAR_DAY = 252 / 365;
 /** 5 bps = 0.05% per side, charged on every fill including the SPY cash leg. */
 export const PORTFOLIO_SLIPPAGE_BPS = 5;
 export const PORTFOLIO_STARTING_CASH = 10_000;
@@ -1393,6 +1471,34 @@ export type PortfolioEventKind =
   | 'data_missing'
   | 'suspect_price';
 
+/**
+ * OPTIONAL volatility-scaled barriers (Lopez de Prado's triple-barrier
+ * formulation, where the horizontal barriers are multiples of an estimated
+ * volatility rather than round percentages).
+ *
+ * `null` on the config means "use the fixed percentages". When it is set, each
+ * non-null multiple REPLACES its fixed counterpart with `multiple x sigmaH`,
+ * where sigmaH is the position's realised daily volatility at entry scaled to
+ * the length of the time stop. A position with no usable volatility estimate
+ * silently falls back to the fixed percentage — a barrier that cannot be
+ * computed must not become a barrier that never fires.
+ *
+ * Off by default in the shipped book: the principle is well supported
+ * (Barroso/Santa-Clara 2015; Moreira/Muir 2017), the specific multiples are not,
+ * and this repo does not adopt an unvalidated rule. `npm run portfolio:sweep`
+ * runs it so the evidence can accumulate.
+ */
+export interface PortfolioSigmaBarriers {
+  /** Stop-loss distance in horizon sigmas. */
+  stop: number | null;
+  /** Take-profit distance in horizon sigmas. */
+  target: number | null;
+  /** Trailing-stop arming level in horizon sigmas. */
+  trailArm: number | null;
+  /** Trailing-stop give-back distance in horizon sigmas. */
+  trailDistance: number | null;
+}
+
 export interface PortfolioConfig {
   startingCash: number;
   entryScore: number;
@@ -1403,13 +1509,16 @@ export interface PortfolioConfig {
   maxPositions: number;
   minTicket: number;
   reentryCooldownDays: number;
-  takeProfit: number;
-  /** Positive magnitude (0.10 = a -10% stop). */
-  stopLoss: number;
+  /** `null` DISABLES the barrier — there is then no upside cap at all. */
+  takeProfit: number | null;
+  /** Positive magnitude (0.25 = a -25% stop). `null` disables the stop. */
+  stopLoss: number | null;
   maxHoldDays: number;
   trailArm: number;
   trailDistance: number;
   slippageBps: number;
+  /** `null` = fixed percentages (the shipped default). */
+  sigmaBarriers?: PortfolioSigmaBarriers | null;
   /**
    * Where uninvested capital sits. `spy` makes the book "S&P 500 + signal
    * overlay", so the gap to the benchmark IS the contribution of the signals
@@ -1434,8 +1543,30 @@ export const DEFAULT_PORTFOLIO_CONFIG: PortfolioConfig = {
   trailArm: PORTFOLIO_TRAIL_ARM,
   trailDistance: PORTFOLIO_TRAIL_DISTANCE,
   slippageBps: PORTFOLIO_SLIPPAGE_BPS,
+  sigmaBarriers: null,
   cashPolicy: 'spy',
 };
+
+/**
+ * Bumped whenever the SHIPPED exit rules change in a way that an already-stored
+ * `app_settings.portfolio_config` overlay would otherwise mask. `getPortfolioConfig`
+ * merges the stored blob OVER these defaults, so a v1 installation would keep
+ * running +20% / -10% / 30d forever without this. See the migration in
+ * electron/database.ts and docs/portfolio/EXIT-STRATEGY.md.
+ */
+export const PORTFOLIO_CONFIG_VERSION = 2;
+
+/**
+ * The v1 (v1.4.0) exit rules, kept verbatim so the migration can tell an
+ * untouched default apart from a value the user deliberately chose.
+ */
+export const PORTFOLIO_V1_EXIT_DEFAULTS = {
+  takeProfit: 0.2,
+  stopLoss: 0.1,
+  maxHoldDays: 30,
+  trailArm: 0.15,
+  trailDistance: 0.1,
+} as const;
 
 /** Where a candidate signal came from — decides how its entry date is derived. */
 export type PortfolioSignalSource = 'signal' | 'outcome';

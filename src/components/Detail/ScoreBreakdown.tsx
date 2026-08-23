@@ -361,6 +361,27 @@ export function ScoreBreakdown({
           ))}
         </div>
       )}
+
+      {/* Factors that returned their neutral value because an INPUT was missing.
+          A x1.0 that means "no VIX reading" is a different statement from a
+          x1.0 that means "the market is calm", and until now the two looked
+          identical — which is how three factors sat at 0.0% of score variance
+          without anyone being able to tell dormant from broken. */}
+      {(b.dormantFactors?.length ?? 0) > 0 && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          <span className="text-xs text-secondary">{t('bd.dormant')}</span>
+          {b.dormantFactors!.map((d) => (
+            <span
+              key={d.factor}
+              className="rounded-full px-2.5 py-1 text-xs text-secondary"
+              style={{ border: '1px dashed var(--border-glass)' }}
+              title={d.reason}
+            >
+              {d.factor} — {d.reason}
+            </span>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

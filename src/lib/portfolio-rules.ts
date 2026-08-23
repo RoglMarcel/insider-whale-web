@@ -4,6 +4,8 @@ import {
   PORTFOLIO_MIN_DAYS_SHARPE,
   PORTFOLIO_PRICE_SEARCH_DAYS,
   PORTFOLIO_SESSION_CLOSE_UTC_HOUR,
+  PORTFOLIO_SIGMA_LOOKBACK_DAYS,
+  PORTFOLIO_TRADING_DAYS_PER_CALENDAR_DAY,
   PORTFOLIO_WINDOWS,
   type PortfolioCandidate,
   type PortfolioCashPolicy,
@@ -116,6 +118,96 @@ export interface ExitContext {
   highWaterClose: number;
   /** Calendar days held. */
   holdDays: number;
+  /**
+   * Realised DAILY log-return volatility over the window ending on the entry
+   * day — fixed at entry, never re-estimated, so a scaled barrier is a static
+   * level and not a line that walks around under the position.
+   *
+   * Only read when `config.sigmaBarriers` is set; `null` there means "no usable
+   * estimate", which falls back to the fixed percentages.
+   */
+  sigmaDaily?: number | null;
+}
+
+/**
+ * Realised daily volatility of a close series over the last `lookback` points at
+ * or before `asOf`. Sample standard deviation of LOG returns — log rather than
+ * simple, because the barrier it feeds is a multiplicative distance.
+ *
+ * Returns `null`, never 0, when the history is too thin: a zero sigma would
+ * collapse every scaled barrier onto the entry price and stop the position out
+ * on its first tick.
+ */
+export function realizedDailyVol(
+  series: Record<string, number> | undefined,
+  asOf: string,
+  lookback: number = PORTFOLIO_SIGMA_LOOKBACK_DAYS,
+): number | null {
+  if (!series) return null;
+  const closes: number[] = [];
+  for (const d of Object.keys(series).sort()) {
+    if (d > asOf) break;
+    const px = series[d];
+    if (px != null && px > 0) closes.push(px);
+  }
+  const window = closes.slice(-(lookback + 1));
+  // Half the window is the floor. 30 returns already give a wide interval around
+  // sigma; anything thinner is a number pretending to be an estimate.
+  if (window.length < Math.max(10, Math.floor(lookback / 2))) return null;
+  const rets: number[] = [];
+  for (let i = 1; i < window.length; i++) rets.push(Math.log(window[i] / window[i - 1]));
+  if (rets.length < 2) return null;
+  const m = rets.reduce((a, b) => a + b, 0) / rets.length;
+  const v = rets.reduce((acc, x) => acc + (x - m) ** 2, 0) / (rets.length - 1);
+  const sd = Math.sqrt(v);
+  return sd > 0 && Number.isFinite(sd) ? sd : null;
+}
+
+/** The four exit distances actually in force for one position, as fractions. */
+export interface ResolvedBarriers {
+  /** Positive magnitude; `null` = no stop at all. */
+  stopLoss: number | null;
+  /** Positive magnitude; `null` = no upside cap at all. */
+  takeProfit: number | null;
+  trailArm: number;
+  trailDistance: number;
+  /** True when the distances came from sigma rather than from fixed percentages. */
+  scaled: boolean;
+}
+
+/**
+ * Turn (config, this position's entry volatility) into concrete distances.
+ *
+ * The sigma horizon is the TIME STOP, not one day: a barrier the position has
+ * `maxHoldDays` to reach must be measured against the move that is actually
+ * available over `maxHoldDays`. sigmaH = sigmaDaily * sqrt(trading days in the
+ * time stop).
+ */
+export function resolveBarriers(
+  config: PortfolioConfig = DEFAULT_PORTFOLIO_CONFIG,
+  sigmaDaily: number | null | undefined = null,
+): ResolvedBarriers {
+  const fixed: ResolvedBarriers = {
+    stopLoss: config.stopLoss,
+    takeProfit: config.takeProfit,
+    trailArm: config.trailArm,
+    trailDistance: config.trailDistance,
+    scaled: false,
+  };
+  const sb = config.sigmaBarriers;
+  if (!sb || sigmaDaily == null || !(sigmaDaily > 0) || !Number.isFinite(sigmaDaily)) return fixed;
+  const horizon = Math.max(1, config.maxHoldDays * PORTFOLIO_TRADING_DAYS_PER_CALENDAR_DAY);
+  const sigmaH = sigmaDaily * Math.sqrt(horizon);
+  if (!(sigmaH > 0) || !Number.isFinite(sigmaH)) return fixed;
+  const at = (mult: number | null): number | null =>
+    mult == null || !Number.isFinite(mult) ? null : mult * sigmaH;
+  return {
+    stopLoss: at(sb.stop),
+    takeProfit: at(sb.target),
+    trailArm: at(sb.trailArm) ?? fixed.trailArm,
+    trailDistance: at(sb.trailDistance) ?? fixed.trailDistance,
+    scaled: true,
+  };
 }
 
 /**
@@ -125,42 +217,57 @@ export interface ExitContext {
  * low you could never have traded is fiction. When two barriers break on the
  * same day the most pessimistic one wins (stop before trailing before target),
  * because a single daily bar cannot say which came first.
+ *
+ * A `null` stop or target is genuinely ABSENT, not "very far away". The shipped
+ * book runs with no take-profit at all, and encoding that as 999% would put a
+ * meaningless number in the UI and still truncate a ten-bagger.
  */
 export function evaluateExit(
   ctx: ExitContext,
   config: PortfolioConfig = DEFAULT_PORTFOLIO_CONFIG,
 ): PortfolioExitReason | null {
+  const b = resolveBarriers(config, ctx.sigmaDaily);
   const pnl = ctx.close / ctx.entryPrice - 1;
-  if (pnl <= -config.stopLoss + BARRIER_EPS) return 'stop_loss';
+  if (b.stopLoss != null && pnl <= -b.stopLoss + BARRIER_EPS) return 'stop_loss';
   const peakPnl = ctx.highWaterClose / ctx.entryPrice - 1;
-  const trailLevel = ctx.highWaterClose * (1 - config.trailDistance);
-  if (peakPnl >= config.trailArm - BARRIER_EPS && ctx.close <= trailLevel * (1 + BARRIER_EPS)) {
+  const trailLevel = ctx.highWaterClose * (1 - b.trailDistance);
+  if (peakPnl >= b.trailArm - BARRIER_EPS && ctx.close <= trailLevel * (1 + BARRIER_EPS)) {
     return 'trailing';
   }
-  if (pnl >= config.takeProfit - BARRIER_EPS) return 'take_profit';
+  if (b.takeProfit != null && pnl >= b.takeProfit - BARRIER_EPS) return 'take_profit';
   // Calendar days, so a time stop that lands on a weekend closes on the next
   // session — which is what `>=` against the trading calendar produces.
   if (ctx.holdDays >= config.maxHoldDays) return 'time';
   return null;
 }
 
-/** Which barrier is nearest, as a fraction of today's price. For the UI. */
+/**
+ * Which barrier is nearest, as a fraction of today's price. For the UI.
+ *
+ * A disabled barrier contributes no candidate. With both price barriers off, the
+ * only exit left is the time stop, which has no price distance — the caller gets
+ * `null` and the UI shows the hold-day countdown instead of inventing a level.
+ */
 export function nearestBarrier(
   ctx: ExitContext,
   config: PortfolioConfig = DEFAULT_PORTFOLIO_CONFIG,
 ): { reason: PortfolioExitReason; distance: number } | null {
   if (!(ctx.close > 0) || !(ctx.entryPrice > 0)) return null;
-  const cands: { reason: PortfolioExitReason; distance: number }[] = [
-    { reason: 'stop_loss', distance: (ctx.entryPrice * (1 - config.stopLoss)) / ctx.close - 1 },
-    { reason: 'take_profit', distance: (ctx.entryPrice * (1 + config.takeProfit)) / ctx.close - 1 },
-  ];
-  if (ctx.highWaterClose / ctx.entryPrice - 1 >= config.trailArm - BARRIER_EPS) {
+  const b = resolveBarriers(config, ctx.sigmaDaily);
+  const cands: { reason: PortfolioExitReason; distance: number }[] = [];
+  if (b.stopLoss != null) {
+    cands.push({ reason: 'stop_loss', distance: (ctx.entryPrice * (1 - b.stopLoss)) / ctx.close - 1 });
+  }
+  if (b.takeProfit != null) {
+    cands.push({ reason: 'take_profit', distance: (ctx.entryPrice * (1 + b.takeProfit)) / ctx.close - 1 });
+  }
+  if (ctx.highWaterClose / ctx.entryPrice - 1 >= b.trailArm - BARRIER_EPS) {
     cands.push({
       reason: 'trailing',
-      distance: (ctx.highWaterClose * (1 - config.trailDistance)) / ctx.close - 1,
+      distance: (ctx.highWaterClose * (1 - b.trailDistance)) / ctx.close - 1,
     });
   }
-  cands.sort((a, b) => Math.abs(a.distance) - Math.abs(b.distance));
+  cands.sort((x, y) => Math.abs(x.distance) - Math.abs(y.distance));
   return cands[0] ?? null;
 }
 
@@ -200,6 +307,12 @@ interface LivePosition {
   highWaterClose: number;
   lastPrice: number;
   spyEntry: number;
+  /**
+   * Realised daily vol at the entry close, or `null` when the series was too
+   * short. Only consulted under `config.sigmaBarriers`; computed once at entry
+   * so the barrier never moves after the position is open.
+   */
+  entrySigmaDaily: number | null;
   /** Consecutive trading days without a fresh close. */
   staleDays: number;
 }
@@ -416,6 +529,7 @@ export function simulatePortfolio(input: PortfolioSimInput): PortfolioSimResult 
             close: p.lastPrice,
             highWaterClose: p.highWaterClose,
             holdDays: diffDaysYmd(p.entryDate, d),
+            sigmaDaily: p.entrySigmaDaily,
           },
           cfg,
         );
@@ -484,6 +598,10 @@ export function simulatePortfolio(input: PortfolioSimInput): PortfolioSimResult 
         highWaterClose: px,
         lastPrice: px,
         spyEntry: spyPx,
+        // Only estimated when a scaled barrier will actually read it — the walk
+        // over the whole series is not free, and it is dead weight in the
+        // shipped configuration.
+        entrySigmaDaily: cfg.sigmaBarriers ? realizedDailyVol(input.prices[c.ticker], d) : null,
         staleDays: 0,
       });
       if (record) {
@@ -563,6 +681,13 @@ export function toOpenPosition(
   asOf: string,
   equity: number,
   config: PortfolioConfig = DEFAULT_PORTFOLIO_CONFIG,
+  /**
+   * Entry volatility, for the sigma-scaled barriers. Stored positions do not
+   * carry one, so callers that cannot supply it pass nothing — harmless while
+   * `sigmaBarriers` is null (the shipped default and the only state the runtime
+   * rules editor can produce), because `resolveBarriers` then ignores it.
+   */
+  sigmaDaily: number | null = null,
 ): PortfolioOpenPosition {
   const px = lastPrice ?? null;
   const marketValue = px != null ? p.shares * px : p.costBasis;
@@ -574,6 +699,7 @@ export function toOpenPosition(
             close: px,
             highWaterClose: p.highWaterClose ?? px,
             holdDays: diffDaysYmd(p.entryDate, asOf),
+            sigmaDaily,
           },
           config,
         )
