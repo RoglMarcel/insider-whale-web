@@ -8,6 +8,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+// Must match `test.env.TZ` in vitest.config.ts and must be set before the first
+// Date use. A file generated in one zone and verified in another differs for
+// every aged case — see the comment in vitest.config.ts.
+process.env.TZ = 'UTC';
+
 const FROZEN = Date.parse('2026-08-22T18:00:00Z');
 const realNow = Date.now;
 Date.now = () => FROZEN;

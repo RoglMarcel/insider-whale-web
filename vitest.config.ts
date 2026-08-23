@@ -19,5 +19,15 @@ export default defineConfig({
     environment: 'node',
     include: ['tests/**/*.test.ts'],
     reporters: 'default',
+    /**
+     * Freezing the CLOCK does not freeze the TIMEZONE. Trade dates are
+     * date-only strings that resolve to LOCAL midnight, so the same frozen
+     * instant yields a different `signalAgeDays` in CEST than in UTC — and the
+     * freshness decay is a continuous exponential, so that sub-day offset moves
+     * every aged score. The golden file was generated in CEST and passed
+     * locally while failing in CI, which is the whole failure mode a gate is
+     * supposed to prevent. Pin it so the suite is reproducible everywhere.
+     */
+    env: { TZ: 'UTC' },
   },
 });

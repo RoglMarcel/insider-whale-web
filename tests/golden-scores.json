@@ -8,9 +8,9 @@
   },
   {
     "name": "single small director buy, unknown cap",
-    "score": 13.4,
+    "score": 13.5,
     "tier": "LOW",
-    "raw": 16.198,
+    "raw": 16.354,
     "confidence": 20
   },
   {
@@ -52,7 +52,7 @@
     "name": "insider buy against put-dominated flow",
     "score": 0,
     "tier": "LOW",
-    "raw": -110.328,
+    "raw": -110.297,
     "confidence": 20
   },
   {
@@ -85,9 +85,9 @@
   },
   {
     "name": "congressional cluster + insider + options (MEGA tier)",
-    "score": 88,
+    "score": 88.2,
     "tier": "HIGH",
-    "raw": 249.958,
+    "raw": 251.559,
     "confidence": 20
   },
   {
