@@ -69,10 +69,38 @@ async function main(): Promise<number> {
 
   const db = initDatabase(dbPath);
 
-  // Every distinct stored ticker that the (conservative) repair would change.
-  const distinct = db.prepare(`SELECT DISTINCT ticker FROM insider_trades UNION SELECT DISTINCT ticker FROM signals`).all() as {
-    ticker: string;
-  }[];
+  /**
+   * Candidate symbols come from the indexed COLUMNS *and* from the JSON blobs.
+   * Scanning only the columns is what made the first version of this script
+   * look successful while changing nothing: the pipeline reads the blobs, so a
+   * clean column with a stale payload still rebuilds the corrupt aggregate on
+   * the next run — and a re-run would then report "nothing to repair".
+   */
+  const candidates = new Set<string>();
+  for (const t of ['insider_trades', 'signals']) {
+    for (const r of db.prepare(`SELECT DISTINCT ticker FROM ${t} WHERE ticker IS NOT NULL`).all() as { ticker: string }[]) {
+      candidates.add(r.ticker);
+    }
+  }
+  const harvest = (sql: string, isArray: boolean) => {
+    for (const r of db.prepare(sql).all() as { blob: string }[]) {
+      try {
+        const parsed = JSON.parse(r.blob) as unknown;
+        const items = isArray ? (Array.isArray(parsed) ? parsed : []) : [parsed];
+        for (const it of items) {
+          const tk = (it as { ticker?: unknown } | null)?.ticker;
+          if (typeof tk === 'string' && tk) candidates.add(tk);
+        }
+      } catch {
+        /* ignore unparseable blobs */
+      }
+    }
+  };
+  harvest(`SELECT payload AS blob FROM insider_trades WHERE payload IS NOT NULL`, false);
+  harvest(`SELECT raw_trades AS blob FROM signals WHERE raw_trades IS NOT NULL`, true);
+  harvest(`SELECT options_activity AS blob FROM signals WHERE options_activity IS NOT NULL`, true);
+
+  const distinct = [...candidates].map((ticker) => ({ ticker }));
 
   const changes: Change[] = [];
   for (const { ticker } of distinct) {
@@ -160,18 +188,78 @@ async function main(): Promise<number> {
   const updTrades = db.prepare(`UPDATE insider_trades SET ticker = ? WHERE ticker = ?`);
   const updSignals = db.prepare(`UPDATE signals SET ticker = ? WHERE ticker = ?`);
 
+  /**
+   * The ticker is DENORMALIZED into JSON blobs, and those blobs — not the
+   * indexed column — are what the pipeline actually reads back:
+   * `getRecentInsiderTrades` selects `payload` and regroups aggregates by the
+   * ticker INSIDE it. Repairing only the column therefore looks correct in the
+   * table and changes nothing about what gets published: the next run rebuilds
+   * the corrupt aggregate from the stale payload. Rewrite the blobs too.
+   *
+   * Done by parsing rather than string-replacing, so a symbol appearing in some
+   * other field (an insider's name, a URL) can never be corrupted.
+   */
+  const map = new Map(changes.map((c) => [c.from, c.to]));
+  const fixTicker = (v: unknown): boolean => {
+    if (!v || typeof v !== 'object') return false;
+    const o = v as { ticker?: unknown };
+    if (typeof o.ticker === 'string' && map.has(o.ticker)) {
+      o.ticker = map.get(o.ticker);
+      return true;
+    }
+    return false;
+  };
+  const fixJsonColumn = (table: string, idCol: string, col: string, isArray: boolean): number => {
+    const rows = db.prepare(`SELECT ${idCol} AS id, ${col} AS blob FROM ${table} WHERE ${col} IS NOT NULL`).all() as {
+      id: number;
+      blob: string;
+    }[];
+    const upd = db.prepare(`UPDATE ${table} SET ${col} = ? WHERE ${idCol} = ?`);
+    let n = 0;
+    for (const r of rows) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(r.blob);
+      } catch {
+        continue; // a corrupt blob must not take the backfill down
+      }
+      let touched = false;
+      if (isArray && Array.isArray(parsed)) {
+        for (const item of parsed) touched = fixTicker(item) || touched;
+      } else {
+        touched = fixTicker(parsed);
+      }
+      if (touched) {
+        upd.run(JSON.stringify(parsed), r.id);
+        n++;
+      }
+    }
+    return n;
+  };
+
   let deleted = 0;
   let renamedTrades = 0;
   let renamedSignals = 0;
+  let payloadTrades = 0;
+  let payloadSignals = 0;
+  let payloadOptions = 0;
   db.transaction(() => {
     for (const c of changes) {
       deleted += delDup.run(c.from, c.to).changes;
       renamedTrades += updTrades.run(c.to, c.from).changes;
       renamedSignals += updSignals.run(c.to, c.from).changes;
     }
+    payloadTrades = fixJsonColumn('insider_trades', 'rowid', 'payload', false);
+    payloadSignals = fixJsonColumn('signals', 'id', 'raw_trades', true);
+    payloadOptions = fixJsonColumn('signals', 'id', 'options_activity', true);
   })();
 
-  console.log(`\nGeschrieben: ${deleted} Duplikate gelöscht · ${renamedTrades} insider_trades umbenannt · ${renamedSignals} signals umbenannt.`);
+  console.log(
+    `\nGeschrieben: ${deleted} Duplikate gelöscht · ${renamedTrades} insider_trades umbenannt · ${renamedSignals} signals umbenannt.`,
+  );
+  console.log(
+    `JSON-Blobs korrigiert: ${payloadTrades} insider_trades.payload · ${payloadSignals} signals.raw_trades · ${payloadOptions} signals.options_activity.`,
+  );
 
   const left = (db
     .prepare(`SELECT COUNT(DISTINCT ticker) c FROM insider_trades WHERE ticker GLOB '[A-Z][A-Z]*'`)
