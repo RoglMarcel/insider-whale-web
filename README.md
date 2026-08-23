@@ -584,6 +584,18 @@ electron/database.ts
 electron/scoring.ts
   Full conviction score model.
 
+electron/prices.ts
+  The one place adjusted closes enter the codebase (Yahoo chart API + the
+  plausibility screen). Shared by performance.ts, label-outcomes.ts and the
+  testing portfolio.
+
+electron/portfolio.ts
+  Testing portfolio, I/O side: candidates, price-cache top-up, persistence.
+
+src/lib/portfolio-rules.ts
+  Testing portfolio, RULES side — pure and dependency-free, which is what makes
+  "no look-ahead" and "deterministic" unit-testable (tests/portfolio.test.ts).
+
 electron/auth.ts
   Platform login/session system. Stores encrypted Playwright storageState.
 
@@ -864,6 +876,98 @@ Model-realism + UX (Tier 2/3):
 19. Net-bearish options representation and insider sell/disposal awareness.
 20. "Follow this signal" P&L, sector context, ticker-tagged news in the detail modal.
 21. CSV export of the current signals, and score-surge (delta) desktop alerts.
+22. **Testing portfolio (v1.4.0)** — a simulated $10,000 book of the strongest
+    signals plotted against the S&P 500, with its own tab, an auditable rule set
+    and an append-only equity curve. See "Testing Portfolio" below.
+
+## Testing Portfolio
+
+A simulated, rule-based book that "invests" $10,000 in the terminal's strongest
+signals and plots itself against the S&P 500. Its own tab, both builds, en + de.
+
+It is a **measuring instrument, not a product feature**. A flattering number
+here is worth nothing; an honest negative one is worth a lot. Everything below
+exists so a sceptic can check the arithmetic rather than trust the chart.
+
+Full write-up, current figures and the parameter sweep: [`docs/portfolio/REPORT.md`](docs/portfolio/REPORT.md).
+
+### The rules
+
+| | |
+|---|---|
+| Starting capital | $10,000 |
+| Entry | score ≥ **74** on first sighting, at that session's closing price |
+| Position size | `clamp(5% × (1 + (score − 74) / 16), 3%, 10%)` of **current** equity — score 74 → 5.0%, 82 → 7.5%, 90+ → capped at 10% |
+| Exits (first barrier wins) | take profit **+20%**, stop loss **−10%**, trailing **10%** below the highest close once **+15%** up, time stop **30 calendar days** |
+| Priority when several break on one day | stop loss → trailing → take profit → time (the most pessimistic reading of a daily bar) |
+| Limits | max 20 open positions · one position per ticker, no averaging up · 10-day lockout after a sale · $100 minimum ticket |
+| Uninvested capital | held in **SPY** (`cashPolicy: 'spy'`) |
+| Costs | $0 commission, **0.05% slippage per side** on every fill including the SPY cash leg |
+| Benchmark | SPY buy & hold, same start day, same $10,000, same entry slippage |
+
+Every parameter is a named constant in `src/types/index.ts` and overridable at
+runtime through `PortfolioConfig`. Changing one triggers a full rebuild of the
+curve, and the parameter set is stored **with** the curve so a chart can never be
+labelled with values it was not computed from.
+
+**Why 74 and not `CONVICTION_THRESHOLDS.high` (80):** nothing in the stored
+history has ever scored above 76.6. Reusing that constant builds a book that
+never trades.
+
+**Why cash sits in SPY:** at roughly half an entry per trading day the book is
+mostly uninvested, and uninvested cash loses to a rising index by construction —
+which would answer a question nobody asked. Holding the index instead makes the
+portfolio "S&P 500 + signal overlay", so the gap to the benchmark is the
+contribution of the signals and nothing else. The uninvested-cash variant is
+still computed on every run (`equity_idle`) and can be switched on as a third
+line in the chart.
+
+### Assumptions, stated because they matter
+
+- **Adjusted daily closes only.** Splits and dividends are inside them; a raw
+  close turns a 2:1 split into a −50% day that every stop would act on. No
+  intraday prices, no highs or lows — a stop filled at a low you could never
+  have traded is fiction.
+- **No look-ahead.** A position opens at the earliest close that was still
+  *ahead* of the moment the signal became visible in the terminal
+  (`signals.scraped_at`), never at the insider's trade date and never at the
+  filing date. A sighting at or after 20:00 UTC prices at the *next* session.
+- **Backfill is deliberately pessimistic.** Signals reconstructed from
+  `signal_outcomes` carry a date but no time, so they are entered one session
+  later than the date they carry. That can only cost return, never add it.
+- **Fractional shares** are allowed, so a $1,500 share price cannot distort the
+  weighting.
+- **No taxes, no withholding tax.** Adjusted prices contain gross dividends.
+- **Trading days come from the data**, not from a holiday list: a date with no
+  price is not a trading day. Entries and exits slide to the next session with a
+  price, up to 5 calendar days; past that the series counts as gone.
+- **Tickers without price data are reported, not dropped.** They appear in the
+  UI under "not tradable" so survivorship bias is visible rather than silent.
+
+### Limits of the claim
+
+The stored signal history is about six weeks and produces a single-digit number
+of entries at the default threshold. Every figure the tab prints rests on a
+handful of trades. Treat it as a direction, not a result — and read the
+"how sure is this" section of the report before quoting any of it.
+
+Windows with less history than the window is long print `n/a · N days to go`
+and their range button is disabled. There is no extrapolation anywhere.
+
+### Commands
+
+```bash
+npm run portfolio:sync              # incremental: price cache + new days
+npm run portfolio:sync -- --rebuild # wipe the simulation and recompute
+npm run portfolio:sweep             # sensitivity across thresholds/barriers (read-only)
+npm run verify:portfolio            # 19 audit checks against the real DB (read-only)
+```
+
+On the desktop app the sync runs automatically after every successful scrape
+(fire-and-forget: a Yahoo timeout can never turn a good scrape into a failed
+one). In CI it runs after `label:outcomes` and before `build:web`, guarded with
+`|| echo` so it can never block a deploy, and publishes
+`public/data/portfolio.json` for the hosted build to read.
 
 ## Database
 
@@ -886,6 +990,19 @@ Tables:
 - `insider_flow` — same-company 90-day buy/sell totals + Form 144 notices.
 - `politician_trades`, `filing_events`, `ticker_meta`, `live_news`
 - `signal_outcomes` — labeled training data (see `npm run label:outcomes`).
+- `price_history` — adjusted-close cache (ticker, date). Every price the
+  testing portfolio uses is read from here, so a Yahoo outage cannot reshape a
+  stored curve and a re-run costs one request per ticker per day. A ticker is
+  always rewritten from a SINGLE fetch: adjusted closes are restated for the
+  whole history after a split, and appending to old rows would weld a pre-split
+  series onto a post-split one.
+- `portfolio_equity` — one row per trading day. **Append-only**: a day that has
+  been written is never rewritten, so a later price restatement cannot move a
+  point somebody already looked at. Drift is counted and reported instead.
+- `portfolio_positions`, `portfolio_events` — the simulated trades and the
+  skip/miss log. A projection of the same deterministic run as the curve, so
+  they are rewritten whole each time (except `suspect_price` events, which
+  record what a price fetch rejected and no simulation could reproduce).
 
 `database.ts` defines both:
 
@@ -954,13 +1071,19 @@ npm run typecheck
 npm run verify:scoring
 npm run verify:db
 npm run verify:scrape
+npm run verify:portfolio  # testing-portfolio audit (read-only)
 npm run backtest      # replay stored signals vs realized S&P-relative returns
+npm test              # 349 unit tests (pure modules only)
 ```
 
 Notes:
 
 - `verify:db` runs under Electron because `better-sqlite3` is built for Electron.
 - `verify:scrape` needs network access and Playwright Chromium.
+- `verify:portfolio` opens the DB read-only and checks the NAV identity on every
+  day, that the curve has no gaps against SPY's own calendar, that the benchmark
+  really is a plain buy & hold, that no ticker is held twice, that the cooldown
+  holds, and that re-simulating the stored window reproduces the stored curve.
 - In restricted sandbox sessions, `npm run typecheck` may fail before TypeScript
   starts if Node is not allowed to resolve parent folders. That is an environment
   permission issue, not necessarily a code issue.
