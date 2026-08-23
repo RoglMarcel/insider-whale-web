@@ -5,7 +5,7 @@ import { useI18n } from '@/hooks/useI18n';
 import { api } from '@/lib/ipc';
 import { formatDate, formatDateTime, timeAgo } from '@/lib/format';
 import { addDaysYmd, diffDaysYmd, emptyPortfolioState } from '@/lib/portfolio-rules';
-import type { PortfolioState } from '@/types';
+import type { PortfolioConfig, PortfolioState } from '@/types';
 import type { TKey } from '@/lib/i18n';
 import { PortfolioStatsPanel } from './PortfolioStats';
 import { ClosedTradesTable, OpenPositionsTable } from './PortfolioPositions';
@@ -102,7 +102,7 @@ export function PortfolioView() {
   const { t, language } = useI18n();
   const [state, setState] = useState<PortfolioState>(() => emptyPortfolioState());
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState<'sync' | 'rebuild' | null>(null);
+  const [busy, setBusy] = useState<'sync' | 'rebuild' | 'config' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [range, setRange] = useState<RangeKey>(() => readLs<RangeKey>(LS.range, 'max'));
@@ -136,6 +136,18 @@ export function PortfolioView() {
     setError(null);
     try {
       setState(kind === 'sync' ? await api.portfolio.sync() : await api.portfolio.rebuild());
+    } catch (e) {
+      setError(t('pf.action.failed', { error: e instanceof Error ? e.message : String(e) }));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const applyConfig = async (partial: Partial<PortfolioConfig>) => {
+    setBusy('config');
+    setError(null);
+    try {
+      setState(await api.portfolio.setConfig(partial));
     } catch (e) {
       setError(t('pf.action.failed', { error: e instanceof Error ? e.message : String(e) }));
     } finally {
@@ -391,7 +403,12 @@ export function PortfolioView() {
       <OpenPositionsTable positions={state.open} />
       <ClosedTradesTable trades={state.closed} />
 
-      <RulesCard config={config} meta={meta} />
+      <RulesCard
+        config={config}
+        meta={meta}
+        busy={busy === 'config'}
+        onApplyConfig={(partial) => void applyConfig(partial)}
+      />
 
       {/* ── Data quality — visible, never swallowed ── */}
       <GlassCard className="p-4 lg:px-6">

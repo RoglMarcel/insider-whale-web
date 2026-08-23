@@ -4,6 +4,7 @@ import { useI18n } from '@/hooks/useI18n';
 import { formatDate } from '@/lib/format';
 import type { PortfolioConfig, PortfolioMeta } from '@/types';
 import type { TKey } from '@/lib/i18n';
+import { PortfolioConfigForm } from './PortfolioConfigForm';
 
 /**
  * The rulebook and the assumptions, in plain language.
@@ -28,9 +29,21 @@ function Line({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function RulesCard({ config, meta }: { config: PortfolioConfig; meta: PortfolioMeta }) {
+export function RulesCard({
+  config,
+  meta,
+  busy = false,
+  onApplyConfig,
+}: {
+  config: PortfolioConfig;
+  meta: PortfolioMeta;
+  busy?: boolean;
+  /** Absent on the hosted build, where a browser cannot recompute the curve. */
+  onApplyConfig?: (partial: Partial<PortfolioConfig>) => void;
+}) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   const assumptions: TKey[] = [
     'pf.assume.cash',
@@ -98,6 +111,22 @@ export function RulesCard({ config, meta }: { config: PortfolioConfig; meta: Por
           </dl>
 
           <p className="mt-2 text-xs text-secondary">{t('pf.rules.priority')}</p>
+
+          {/* Every parameter above is editable at runtime — but only where the
+              curve can actually be recomputed. */}
+          {onApplyConfig && !meta.readOnly && !editing && (
+            <button type="button" className="btn mt-3" onClick={() => setEditing(true)}>
+              {t('pf.cfg.edit')}
+            </button>
+          )}
+          {onApplyConfig && !meta.readOnly && editing && (
+            <PortfolioConfigForm
+              config={config}
+              busy={busy}
+              onApply={(partial) => onApplyConfig(partial)}
+              onCancel={() => setEditing(false)}
+            />
+          )}
 
           <h4 className="mb-2 mt-5 text-sm font-bold uppercase tracking-wide text-secondary">{t('pf.assume.title')}</h4>
           <ul className="flex flex-col gap-1.5 text-xs leading-relaxed text-secondary">

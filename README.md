@@ -905,10 +905,11 @@ Full write-up, current figures and the parameter sweep: [`docs/portfolio/REPORT.
 | Costs | $0 commission, **0.05% slippage per side** on every fill including the SPY cash leg |
 | Benchmark | SPY buy & hold, same start day, same $10,000, same entry slippage |
 
-Every parameter is a named constant in `src/types/index.ts` and overridable at
-runtime through `PortfolioConfig`. Changing one triggers a full rebuild of the
-curve, and the parameter set is stored **with** the curve so a chart can never be
-labelled with values it was not computed from.
+Every parameter is a named constant in `src/types/index.ts` and editable at
+runtime — open "Rules & assumptions" on the Portfolio tab and press *Edit rules*
+(desktop only; the hosted build reads a curve it cannot recompute). Applying
+triggers a full rebuild, and the parameter set is stored **with** the curve, so a
+chart can never be labelled with values it was not computed from.
 
 **Why 74 and not `CONVICTION_THRESHOLDS.high` (80):** nothing in the stored
 history has ever scored above 76.6. Reusing that constant builds a book that

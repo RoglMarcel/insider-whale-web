@@ -94,7 +94,7 @@ days, Sharpe needs 18 more. The windows are built and will fill themselves.
 | Tests | `tests/portfolio.test.ts` | 46 tests. |
 | Audit | `scripts/verify-portfolio.ts` | 19 checks, read-only. |
 | Sweep | `scripts/portfolio-sweep.ts` | Sensitivity, read-only. |
-| UI | `src/components/Portfolio/*` | Tab, chart, statistics, trades, rulebook. |
+| UI | `src/components/Portfolio/*` | Tab, chart, statistics, trades, rulebook, runtime rule editor. |
 
 ### Bugs the tests and the screenshots caught
 
@@ -336,6 +336,20 @@ changed. Section 7 records where the evidence nevertheless leans.
 11. **`vitest` was installed.** It is declared in `package.json` but was absent
     from `node_modules`, so `npm test` and `npm run typecheck` were both failing
     before any of this work started.
+12. **The rule editor lives in the rules card, not in Settings.** The brief put
+    runtime configuration "in Settings"; it sits next to the values it changes
+    instead, because that card already lists every parameter and a form in a
+    different view would have duplicated all sixteen labels. Percentages are
+    edited as percentages (20, not 0.2) — asking for 0.2 next to a card reading
+    "+20%" is how a stop-loss silently becomes a 10× stop-loss. Applying rebuilds
+    the curve and says so first. Same reasoning for the Rebuild button being on
+    the tab rather than in Settings; it is confirmed explicitly either way.
+13. **The closed-trades table scrolls the last ~30px at 1440px.** Eleven columns
+    need ~1094px in a ~1066px card. The gutters come from an app-wide
+    `th, td { padding: 10px 14px !important }` in `globals.css`, so narrowing
+    them locally is inert — and overriding that rule for one table would make it
+    disagree with every other table in the app. Left scrolling, which is what the
+    container is for.
 
 ---
 
@@ -422,6 +436,9 @@ The tests that matter most, and what each would catch:
   fails if the protection is removed *or* if the fixture stops being meaningful.
 - **Cash never negative, weights bounded, ≤ 20 positions, one lot per ticker.**
 - **Statistics withhold** rather than extrapolate when the history is too short.
+- **Barrier configurability** — the same fixtures under a +30%/−15%/10-day rule
+  set exit at the new levels, so the constants are genuinely wired through
+  rather than merely declared.
 
 Screenshots at 1440×900 and 360×800 for the new tab and for Dashboard,
 Watchlist, History and Settings were taken from the running dev server; the

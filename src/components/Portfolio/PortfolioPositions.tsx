@@ -150,46 +150,51 @@ export function ClosedTradesTable({ trades }: { trades: PortfolioClosedPosition[
         <p className="py-4 text-sm text-secondary">{t('pf.closed.none')}</p>
       ) : (
         <>
+          {/* Eleven columns need ~1094px and the card offers ~1066px at 1440px,
+              so this one scrolls the last ~30px. The gutters come from the
+              app-wide `th, td { padding: 10px 14px !important }` in globals.css,
+              not from these classes — narrowing it here would only make this
+              table disagree with every other one. */}
           <div className="overflow-x-auto">
             <table className="w-full min-w-[48rem] text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-secondary">
-                  <th className="py-1.5 pr-2 font-semibold">{t('pf.col.ticker')}</th>
-                  <th className="py-1.5 pr-2 font-semibold">{t('pf.col.entryDate')}</th>
-                  <th className="py-1.5 pr-2 font-semibold">{t('pf.col.exitDate')}</th>
-                  <th className="py-1.5 pr-2 text-right font-semibold">{t('pf.col.score')}</th>
-                  <th className="py-1.5 pr-2 text-right font-semibold">{t('pf.col.entryPrice')}</th>
-                  <th className="py-1.5 pr-2 text-right font-semibold">{t('pf.col.exitPrice')}</th>
-                  <th className="py-1.5 pr-2 text-right font-semibold">{t('pf.col.return')}</th>
-                  <th className="py-1.5 pr-2 text-right font-semibold">{t('pf.col.realized')}</th>
-                  <th className="py-1.5 pr-2 text-right font-semibold">{t('pf.col.alpha')}</th>
-                  <th className="py-1.5 pr-2 text-right font-semibold">{t('pf.col.hold')}</th>
+                  <th className="py-1.5 pr-3 font-semibold">{t('pf.col.ticker')}</th>
+                  <th className="py-1.5 pr-3 font-semibold">{t('pf.col.entryDate')}</th>
+                  <th className="py-1.5 pr-3 font-semibold">{t('pf.col.exitDate')}</th>
+                  <th className="py-1.5 pr-3 text-right font-semibold">{t('pf.col.score')}</th>
+                  <th className="py-1.5 pr-3 text-right font-semibold">{t('pf.col.entryPrice')}</th>
+                  <th className="py-1.5 pr-3 text-right font-semibold">{t('pf.col.exitPrice')}</th>
+                  <th className="py-1.5 pr-3 text-right font-semibold">{t('pf.col.return')}</th>
+                  <th className="py-1.5 pr-3 text-right font-semibold">{t('pf.col.realized')}</th>
+                  <th className="py-1.5 pr-3 text-right font-semibold">{t('pf.col.alpha')}</th>
+                  <th className="py-1.5 pr-3 text-right font-semibold">{t('pf.col.hold')}</th>
                   <th className="py-1.5 text-right font-semibold">{t('pf.col.reason')}</th>
                 </tr>
               </thead>
               <tbody>
                 {shown.map((p) => (
                   <tr key={`${p.ticker}-${p.entryDate}`} style={{ borderTop: '1px solid var(--border-glass)' }}>
-                    <td className="py-2 pr-2">
+                    <td className="py-2 pr-3">
                       <TickerButton ticker={p.ticker} />
                     </td>
-                    <td className="py-2 pr-2 whitespace-nowrap text-secondary">{formatDate(p.entryDate)}</td>
-                    <td className="py-2 pr-2 whitespace-nowrap text-secondary">{formatDate(p.exitDate)}</td>
-                    <td className="py-2 pr-2 text-right tabular-nums">{p.entryScore.toFixed(1)}</td>
-                    <td className="py-2 pr-2 text-right tabular-nums">{formatPrice(p.entryPrice)}</td>
-                    <td className="py-2 pr-2 text-right tabular-nums">{formatPrice(p.exitPrice)}</td>
-                    <td className="py-2 pr-2 text-right font-semibold tabular-nums" style={{ color: sign(p.returnPct) }}>
+                    <td className="py-2 pr-3 whitespace-nowrap text-secondary">{formatDate(p.entryDate)}</td>
+                    <td className="py-2 pr-3 whitespace-nowrap text-secondary">{formatDate(p.exitDate)}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums">{p.entryScore.toFixed(1)}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums">{formatPrice(p.entryPrice)}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums">{formatPrice(p.exitPrice)}</td>
+                    <td className="py-2 pr-3 text-right font-semibold tabular-nums" style={{ color: sign(p.returnPct) }}>
                       {pct(p.returnPct)}
                     </td>
-                    <td className="py-2 pr-2 text-right tabular-nums" style={{ color: sign(p.realizedPnl) }}>
+                    <td className="py-2 pr-3 text-right tabular-nums" style={{ color: sign(p.realizedPnl) }}>
                       {p.realizedPnl == null ? '—' : `${p.realizedPnl >= 0 ? '+' : '−'}${formatPrice(Math.abs(p.realizedPnl))}`}
                     </td>
                     {/* The benchmark over EXACTLY this trade's holding period —
                         the column that survives cash drag and window luck. */}
-                    <td className="py-2 pr-2 text-right font-semibold tabular-nums" style={{ color: sign(p.tradeAlpha) }}>
+                    <td className="py-2 pr-3 text-right font-semibold tabular-nums" style={{ color: sign(p.tradeAlpha) }}>
                       {pct(p.tradeAlpha)}
                     </td>
-                    <td className="py-2 pr-2 text-right tabular-nums text-secondary">
+                    <td className="py-2 pr-3 text-right tabular-nums text-secondary">
                       {t('pf.trades.days', { n: p.holdDays })}
                     </td>
                     <td className="py-2 text-right">{p.exitReason && <ExitBadge reason={p.exitReason} />}</td>
