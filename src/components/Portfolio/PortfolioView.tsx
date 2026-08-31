@@ -178,19 +178,28 @@ export function PortfolioView() {
   const chartData: EquityChartPoint[] = useMemo(() => {
     if (!windowed.length) return [];
     const base = windowed[0];
-    // In % mode BOTH series are re-based to 0 at the window start, which is the
-    // only presentation where equal vertical distance means equal return.
+    // In % mode BOTH series are re-based to the same starting capital, which is
+    // the only presentation where equal vertical distance means equal return.
+    // A window that starts at the top of the book is based on the capital
+    // COMMITTED, not on day 0's value — day 0 is already net of entry slippage,
+    // and basing on it would put the chart 5 bp away from the headline that
+    // reads off the same window. Both series therefore open at −0.05% rather
+    // than 0%: the entry cost is real and both paid it.
+    const atStart = !!equity.length && base.date === equity[0].date && config.startingCash > 0;
+    const pBase = atStart ? config.startingCash : base.equity;
+    const bBase = atStart ? config.startingCash : base.benchmark;
+    const iBase = atStart ? config.startingCash : base.equityIdle;
     return windowed.map((p) =>
       unit === '$'
         ? { date: p.date, portfolio: p.equity, benchmark: p.benchmark, idle: p.equityIdle }
         : {
             date: p.date,
-            portfolio: p.equity / base.equity - 1,
-            benchmark: p.benchmark / base.benchmark - 1,
-            idle: p.equityIdle / base.equityIdle - 1,
+            portfolio: p.equity / pBase - 1,
+            benchmark: p.benchmark / bBase - 1,
+            idle: p.equityIdle / iBase - 1,
           },
     );
-  }, [windowed, unit]);
+  }, [windowed, unit, equity, config.startingCash]);
 
   const markers: TradeMarker[] = useMemo(() => {
     if (!showMarkers || !chartData.length) return [];

@@ -124,7 +124,20 @@ chart.
 5. **Cash could go to −1e-12** when a buy was funded by selling exactly the whole
    SPY block, which would have failed the "cash is never negative" invariant on a
    rounding artefact.
-6. Presentation: unrounded Y-axis domain producing meaningless ticks, the last
+6. **The headline return disagreed with the dollars beside it.** "Since start"
+   was measured from the first curve point, which is already NET of one side of
+   entry slippage — $9,995 of a $10,000 commitment, because the book and the
+   benchmark both buy that morning. The dollar figure next to it was measured
+   from the $10,000. So the page printed −1.26% beside −$130.60 (−1.31%), and
+   $10,147.25 beside +1.52% (+1.47% on the money committed). Both percentages
+   now measure from the capital committed, and the chart's max window with them.
+   The lead is unmoved at −2.78%: both series paid the same entry cost, so it
+   cancels in the difference and only the absolute figures were wrong. The 7d
+   and 30d windows are unchanged — they anchor mid-book, where the cost sits
+   inside both ends. Drawdown, volatility and Sharpe stay on the curve itself:
+   they describe the path the book took once established, and an execution cost
+   is not a session's return.
+7. Presentation: unrounded Y-axis domain producing meaningless ticks, the last
    X label clipped, the Y axis sliced off at 360px, the closed-trades table
    overflowing its card by 28px, and `Einstellungen` no longer fitting the tab
    bar with a sixth tab (shortened to `Setup`/`Settings` — the label, not the

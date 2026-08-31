@@ -845,14 +845,23 @@ export function computeStats(
   const first = equity[0];
   const last = equity[equity.length - 1];
   const spanDays = diffDaysYmd(first.date, last.date);
+  // Day 0 is already NET of one side of entry slippage: the book and the
+  // benchmark both buy that morning, so the first curve point is $9,995 of a
+  // $10,000 commitment. Measuring "since start" from that point excuses the
+  // entry cost and prints a return that contradicts the dollar figure printed
+  // beside it — the headline showed −1.26% next to −$130.60, which is −1.31%.
+  // What was committed is the basis. Only THIS window starts at the top of the
+  // book; 7d/30d anchor on a curve point, where the cost is already inside both
+  // ends and cancels.
+  const basis = config.startingCash > 0 ? config.startingCash : first.equity;
 
   const windows: PortfolioWindowStat[] = PORTFOLIO_WINDOWS.map((w) => {
     if (w.days == null) {
       return {
         key: w.key,
-        portfolio: last.equity / first.equity - 1,
-        benchmark: last.benchmark / first.benchmark - 1,
-        diff: last.equity / first.equity - last.benchmark / first.benchmark,
+        portfolio: last.equity / basis - 1,
+        benchmark: last.benchmark / basis - 1,
+        diff: last.equity / basis - last.benchmark / basis,
         daysRemaining: null,
         n: equity.length,
       };
@@ -881,7 +890,7 @@ export function computeStats(
   const years = spanDays / 365;
   const cagr =
     spanDays >= PORTFOLIO_MIN_DAYS_CAGR && years > 0
-      ? metric((last.equity / first.equity) ** (1 / years) - 1, (last.benchmark / first.benchmark) ** (1 / years) - 1, null)
+      ? metric((last.equity / basis) ** (1 / years) - 1, (last.benchmark / basis) ** (1 / years) - 1, null)
       : metric(null, null, PORTFOLIO_MIN_DAYS_CAGR - spanDays);
 
   const pVol = stdev(pr) * Math.sqrt(TRADING_DAYS_PER_YEAR);

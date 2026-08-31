@@ -756,6 +756,33 @@ describe('statistics', () => {
     expect(s.trades.avgTradeAlpha).toBeNull();
   });
 
+  it('measures "since start" against the capital COMMITTED, not day 0\'s value', () => {
+    // Day 0 is already net of one side of entry slippage — the book and the
+    // benchmark both buy that morning — so the first curve point is $9,995 of a
+    // $10,000 commitment. Basing the return on it made the headline print
+    // −1.26% next to −$130.60, two numbers that cannot both describe the same
+    // book. The percentage has to reconcile with the dollars beside it.
+    const c = cfg();
+    const max = stats.windows.find((w) => w.key === 'max')!;
+    const last = res.equity[res.equity.length - 1];
+    expect(res.equity[0].equity).toBeCloseTo(c.startingCash / (1 + c.slippageBps / 10_000), 2);
+    expect(max.portfolio).toBeCloseTo(last.equity / c.startingCash - 1, 10);
+    expect(max.benchmark).toBeCloseTo(last.benchmark / c.startingCash - 1, 10);
+    // The entry cost is inside the number, so it is strictly worse than the
+    // reading that started at day 0.
+    expect(max.portfolio!).toBeLessThan(last.equity / res.equity[0].equity - 1);
+  });
+
+  it('leaves the shorter windows anchored on the curve', () => {
+    // 7d/30d start mid-book, where the entry cost sits inside BOTH ends and
+    // cancels. Only the window that starts at the top of the book needs the
+    // committed capital.
+    const w7 = stats.windows.find((w) => w.key === '7d')!;
+    const last = res.equity[res.equity.length - 1];
+    const anchor = res.equity[res.equity.length - 1 - w7.n];
+    expect(w7.portfolio).toBeCloseTo(last.equity / anchor.equity - 1, 10);
+  });
+
   it('measures drawdown peak-to-trough', () => {
     const curve = [1000, 1200, 900, 1100].map((v, i) => ({
       date: addDaysYmd('2026-01-05', i),
