@@ -2163,6 +2163,28 @@ interface PositionRow {
   spy_exit: number | null;
 }
 
+/**
+ * Drop the whole curve. Positions and events are REPLACEd on every sync anyway,
+ * and `price_history` is an expensive cache that must survive — so this is the
+ * curve alone, not `clearPortfolio()`'s full reset.
+ *
+ * Used when the config changes: rows simulated under different rules are not
+ * the same curve, and appending to them produces a line no strategy ever
+ * followed. The curve is fully derived from prices + candidates, both stored,
+ * so throwing it away costs nothing but the rebuild.
+ */
+export function clearPortfolioEquity(): void {
+  getDb().prepare(`DELETE FROM portfolio_equity`).run();
+}
+
+/**
+ * Drop a single day, so a provisional (intraday) row can be recomputed by the
+ * next run of the same day instead of being frozen by the append-only insert.
+ */
+export function deletePortfolioEquityDay(date: string): void {
+  getDb().prepare(`DELETE FROM portfolio_equity WHERE date = ?`).run(date);
+}
+
 export function getPortfolioPositions(): PortfolioPosition[] {
   const rows = getDb()
     .prepare(`SELECT * FROM portfolio_positions ORDER BY entry_date, ticker`)
@@ -2397,6 +2419,12 @@ export function setPortfolioConfig(partial: Partial<PortfolioConfig>): Portfolio
  */
 export interface PortfolioRunMeta {
   config: PortfolioConfig;
+  /**
+   * Which builder produced the stored curve. Absent on curves written before
+   * this existed, which is exactly the signal that they need rebuilding — see
+   * CURVE_BUILDER_VERSION in `portfolio.ts`.
+   */
+  curveVersion?: number;
   builtAt: string;
   backfillStart: string | null;
   liveStart: string | null;

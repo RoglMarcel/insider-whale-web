@@ -46,6 +46,8 @@ async function main(): Promise<void> {
   console.log(
     `[portfolio] ${report.pricesFetched} price series fetched · ` +
       `${report.daysWritten} new day(s) · ${report.suspectPoints} suspect point(s) ignored` +
+      // The precise reason is logged by syncPortfolio itself, one line up.
+      (report.rebuilt ? ' · ↻ curve REBUILT from scratch' : '') +
       (report.restatedDays ? ` · ⚠ ${report.restatedDays} stored day(s) drifted after a price restatement` : ''),
   );
 

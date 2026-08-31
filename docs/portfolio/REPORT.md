@@ -322,6 +322,30 @@ changed. Section 7 records where the evidence nevertheless leans.
    Positions and events are a projection of the same deterministic run, so they
    are regenerated — except `suspect_price` events, which record what a *fetch*
    rejected and no simulation could reproduce.
+
+   **Correction (2026-08-31).** This decision was wrong as stated, and the
+   asymmetry it describes is exactly what broke. Rows kept while positions and
+   events are replaced only holds together while the *rules* stay fixed. When
+   v1.5.0 changed the exit rules, the new simulation was appended to rows built
+   under v1.4.0's, and the published curve became a splice of two strategies:
+
+   - Four July positions the old rules had closed reappeared on 2026-08-24 —
+     the book went from 1 open position to 7 **with no buy or sell recorded** —
+     carrying weeks of accumulated gain booked into that single day: **+2.90pp
+     against SPY in one session.**
+   - That artifact was **7.4× the entire +0.39% lead** the page was reporting.
+     Chained out, the same curve *trailed* SPY by 2.49pp.
+   - The last row stopped matching the position table displayed beside it
+     ($3,802.66 vs $4,122.89), because the newest day is marked from intraday
+     prices and was being frozen by the first run of the day.
+   - `restatedDays: 17` of 37 days was the system reporting all of this as
+     "price restatements", which they were not.
+
+   Now: settled days stay append-only, but the newest (provisional) day is
+   always recomputed, and the whole curve is discarded and re-simulated when the
+   config changes or when `CURVE_BUILDER_VERSION` moves. After the rebuild the
+   curve reproduces exactly — zero position changes without an event, and the
+   last row matches its position table to the cent.
 5. **Suspect prices are dropped, not stored with a flag.** The schema in the
    brief has no flag column, and `portfolio_events.kind` already has
    `suspect_price`. The gap a dropped point leaves is handled by the same

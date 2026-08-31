@@ -18,6 +18,8 @@ import {
 } from '../src/lib/portfolio-rules';
 import {
   clearPortfolio,
+  clearPortfolioEquity,
+  deletePortfolioEquityDay,
   getPortfolioConfig,
   getPortfolioEquity,
   getPortfolioEvents,
@@ -50,14 +52,34 @@ import { PRICE_REQUEST_GAP_MS, fetchAdjCloseSeries, screenSeries, sleep } from '
  * cache covers the window, run the simulation, persist the result.
  *
  * Two invariants are enforced here rather than in the rules:
- *  - The curve is APPEND-ONLY. A day that has been written is never rewritten,
- *    so a later price restatement cannot retroactively move a point somebody has
- *    already looked at. Drift is counted and reported, not silently applied.
+ *  - SETTLED days are APPEND-ONLY. A settled day that has been written is never
+ *    rewritten, so a later price restatement cannot retroactively move a point
+ *    somebody has already looked at. Drift is counted and reported, not silently
+ *    applied. Two things are deliberately NOT covered by that rule, because
+ *    applying it to them produced a curve that contradicted itself (see the
+ *    comment in `runSync`): the newest day, which is provisional intraday data,
+ *    and the whole curve when the config changes, which makes the stored rows a
+ *    different strategy rather than older history of this one.
  *  - SPY is mandatory. A curve without its benchmark is worthless, so a run that
  *    cannot resolve SPY writes nothing at all.
  */
 
 const BENCHMARK = 'SPY';
+
+/**
+ * Bump when a fix changes how the curve is BUILT, not what it is built from.
+ * A stored curve carrying a different version is rebuilt once, on the next sync.
+ *
+ * A config comparison alone cannot do this job. The splice that motivated all of
+ * this was already baked into the stored rows by the time it was found, and by
+ * then the config matched again — the damaging change had happened days
+ * earlier. Without this counter the repair would wait for the next unrelated
+ * config edit to arrive by luck.
+ *
+ * 2 (2026-08-31): rebuild curves written by the append-only builder, which
+ * spliced the v1.4.0 and v1.5.0 exit rules into a single line.
+ */
+const CURVE_BUILDER_VERSION = 2;
 
 let runInFlight = false;
 
@@ -66,8 +88,22 @@ export interface PortfolioSyncReport {
   reason?: string;
   daysWritten: number;
   restatedDays: number;
+  /** The config changed, so the curve was discarded and re-simulated. */
+  rebuilt: boolean;
   pricesFetched: number;
   suspectPoints: number;
+}
+
+/**
+ * Key-order-independent equality for the config blob, which is flat and
+ * primitive-valued. Compared rather than version-stamped on purpose: a stamp
+ * only catches the changes someone remembered to bump, and the splice this
+ * guards against came from a rule change, not a release.
+ */
+function sameConfig(a: PortfolioConfig, b: PortfolioConfig): boolean {
+  const norm = (c: PortfolioConfig) =>
+    JSON.stringify(Object.entries(c).sort(([x], [y]) => x.localeCompare(y)));
+  return norm(a) === norm(b);
 }
 
 // ── Candidates ────────────────────────────────────────────────────────────
@@ -170,7 +206,7 @@ async function syncPrices(tickers: readonly string[], fromYmd: string): Promise<
 // ── Run ───────────────────────────────────────────────────────────────────
 
 export async function syncPortfolio(): Promise<PortfolioSyncReport> {
-  if (runInFlight) return { ok: false, reason: 'already running', daysWritten: 0, restatedDays: 0, pricesFetched: 0, suspectPoints: 0 };
+  if (runInFlight) return { ok: false, reason: 'already running', daysWritten: 0, restatedDays: 0, rebuilt: false, pricesFetched: 0, suspectPoints: 0 };
   runInFlight = true;
   try {
     return await runSync();
@@ -183,7 +219,7 @@ async function runSync(): Promise<PortfolioSyncReport> {
   const config = getPortfolioConfig();
   const start = getPortfolioHistoryStart(config.entryScore);
   if (!start) {
-    return { ok: false, reason: 'no signal has ever reached the entry threshold', daysWritten: 0, restatedDays: 0, pricesFetched: 0, suspectPoints: 0 };
+    return { ok: false, reason: 'no signal has ever reached the entry threshold', daysWritten: 0, restatedDays: 0, rebuilt: false, pricesFetched: 0, suspectPoints: 0 };
   }
 
   const universe = getPortfolioUniverse(config.entryScore);
@@ -192,7 +228,7 @@ async function runSync(): Promise<PortfolioSyncReport> {
   const spy = getPriceBook([BENCHMARK], start)[BENCHMARK];
   if (!spy || !Object.keys(spy).length) {
     // A curve with no benchmark cannot answer the only question it exists for.
-    return { ok: false, reason: 'SPY price series unavailable — nothing written', daysWritten: 0, restatedDays: 0, pricesFetched: priceSync.fetched, suspectPoints: priceSync.suspect.length };
+    return { ok: false, reason: 'SPY price series unavailable — nothing written', daysWritten: 0, restatedDays: 0, rebuilt: false, pricesFetched: priceSync.fetched, suspectPoints: priceSync.suspect.length };
   }
 
   const prices = getPriceBook(universe, start);
@@ -201,8 +237,40 @@ async function runSync(): Promise<PortfolioSyncReport> {
 
   const sim = simulatePortfolio({ config, tradingDays, spy, prices, candidates });
 
-  // Append-only curve: compare before writing so a price restatement is REPORTED
-  // rather than quietly changing history.
+  // A stored curve belongs to the config that built it. Append new rules onto
+  // rows simulated under old ones and the chart becomes a splice of two
+  // strategies — a line no strategy ever followed.
+  //
+  // Measured on the live site 2026-08-31, and the reason this exists: the
+  // v1.5.0 exit rules (no take-profit, −25% stop, 90 days) were appended to a
+  // curve built under v1.4.0's. Four July positions the old rules had closed
+  // reappeared on 2026-08-24 with weeks of accumulated gain booked into that
+  // single day — the book went from 1 open position to 7 with no buy or sell
+  // recorded, +2.90pp against SPY in one day. That artifact was 7.4× the entire
+  // +0.39% lead the page was reporting; chain it out and the same curve TRAILS
+  // SPY by 2.49pp. The equity rows also stopped matching the position table
+  // they are displayed beside ($3,802.66 vs $4,122.89), because positions are
+  // REPLACEd from the fresh simulation while the rows were not.
+  const storedMeta = getPortfolioRunMeta();
+  const staleBuilder = !!storedMeta && (storedMeta.curveVersion ?? 1) !== CURVE_BUILDER_VERSION;
+  const configChanged = !!storedMeta && !sameConfig(storedMeta.config, config);
+  const rebuilt = staleBuilder || configChanged;
+  if (rebuilt) {
+    const why = staleBuilder ? `built by curve builder v${storedMeta?.curveVersion ?? 1}` : 'config changed';
+    console.log(`[portfolio] stored curve ${why} — rebuilding it from scratch`);
+    clearPortfolioEquity();
+  }
+
+  // The newest day is provisional: it is marked from intraday prices, so every
+  // later run of the same day has to be allowed to correct it. Freezing it is
+  // what left the last row disagreeing with its own position table. Only
+  // SETTLED days stay append-only — that is what keeps a Yahoo price
+  // restatement reported rather than silently applied.
+  const provisional = sim.equity[sim.equity.length - 1]?.date;
+  if (!rebuilt && provisional) deletePortfolioEquityDay(provisional);
+
+  // Whatever survived the two steps above is real history. Compare it against
+  // the fresh simulation so a restatement on a settled day is still REPORTED.
   const stored = new Map(getPortfolioEquity().map((p) => [p.date, p]));
   let restatedDays = 0;
   for (const p of sim.equity) {
@@ -218,6 +286,7 @@ async function runSync(): Promise<PortfolioSyncReport> {
   const counts = countEvents(sim.events);
   setPortfolioRunMeta({
     config,
+    curveVersion: CURVE_BUILDER_VERSION,
     builtAt: new Date().toISOString(),
     backfillStart: sim.equity[0]?.date ?? null,
     liveStart: getPortfolioLiveStart(),
@@ -233,6 +302,7 @@ async function runSync(): Promise<PortfolioSyncReport> {
     ok: true,
     daysWritten,
     restatedDays,
+    rebuilt,
     pricesFetched: priceSync.fetched,
     suspectPoints: priceSync.suspect.length,
   };
