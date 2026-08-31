@@ -1389,13 +1389,52 @@ export const DEFAULT_SETTINGS: AppSettings = {
 // ──────────────────────────────────────────────────────────────────────────
 
 /**
- * Entry threshold. Deliberately NOT `CONVICTION_THRESHOLDS.high` (80): in the
- * whole stored history the highest score ever written is 76.6 and nothing has
- * ever reached 80, so reusing that constant would build a portfolio that never
- * trades. 74 is the level at which the labeled outcomes still show a clear
- * alpha edge while producing a non-empty sample.
+ * Entry threshold. Deliberately NOT `CONVICTION_THRESHOLDS.high` (80): only 3
+ * ticker-days in the whole stored history have ever reached 80, so that
+ * constant would build a portfolio that essentially never trades.
+ *
+ * 74 was a guess, and its old justification here — "the level at which the
+ * labeled outcomes still show a clear alpha edge" — does not survive
+ * `npm run analyze:score`. Restricted to rows with scoring content and with
+ * cluster-robust standard errors, the score→alpha IC is in the noise at every
+ * horizon (5d +0.052 t=1.89 · 10d ≈ 0 · 20d −0.023 t=−0.43). Mean 10-day alpha
+ * above 70 is 6.69% (n=13 ticker-days) against 6.44% above 74 (n=9): the same
+ * number twice. **No threshold in this range can be justified by returns**, and
+ * fitting one to these outcomes would be fitting noise — see the caveat
+ * `portfolio:sweep` prints, where the sign flips between adjacent rows.
+ *
+ * So it is set on the one quantity the data DOES resolve: signal supply against
+ * the book's own capacity. Little's Law, L = λW, over 2026-07-10 → 08-26:
+ *
+ *   threshold   λ (distinct tickers/wk)   L at the 90-day hold cap   of 20 slots
+ *   ≥ 66        2.38                      30.6                      153%  ✗
+ *   ≥ 68        1.79                      23.0                      115%  ✗
+ *   ≥ 70        1.34                      17.2                       86%  ✓
+ *   ≥ 74        1.04                      13.4                       67%
+ *
+ * 70 is the highest threshold that fills the 20-position book without
+ * over-subscribing it. Over-subscribing is the worse error: signals past the
+ * cap are silently rejected (`skipped_cap`), which biases the very measurement
+ * the portfolio exists to make. 74 leaves a third of the capacity permanently
+ * in SPY, so a third of the "result" was never a test of the signals at all.
+ *
+ * Two properties confirm the level rather than choosing it:
+ *  - 70 sits at p99.21 of content-bearing signals (74 at p99.45) and inside the
+ *    same 60–79 bucket, which is the best-performing bucket with n ≥ 30 at both
+ *    5 and 10 days. This moves within measured ground, not past it. Rows with
+ *    no scoring content score ≈ 0, so no threshold near here can dilute the
+ *    book with them.
+ *  - It makes the sizing ramp reachable. `maxWeight` binds at
+ *    `entryScore + scoreSpan`; at 74 that was 90, above the all-time high score
+ *    of 85.1, so the 10% cap was dead code and every position sized off a
+ *    fraction of the intended range. At 70 the ramp ends at 86 — just past the
+ *    observed maximum, which is where a ramp should end.
+ *
+ * This is a decision about statistical power, NOT a claim that 70-scored
+ * signals beat 74-scored ones. Revisit when the closed-trade count reaches ~20,
+ * which is the first point at which the alpha question has an answer.
  */
-export const PORTFOLIO_ENTRY_SCORE = 74;
+export const PORTFOLIO_ENTRY_SCORE = 70;
 /** Score points above the threshold that double the base weight. */
 export const PORTFOLIO_SCORE_SPAN = 16;
 export const PORTFOLIO_BASE_WEIGHT = 0.05;
@@ -1577,13 +1616,18 @@ export const DEFAULT_PORTFOLIO_CONFIG: PortfolioConfig = {
 };
 
 /**
- * Bumped whenever the SHIPPED exit rules change in a way that an already-stored
+ * Bumped whenever a SHIPPED default changes in a way that an already-stored
  * `app_settings.portfolio_config` overlay would otherwise mask. `getPortfolioConfig`
  * merges the stored blob OVER these defaults, so a v1 installation would keep
  * running +20% / -10% / 30d forever without this. See the migration in
  * electron/database.ts and docs/portfolio/EXIT-STRATEGY.md.
+ *
+ * 3: `entryScore` 74 → 70. Not an exit rule — the same masking applies to ANY
+ * default the rules editor has written back into the overlay, which is why the
+ * migration now reads PORTFOLIO_SUPERSEDED_DEFAULTS rather than the exit rules
+ * alone.
  */
-export const PORTFOLIO_CONFIG_VERSION = 2;
+export const PORTFOLIO_CONFIG_VERSION = 3;
 
 /**
  * The v1 (v1.4.0) exit rules, kept verbatim so the migration can tell an
@@ -1596,6 +1640,23 @@ export const PORTFOLIO_V1_EXIT_DEFAULTS = {
   trailArm: 0.15,
   trailDistance: 0.1,
 } as const;
+
+/** The v2 (v1.5.0) entry threshold, superseded by the capacity derivation above. */
+export const PORTFOLIO_V2_DEFAULTS = {
+  entryScore: 74,
+} as const;
+
+/**
+ * Every default this project has shipped and then replaced, by key. A stored
+ * value equal to any of them was never chosen — it is a default that got frozen
+ * into the overlay by the rules editor, which writes the whole merged object
+ * back. Those yield to the current default; anything else is the user's and is
+ * kept.
+ */
+export const PORTFOLIO_SUPERSEDED_DEFAULTS: Readonly<Record<string, readonly unknown[]>> = {
+  ...Object.fromEntries(Object.entries(PORTFOLIO_V1_EXIT_DEFAULTS).map(([k, v]) => [k, [v]])),
+  ...Object.fromEntries(Object.entries(PORTFOLIO_V2_DEFAULTS).map(([k, v]) => [k, [v]])),
+};
 
 /** Where a candidate signal came from — decides how its entry date is derived. */
 export type PortfolioSignalSource = 'signal' | 'outcome';

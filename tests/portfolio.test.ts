@@ -20,6 +20,8 @@ import { translate, type Lang } from '../src/lib/i18n';
 import {
   DEFAULT_PORTFOLIO_CONFIG,
   PORTFOLIO_ENTRY_SCORE,
+  PORTFOLIO_SCORE_SPAN,
+  CONVICTION_THRESHOLDS,
   PORTFOLIO_TRADING_DAYS_PER_CALENDAR_DAY,
   PORTFOLIO_V1_EXIT_DEFAULTS,
   type PortfolioCandidate,
@@ -92,19 +94,31 @@ describe('position sizing', () => {
     expect(s.value).toBeCloseTo(500, 10);
   });
 
-  it('scales with the score: 82 → 7.5%', () => {
-    expect(positionSize(82, 10_000).targetWeight).toBeCloseTo(0.075, 10);
-    expect(positionSize(82, 10_000).value).toBeCloseTo(750, 10);
+  it('scales with the score: 78 → 7.5%', () => {
+    expect(positionSize(78, 10_000).targetWeight).toBeCloseTo(0.075, 10);
+    expect(positionSize(78, 10_000).value).toBeCloseTo(750, 10);
   });
 
   it('caps at the maximum weight', () => {
-    expect(positionSize(90, 10_000).targetWeight).toBeCloseTo(0.1, 10);
+    expect(positionSize(86, 10_000).targetWeight).toBeCloseTo(0.1, 10);
     expect(positionSize(95, 10_000).targetWeight).toBeCloseTo(0.1, 10);
     expect(positionSize(140, 10_000).targetWeight).toBeCloseTo(0.1, 10);
   });
 
+  it('has a ramp the real score range can actually reach', () => {
+    // maxWeight binds at entryScore + scoreSpan. At the old threshold of 74
+    // that was 90, and the highest score ever written is 85.1 — so the 10% cap
+    // was unreachable and every position sized off a fraction of the intended
+    // range. The ramp must end just PAST the observed maximum, not far above it.
+    const ALL_TIME_HIGH_SCORE = 85.1;
+    expect(PORTFOLIO_ENTRY_SCORE + PORTFOLIO_SCORE_SPAN).toBeGreaterThan(ALL_TIME_HIGH_SCORE);
+    expect(PORTFOLIO_ENTRY_SCORE + PORTFOLIO_SCORE_SPAN).toBeLessThan(ALL_TIME_HIGH_SCORE + 3);
+    // ...which puts the best signal ever seen within a hair of the cap.
+    expect(positionSize(ALL_TIME_HIGH_SCORE, 10_000).targetWeight).toBeGreaterThan(0.096);
+  });
+
   it('is zero below the threshold — the score does not qualify at all', () => {
-    expect(positionSize(73.9, 10_000)).toEqual({ targetWeight: 0, value: 0 });
+    expect(positionSize(PORTFOLIO_ENTRY_SCORE - 0.1, 10_000)).toEqual({ targetWeight: 0, value: 0 });
     expect(positionSize(0, 10_000)).toEqual({ targetWeight: 0, value: 0 });
   });
 
@@ -117,7 +131,24 @@ describe('position sizing', () => {
   });
 
   it('sizes off current equity, not the starting cash', () => {
-    expect(positionSize(74, 20_000).value).toBeCloseTo(1000, 10);
+    expect(positionSize(PORTFOLIO_ENTRY_SCORE, 20_000).value).toBeCloseTo(1000, 10);
+  });
+});
+
+describe('shipped entry threshold', () => {
+  it('is 70 — derived from signal supply vs book capacity, not from returns', () => {
+    // Changing this is a real decision, not a tuning knob: it sets how much of
+    // the 20-slot book gets filled, and therefore how fast closed trades (the
+    // only thing that can ever answer the alpha question) accumulate. The
+    // derivation is in the comment on PORTFOLIO_ENTRY_SCORE. If you move it,
+    // move that comment with it.
+    expect(PORTFOLIO_ENTRY_SCORE).toBe(70);
+    expect(DEFAULT_PORTFOLIO_CONFIG.entryScore).toBe(70);
+  });
+
+  it('still trades at all — CONVICTION_THRESHOLDS.high would not', () => {
+    // Only 3 ticker-days in the entire stored history have ever reached 80.
+    expect(PORTFOLIO_ENTRY_SCORE).toBeLessThan(CONVICTION_THRESHOLDS.high);
   });
 });
 
@@ -135,7 +166,10 @@ describe('slippage', () => {
         tradingDays: days,
         spy: flat(days, 500),
         prices: { AAA: flat(days, 100) },
-        candidates: [cand({ earliestDate: days[0], score: 74 })],
+        // Entry score exactly, so the position sits at the BASE weight. This
+        // used to hardcode 74 and silently became a 6.25% position — measuring
+        // the sizing ramp instead of slippage — the moment the threshold moved.
+        candidates: [cand({ earliestDate: days[0], score: PORTFOLIO_ENTRY_SCORE })],
       }),
     );
     const p = res.positions[0];

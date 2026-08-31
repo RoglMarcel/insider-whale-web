@@ -2,6 +2,12 @@
 
 **Built:** 2026-08-23 · **Version:** 1.4.0 · **Branch:** `claude/testing-portfolio-sp500-674f88`
 
+> **Dated record.** Every `≥ 74` below is the entry threshold *as it stood on
+> 2026-08-23*. It is **70** since v1.5.1 — derived from signal supply against the
+> book's 20-position capacity rather than by hand; see the README section
+> "Why 70". The exit rules changed on the same day this was written; see the
+> correction on design decision 4.
+
 A simulated, rule-based $10,000 book that "invests" in the terminal's strongest
 signals and is plotted against the S&P 500. The rules, the assumptions and the
 commands are in the README under "Testing Portfolio"; this document is the

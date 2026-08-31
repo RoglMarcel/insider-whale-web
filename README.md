@@ -899,8 +899,8 @@ table and the holding-period curve: [`docs/portfolio/EXIT-STRATEGY.md`](docs/por
 | | |
 |---|---|
 | Starting capital | $10,000 |
-| Entry | score ≥ **74** on first sighting, at that session's closing price |
-| Position size | `clamp(5% × (1 + (score − 74) / 16), 3%, 10%)` of **current** equity — score 74 → 5.0%, 82 → 7.5%, 90+ → capped at 10% |
+| Entry | score ≥ **70** on first sighting, at that session's closing price |
+| Position size | `clamp(5% × (1 + (score − 70) / 16), 3%, 10%)` of **current** equity — score 70 → 5.0%, 78 → 7.5%, 86+ → capped at 10% |
 | Exits (first barrier wins) | **no take profit — the upside is never capped**, stop loss **−25%**, trailing **20%** below the highest close once **+25%** up, time stop **90 calendar days** |
 | Priority when several break on one day | stop loss → trailing → take profit → time (the most pessimistic reading of a daily bar) |
 | Limits | max 20 open positions · one position per ticker, no averaging up · 10-day lockout after a sale · $100 minimum ticket |
@@ -914,9 +914,44 @@ runtime — open "Rules & assumptions" on the Portfolio tab and press *Edit rule
 triggers a full rebuild, and the parameter set is stored **with** the curve, so a
 chart can never be labelled with values it was not computed from.
 
-**Why 74 and not `CONVICTION_THRESHOLDS.high` (80):** nothing in the stored
-history has ever scored above 76.6. Reusing that constant builds a book that
-never trades.
+**Why 70 (v1.5.1), and why not by returns.** The old 74 was picked by hand, and
+its stated justification ("the level at which the labeled outcomes still show a
+clear alpha edge") does not survive `npm run analyze:score`. Restricted to rows
+with scoring content and with cluster-robust errors, score→alpha is noise at
+every horizon (5d IC +0.052 `t=1.89` · 20d −0.023 `t=−0.43`), and mean 10-day
+alpha above 70 (6.69%, n=13) is indistinguishable from above 74 (6.44%, n=9).
+**No threshold in this range can be justified by returns yet** — `portfolio:sweep`
+prints the same warning, and its sign flips between adjacent rows.
+
+So it is set on what the data does resolve: signal supply against the book's
+capacity, via Little's Law `L = λW` over 2026-07-10 → 08-26.
+
+| Threshold | λ (distinct tickers/wk) | L at the 90-day hold cap | of 20 slots |
+|---|---|---|---|
+| ≥ 66 | 2.38 | 30.6 | 153% ✗ |
+| ≥ 68 | 1.79 | 23.0 | 115% ✗ |
+| **≥ 70** | **1.34** | **17.2** | **86%** ✓ |
+| ≥ 74 | 1.04 | 13.4 | 67% |
+
+70 is the highest threshold that fills the 20-position book without
+over-subscribing it. Over-subscribing is the worse error — signals past the cap
+are silently rejected (`skipped_cap`), biasing the measurement the portfolio
+exists to make — while 74 parked a third of the capacity in SPY permanently, so
+a third of the "result" was never a test of the signals at all.
+
+Two properties confirm the level rather than choosing it: 70 sits at p99.21 of
+content-bearing signals (74 at p99.45) inside the *same* 60–79 bucket, which is
+the best-performing bucket with n ≥ 30 at both 5 and 10 days — so this moves
+within measured ground, not past it. And it makes the sizing ramp reachable:
+`maxWeight` binds at `entryScore + scoreSpan`, which at 74 was 90, above the
+all-time high score of 85.1, leaving the 10% cap as dead code.
+
+This is a decision about statistical power, **not** a claim that 70-scored
+signals beat 74-scored ones. Revisit at ~20 closed trades.
+
+**Why not `CONVICTION_THRESHOLDS.high` (80):** only 3 ticker-days in the entire
+stored history have ever reached 80. Reusing that constant builds a book that
+essentially never trades.
 
 **Why there is no take profit (v1.5.0):** individual stock returns are strongly
 right-skewed, so the minority of positions that run far past any round number

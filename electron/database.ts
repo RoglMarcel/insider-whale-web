@@ -25,7 +25,7 @@ import {
   type PortfolioPosition,
   DEFAULT_PORTFOLIO_CONFIG,
   PORTFOLIO_CONFIG_VERSION,
-  PORTFOLIO_V1_EXIT_DEFAULTS,
+  PORTFOLIO_SUPERSEDED_DEFAULTS,
   DEFAULT_SETTINGS,
   filterSignals,
   isBigPlayer,
@@ -2380,9 +2380,9 @@ export function migratePortfolioConfig(): { migrated: string[]; kept: string[] }
 
   const migrated: string[] = [];
   const kept: string[] = [];
-  for (const [key, v1] of Object.entries(PORTFOLIO_V1_EXIT_DEFAULTS)) {
+  for (const [key, superseded] of Object.entries(PORTFOLIO_SUPERSEDED_DEFAULTS)) {
     if (!(key in stored)) continue;
-    if (stored[key] === v1) {
+    if (superseded.includes(stored[key])) {
       delete stored[key];
       migrated.push(key);
     } else {
