@@ -7,8 +7,12 @@ name: Scrape & Publish (web)
 # The SQLite history DB is committed back to the repo (data/insider-tracker.db)
 # so track-records / score-trend / "new signal" detection accumulate across runs.
 #
-# NOTE: GitHub cron is UTC and can be delayed several minutes under load — fine
-# for a few-times-a-day insider feed, not for an exact-minute trigger.
+# NOTE: GitHub cron is best-effort. Under load a scheduled run is delayed, and
+# past a certain delay GitHub drops it entirely — we lost every slot between
+# Fri 2026-08-28 and Mon 2026-08-31 and the site sat 3 days stale. So the
+# schedule now knocks hourly on an odd minute (the top of the hour is the most
+# contended, most-dropped slot) and the `gate` job below decides whether a
+# knock actually scrapes. Any single delivered knock catches the site up.
 on:
   workflow_dispatch: {}          # lets you run it manually from the Actions tab
   push:
@@ -16,9 +20,7 @@ on:
     paths-ignore:                # ...but not for pure docs edits
       - '**/*.md'
   schedule:
-    - cron: '0 14 * * 1-5'       # ~US market open  (13:30–14:30 UTC across DST)
-    - cron: '0 17 * * 1-5'       # ~midday
-    - cron: '30 20 * * 1-5'      # ~after US close  (20:00–21:00 UTC across DST)
+    - cron: '23 13-21 * * 1-5'   # hourly across the US session (13:23–21:23 UTC)
 
 # contents:write lets the run commit the updated history DB back to the repo.
 permissions:
@@ -32,7 +34,46 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Cheap staleness check so the hourly knock stays cheap. Skipped knocks cost
+  # ~20s of a free public-repo runner; only a stale site pays for a full scrape.
+  # Reads the LIVE site (public/data is gitignored, so the repo can't answer
+  # this) and fails open — an unreachable site must never freeze publishing.
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.check.outputs.go }}
+    steps:
+      - name: Is the published data stale?
+        id: check
+        env:
+          MAX_AGE_MIN: '150'      # ~2.5h → still ~3–4 refreshes on a normal day
+          META_URL: https://roglmarcel.github.io/insider-whale-web/data/meta.json
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+            echo "-> ${{ github.event_name }} run: always scrapes."
+            exit 0
+          fi
+          GEN=$(curl -fsSL --max-time 20 "$META_URL" | sed -n 's/.*"generatedAt"[^"]*"\([^"]*\)".*/\1/p' | head -1)
+          TS=$(date -u -d "$GEN" +%s 2>/dev/null || echo 0)
+          if [ "$TS" = "0" ]; then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+            echo "-> could not read generatedAt from the live site: scraping anyway."
+            exit 0
+          fi
+          AGE=$(( ( $(date -u +%s) - TS ) / 60 ))
+          echo "live data generated $GEN — ${AGE}min old (threshold ${MAX_AGE_MIN}min)"
+          if [ "$AGE" -ge "$MAX_AGE_MIN" ]; then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+            echo "-> stale: scraping."
+          else
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            echo "-> fresh enough: skipping this knock."
+          fi
+
   scrape-and-deploy:
+    needs: gate
+    if: needs.gate.outputs.go == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
