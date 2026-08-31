@@ -61,7 +61,6 @@ import { scrapeOpenInsider } from './openinsider';
 import { scrapeFinviz, scrapeFinvizEarnings } from './finviz';
 import { scrapeSecForm4 } from './secform4';
 import { scrapeMarketBeat } from './marketbeat';
-import { scrapeGuruFocus } from './gurufocus';
 import { scrapeInsiderMonitor } from './insidermonitor';
 import { scrapeQuiverQuant } from './quiverquant';
 import { scrapeCeoWatcher } from './ceowatcher';
@@ -134,7 +133,6 @@ const INSIDER_SCRAPERS: Partial<Record<string, InsiderScraper>> = {
   finviz: scrapeFinviz,
   secform4: scrapeSecForm4,
   marketbeat: scrapeMarketBeat,
-  gurufocus: scrapeGuruFocus,
   insidermonitor: scrapeInsiderMonitor,
   quiverquant: scrapeQuiverQuant,
   ceowatcher: scrapeCeoWatcher,

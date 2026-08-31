@@ -6,6 +6,7 @@ import {
   normalizeInsiderName,
   classifyInsiderPattern,
   computeSourceHealth,
+  sourceStatus,
   evaluateAlertRules,
   filterSignals,
   isComboSignal,
@@ -18,6 +19,7 @@ import {
   type Signal,
   type AlertRule,
   type ScoreBreakdown,
+  type SourceHealthIssue,
 } from '../src/types';
 import { ymd } from './helpers';
 
@@ -154,6 +156,45 @@ describe('computeSourceHealth', () => {
   });
   it('needs at least two participating runs', () => {
     expect(computeSourceHealth(['openinsider'], [healthy])).toHaveLength(0);
+  });
+});
+
+describe('sourceStatus', () => {
+  const issue = (kind: 'dead' | 'flapping'): SourceHealthIssue => ({
+    source: 'openinsider',
+    kind,
+    consecutiveZeroRuns: kind === 'dead' ? 2 : 0,
+    rollingMedian: 370,
+    zeroRunsInWindow: 2,
+    runsInWindow: 12,
+  });
+
+  it('reports a flapping source as flapping even when the NEWEST run is the failure', () => {
+    // The regression this file exists to prevent. OpenInsider's real history on
+    // 2026-08-31: 12 runs, 10 of them 338–415 rows, hard-failing on the newest.
+    // The old mapping called that "dead" and fired the red broken-source banner.
+    const counts = [-1, 369, 367, 366, 344, 338, 377, 376, -1, 369, 364, 415];
+    expect(sourceStatus(issue('flapping'), counts)).toBe('flapping');
+  });
+  it('still reports a genuinely dead source as dead', () => {
+    expect(sourceStatus(issue('dead'), [0, 0, 370, 366, 380])).toBe('dead');
+  });
+  it('treats a single hard failure with no issue as degraded, not dead', () => {
+    expect(sourceStatus(undefined, [-1, 370, 366, 380])).toBe('degraded');
+  });
+  it('treats a single zero run below a healthy median as degraded', () => {
+    expect(sourceStatus(undefined, [0, 370, 366, 380])).toBe('degraded');
+  });
+  it('reports a source producing rows as healthy', () => {
+    expect(sourceStatus(undefined, [370, 366, 380])).toBe('healthy');
+  });
+  it('reports a source with no participating runs as unknown', () => {
+    expect(sourceStatus(undefined, [])).toBe('unknown');
+  });
+  it('never calls a chronically empty source anything but healthy-by-absence', () => {
+    // Median 0 and newest 0: nothing has regressed, the source simply has
+    // nothing to report. Alarming here would cry wolf on every run.
+    expect(sourceStatus(undefined, [0, 0, 0, 0])).toBe('healthy');
   });
 });
 

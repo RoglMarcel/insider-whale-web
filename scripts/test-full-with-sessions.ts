@@ -43,7 +43,6 @@ app.whenReady().then(async () => {
     finviz: true,
     secform4: true,
     marketbeat: true,
-    gurufocus: true,
     insidermonitor: true,
     quiverquant: true,
       ceowatcher: true,

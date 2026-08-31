@@ -375,11 +375,10 @@ const en = {
   // ── Platform logins ──
   "login.title": "Platform Logins",
   "login.requiredToScrape": "Login required to scrape",
-  "login.webNote": "This is the hosted web view — it only displays data, it never scrapes, so logging in here would have nowhere to send the cookies. Login-gated sources (options flow, GuruFocus, X…) are scraped two ways: in the desktop app, which publishes its results here, or by the cloud scraper if you add exported session cookies as the SCRAPE_SESSIONS GitHub secret.",
+  "login.webNote": "This is the hosted web view — it only displays data, it never scrapes, so logging in here would have nowhere to send the cookies. Login-gated sources (options flow, Finviz Elite, X…) are scraped two ways: in the desktop app, which publishes its results here, or by the cloud scraper if you add exported session cookies as the SCRAPE_SESSIONS GitHub secret.",
   "login.desktopNote": "Sign in to read past free-view limits and account-gated data. A browser window opens for you to log in (email, Google, anything) — only the resulting session cookies are stored, encrypted on this device. No passwords are saved.",
   "plat.hintOptionsAccount": "Options flow requires an account.",
   "plat.hintBarchart": "Free tier works; login lifts limits.",
-  "plat.hintGuruFocus": "Most data is gated behind login.",
   "plat.hintFinviz": "Elite removes delays.",
   "plat.hintTwitter": "Required to scrape WhaleInsider news feed.",
 
@@ -910,11 +909,10 @@ const de: Record<TKey, string> = {
   // ── Platform logins ──
   "login.title": "Plattform-Logins",
   "login.requiredToScrape": "Login zum Scrapen erforderlich",
-  "login.webNote": "Dies ist die gehostete Webansicht — sie zeigt nur Daten an und scrapt nie; ein Login hier hätte kein Ziel für die Cookies. Login-pflichtige Quellen (Options-Flow, GuruFocus, X …) werden auf zwei Wegen gescrapt: in der Desktop-App, die ihre Ergebnisse hierher veröffentlicht, oder vom Cloud-Scraper, wenn du exportierte Session-Cookies als GitHub-Secret SCRAPE_SESSIONS hinterlegst.",
+  "login.webNote": "Dies ist die gehostete Webansicht — sie zeigt nur Daten an und scrapt nie; ein Login hier hätte kein Ziel für die Cookies. Login-pflichtige Quellen (Options-Flow, Finviz Elite, X …) werden auf zwei Wegen gescrapt: in der Desktop-App, die ihre Ergebnisse hierher veröffentlicht, oder vom Cloud-Scraper, wenn du exportierte Session-Cookies als GitHub-Secret SCRAPE_SESSIONS hinterlegst.",
   "login.desktopNote": "Melde dich an, um Gratis-Limits und kontogebundene Daten zu umgehen. Es öffnet sich ein Browserfenster für den Login (E-Mail, Google, was auch immer) — gespeichert werden nur die resultierenden Session-Cookies, verschlüsselt auf diesem Gerät. Passwörter werden nicht gespeichert.",
   "plat.hintOptionsAccount": "Options-Flow erfordert ein Konto.",
   "plat.hintBarchart": "Gratis-Zugang reicht; Login hebt Limits auf.",
-  "plat.hintGuruFocus": "Die meisten Daten sind hinter dem Login.",
   "plat.hintFinviz": "Elite entfernt die Verzögerungen.",
   "plat.hintTwitter": "Nötig, um den WhaleInsider-News-Feed zu scrapen.",
 

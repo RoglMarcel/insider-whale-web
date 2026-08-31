@@ -2,7 +2,7 @@
  * Variante B — "desktop-as-publisher" (v1.1.6).
  *
  * Runs the FULL scrape with your real, logged-in sessions (options flow,
- * GuruFocus, X, valuation …) on your own machine, writes the shared history DB +
+ * X, valuation …) on your own machine, writes the shared history DB +
  * static JSON, and (optionally) commits + pushes so GitHub Actions redeploys the
  * site. The login-gated OPTIONS flow then rides the next ~72h of cloud 🟢 runs via
  * the orchestrator's existing 72h options merge — lighting up COMBO/HIGH tiles.
@@ -102,15 +102,13 @@ async function main(): Promise<void> {
 
   // Enable EVERY source; sourceUnlocked() gates the login-gated ones by your
   // real saved sessions, so only the ones you're actually logged into run.
-  // EXCEPT the ones on this list: GuruFocus sits behind a Cloudflare challenge
-  // that never clears (hard-fails with -1 every run, headed retry included) and
-  // the repeated attempts got this machine's residential IP blocked outright.
-  // Re-enable by removing it here once that changes.
-  const SKIP: ReadonlySet<string> = new Set(['gurufocus']);
+  // The per-source SKIP list this used to carry held exactly one entry,
+  // GuruFocus, which is now gone from SCRAPER_SOURCES altogether — a source
+  // that hard-fails every run and got the publishing IP banned is not a
+  // source. Removing it here beats keeping a policy hook nothing else uses.
   const sources = Object.fromEntries(
-    SCRAPER_SOURCES.map((s) => [s.key, !SKIP.has(s.key)]),
+    SCRAPER_SOURCES.map((s) => [s.key, true]),
   ) as Record<ScraperSource, boolean>;
-  if (SKIP.size) console.log(`[publish-web] skipping by policy: ${[...SKIP].join(', ')}`);
   const settings: AppSettings = { ...DEFAULT_SETTINGS, sources, headless: true, scheduleEnabled: false };
 
   const vix = await fetchVix().catch(() => null);

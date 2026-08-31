@@ -41,7 +41,6 @@ const WEB_SOURCES: Record<ScraperSource, boolean> = {
   // a CI datacenter IP. Re-enable individually after testing (see tutorial §6).
   finviz: false,
   marketbeat: false,
-  gurufocus: false,
   quiverquant: false,
   // Instagram renders client-side and rate-limits datacenter IPs hard; the
   // caption route needs no login, so this is worth a block-test before enabling.
@@ -55,7 +54,7 @@ const WEB_SOURCES: Record<ScraperSource, boolean> = {
 /**
  * Login-gated sources in CI: the user pastes exported Playwright `storageState`
  * blobs into the GitHub secret SCRAPE_SESSIONS as a JSON map
- *   { "barchart": {cookies:[…],origins:[…]}, "gurufocus": {…}, … }
+ *   { "barchart": {cookies:[…],origins:[…]}, "finviz": {…}, … }
  * We write each to the exact session file `auth.ts` reads (RAW: = plaintext, no
  * OS keychain in CI), which makes `sourceUnlocked()` return true and injects the
  * cookies via `loadMergedStorageState()` — zero changes to auth/orchestrator.

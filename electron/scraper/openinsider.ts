@@ -90,6 +90,27 @@ function mapRows(headers: string[], rows: RawRow[], url: string): RawInsiderTrad
   return out;
 }
 
+/**
+ * One retry, then give up and let the error through.
+ *
+ * BUDGET: the orchestrator races every scraper against PER_SCRAPER_TIMEOUT_MS
+ * (75s) and records −1 when that fires, so the two attempts plus this pause have
+ * to fit inside it. A first attempt that burns the full 30s nav timeout leaves
+ * too little for a second — but that is the rarer failure. The ones this exists
+ * for (refused connection, reset socket) fail in seconds, which is exactly when
+ * a retry is both affordable and likely to succeed. Keep the pause short.
+ */
+async function withRetry<T>(url: string, run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (first) {
+    const msg = first instanceof Error ? first.message : String(first);
+    console.warn(`[openinsider] attempt 1 failed (${msg}) — retrying once: ${url}`);
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
+    return run();
+  }
+}
+
 export async function scrapeOpenInsider(context: BrowserContext): Promise<RawInsiderTrade[]> {
   const all: RawInsiderTrade[] = [];
   for (const url of URLS) {
@@ -99,7 +120,15 @@ export async function scrapeOpenInsider(context: BrowserContext): Promise<RawIns
     // reported a healthy 0 rows, which the orchestrator logged as success and
     // the health monitor ignored, silently zeroing every signal this source was
     // carrying. Let it throw so the orchestrator records the −1 failure sentinel.
-    const trades = await withPage(context, url, async (page) => {
+    //
+    // ...but one attempt is too few to justify that sentinel. Measured
+    // 2026-08-31 over 12 stored runs: 10 returned 338–415 rows and 2 hard-failed,
+    // with the page, the selectors and every column mapping verified healthy at
+    // the same time. Those two were navigation hiccups, and each one blanked
+    // ~370 rows — the pipeline's widest source — and tripped the red "broken"
+    // banner. One retry separates a hiccup from a real break; a source that
+    // fails twice in a row still reports −1, which is what the sentinel is for.
+    const trades = await withRetry(url, () => withPage(context, url, async (page) => {
       await page.waitForSelector('table.tinytable', { timeout: 15_000 }).catch(() => undefined);
       const data = await page.evaluate(() => {
         const norm = (s: string | null) => (s || '').replace(/\s+/g, ' ').trim();
@@ -157,7 +186,7 @@ export async function scrapeOpenInsider(context: BrowserContext): Promise<RawIns
         );
       }
       return mapped;
-    });
+    }));
     all.push(...trades);
     await randomDelay();
   }

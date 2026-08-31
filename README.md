@@ -189,6 +189,8 @@ the project without rediscovering the same context.
     challenge that never clears (headed retry included) — and the repeated attempts
     got the publishing machine's residential IP blocked outright ("Sorry, you have
     been blocked"). Skipped by policy; remove it from `SKIP` to re-enable.
+    **Superseded (2026-08-31): the source was removed from the codebase entirely —
+    the `SKIP` hook it refers to no longer exists.**
   - **Purged 33 corrupted tickers using the SEC registry as the oracle.** The earlier
     duplicate-proof purge couldn't clear leftovers like `AAAT` (which ranked 4th by
     score). Rule: doubled first letter **and** absent from `company_tickers.json`
@@ -466,7 +468,7 @@ source in `src/lib/ipc.ts` (`window.api` / `webApi` / `mockApi`).
 ### Login-gated sources on the web build
 
 A static site can only *display* data — logging in there can’t reach the cloud
-scraper. Two real ways to get account-gated sources (options flow, GuruFocus,
+scraper. Two real ways to get account-gated sources (options flow,
 Finviz Elite, X…) into the site:
 
 1. **Desktop-as-publisher** — run the desktop app (it already logs in per user,
@@ -479,11 +481,11 @@ Finviz Elite, X…) into the site:
    the source and injects the cookies. Get a `storageState` by logging in once in a
    Playwright/Chromium session and saving `context.storageState()`.
    Caveats: cookies expire (re-paste periodically); one datacenter IP scraping
-   X/GuruFocus is easily rate-limited or banned — the account risk is the user’s.
+   X is easily rate-limited or banned — the account risk is the user’s.
 
 ### Keeping login-gated sources fresh (Variante B)
 
-The cloud runs only 🟢 sources. To add options flow / GuruFocus / X to
+The cloud runs only 🟢 sources. To add options flow / X to
 the site, publish from a machine that is logged in:
 
 ```bash
@@ -644,7 +646,6 @@ src/components/Settings/PlatformLogins.tsx
 | Finviz | Insider table + earnings date from quote pages | Login unlocks source in Settings |
 | SECForm4 | Additional Form 4 data | Public/best-effort |
 | MarketBeat | Insider summaries | Login unlocks source in Settings |
-| GuruFocus | Insider/institutional summary | Login unlocks source in Settings |
 | Insider-Monitor | Daily Form 4 purchase digest (B/AB/S/AS codes) | Public |
 | Quiver Quantitative | Near-real-time insider feed with names + titles | Public |
 | CEOWatcher (Instagram) | Curated notable insider buys, parsed from post captions only | Public, off by default in CI |

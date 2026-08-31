@@ -19,7 +19,6 @@ export type ScraperSource =
   | 'finviz'
   | 'secform4'
   | 'marketbeat'
-  | 'gurufocus'
   | 'insidermonitor'
   | 'quiverquant'
   | 'ceowatcher'
@@ -733,6 +732,39 @@ export function computeSourceHealth(
   return issues;
 }
 
+export type SourceStatus = 'healthy' | 'degraded' | 'dead' | 'flapping' | 'unknown';
+
+/**
+ * Turn one source's history into the badge the UI shows — and, because only
+ * `dead` fires the red "broken" banner, into the decision of whether to alarm.
+ *
+ * This lived inline in `useSourceHealth` and got it wrong. It gated the
+ * `flapping` branch on "the newest run did not fail", which is unsatisfiable
+ * for the sources flapping is *for*: one that fails intermittently eventually
+ * has a failure as its newest run, and every time it did, it was reported dead.
+ * Measured 2026-08-31 — OpenInsider returned 338–415 rows in 10 of its last 12
+ * runs and still showed as broken, under a banner claiming "zero rows for
+ * multiple consecutive scrapes" that its own history contradicts.
+ *
+ * The rule: `computeSourceHealth` has already weighed the whole window, so its
+ * verdict wins. A single hard failure is `degraded`, never `dead` — two in a
+ * row make it `dead`, and that is `computeSourceHealth`'s call to make.
+ *
+ * @param issue  what `computeSourceHealth` concluded for this source, if anything
+ * @param counts this source's row counts, newest first, −1 for a hard failure
+ */
+export function sourceStatus(issue: SourceHealthIssue | undefined, counts: readonly number[]): SourceStatus {
+  if (counts.length === 0) return 'unknown';
+  const norm = counts.map((c) => (c < 0 ? 0 : c));
+  const sorted = [...norm].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  if (issue?.kind === 'flapping') return 'flapping';
+  if (issue) return 'dead';
+  if (counts[0] < 0) return 'degraded';
+  if (median > 0 && norm[0] === 0) return 'degraded';
+  return 'healthy';
+}
+
 export interface ScrapeResult {
   status: 'success' | 'partial' | 'failed';
   signalsFound: number;
@@ -1153,7 +1185,6 @@ export const SCRAPER_SOURCES: readonly SourceMeta[] = [
   { key: 'finviz', label: 'Finviz Insider', kind: 'insider', url: 'https://finviz.com/insidertrading.ashx' },
   { key: 'secform4', label: 'SECForm4', kind: 'insider', url: 'https://www.secform4.com/all-buys' },
   { key: 'marketbeat', label: 'MarketBeat', kind: 'insider', url: 'https://www.marketbeat.com/insider-trades/' },
-  { key: 'gurufocus', label: 'GuruFocus', kind: 'insider', url: 'https://www.gurufocus.com/insider/summary' },
   { key: 'insidermonitor', label: 'Insider Monitor', kind: 'insider', url: 'http://www.insider-monitor.com/insider_stock_purchases.html' },
   { key: 'quiverquant', label: 'Quiver Insiders', kind: 'insider', url: 'https://www.quiverquant.com/insiders/' },
   { key: 'ceowatcher', label: 'CEOWatcher (IG)', kind: 'insider', url: 'https://www.instagram.com/ceowatcher/' },
@@ -1220,7 +1251,6 @@ export const LOGIN_PLATFORMS: readonly LoginPlatform[] = [
   { key: 'optionstrat', label: 'OptionStrat', loginUrl: 'https://optionstrat.com/login', category: 'options', gating: 'required', sourceKey: 'optionstrat', hintKey: 'plat.hintOptionsAccount' },
   { key: 'insiderfinance', label: 'InsiderFinance', loginUrl: 'https://www.insiderfinance.io/login', category: 'options', gating: 'required', sourceKey: 'insiderfinance', hintKey: 'plat.hintOptionsAccount' },
   { key: 'barchart', label: 'Barchart', loginUrl: 'https://www.barchart.com/login', category: 'options', gating: 'optional', sourceKey: 'barchart', hintKey: 'plat.hintBarchart' },
-  { key: 'gurufocus', label: 'GuruFocus', loginUrl: 'https://www.gurufocus.com/login/', category: 'insider', gating: 'optional', sourceKey: 'gurufocus', hintKey: 'plat.hintGuruFocus' },
   { key: 'finviz', label: 'Finviz Elite', loginUrl: 'https://finviz.com/login.ashx', category: 'insider', gating: 'optional', sourceKey: 'finviz', hintKey: 'plat.hintFinviz' },
   { key: 'marketbeat', label: 'MarketBeat', loginUrl: 'https://www.marketbeat.com/login/', category: 'insider', gating: 'optional', sourceKey: 'marketbeat' },
   { key: 'twitter', label: 'Twitter/X', loginUrl: 'https://x.com/login', category: 'news', gating: 'required', hintKey: 'plat.hintTwitter' },
@@ -1338,7 +1368,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
     finviz: true,
     secform4: true,
     marketbeat: true,
-    gurufocus: true,
     insidermonitor: true,
     quiverquant: true,
     ceowatcher: true,

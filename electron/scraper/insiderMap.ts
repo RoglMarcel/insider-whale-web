@@ -26,7 +26,7 @@ export function extractTickerFromText(text: string): string {
 /**
  * Map a generic insider-trade HTML table into normalized RawInsiderTrade[].
  * Columns are matched by fuzzy header alias, so this handles the slightly
- * different layouts of openinsider / finviz / secform4 / marketbeat / gurufocus.
+ * different layouts of openinsider / finviz / secform4 / marketbeat.
  */
 export function mapInsiderTable(
   table: ExtractedTable,

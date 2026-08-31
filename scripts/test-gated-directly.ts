@@ -1,7 +1,6 @@
 import { launchBrowser, createContext } from '../electron/scraper/browser';
 import { scrapeFinviz } from '../electron/scraper/finviz';
 import { scrapeMarketBeat } from '../electron/scraper/marketbeat';
-import { scrapeGuruFocus } from '../electron/scraper/gurufocus';
 import { scrapeBarchart } from '../electron/scraper/barchart';
 import { scrapeOptionStrat } from '../electron/scraper/optionstrat';
 import { scrapeInsiderFinance } from '../electron/scraper/insiderfinance';
@@ -38,7 +37,6 @@ app.whenReady().then(async () => {
 
   await testScraper('finviz', scrapeFinviz);
   await testScraper('marketbeat', scrapeMarketBeat);
-  await testScraper('gurufocus', scrapeGuruFocus);
   await testScraper('barchart', scrapeBarchart);
   await testScraper('optionstrat', scrapeOptionStrat);
   await testScraper('insiderfinance', scrapeInsiderFinance);

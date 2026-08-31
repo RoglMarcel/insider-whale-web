@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useStore } from '@/store/useStore';
-import { computeSourceHealth, dropRate, SCRAPER_SOURCES, SIDE_PIPELINE_SOURCES, type SourceHealthIssue, type DataQualityStat } from '@/types';
+import { computeSourceHealth, sourceStatus, dropRate, SCRAPER_SOURCES, SIDE_PIPELINE_SOURCES, type SourceHealthIssue, type DataQualityStat } from '@/types';
 
 export interface SourceHealthEntry {
   key: string;
@@ -81,14 +81,9 @@ export function useSourceHealth(): {
       const median = sorted[Math.floor(sorted.length / 2)];
       const lastRows = counts[0] < 0 ? null : counts[0];
       const issue = issueBySource.get(src.key);
-      let status: SourceHealthEntry['status'];
-      // Flapping is checked first: an intermittently-failing source has an issue
-      // but is NOT dead, and reporting it as dead would fire the red "broken"
-      // banner on a source that is still producing rows most runs.
-      if (issue?.kind === 'flapping' && counts[0] >= 0) status = 'flapping';
-      else if (issue || counts[0] < 0) status = 'dead';
-      else if (median > 0 && norm[0] === 0) status = 'degraded';
-      else status = 'healthy';
+      // Pure and tested in `tests/shared-pure.test.ts` — only `dead` fires the
+      // red banner, so this mapping is an alarm decision, not a cosmetic one.
+      const status = sourceStatus(issue, counts);
       return {
         key: src.key,
         label,
