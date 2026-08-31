@@ -137,11 +137,57 @@ chart.
    inside both ends. Drawdown, volatility and Sharpe stay on the curve itself:
    they describe the path the book took once established, and an execution cost
    is not a session's return.
-7. Presentation: unrounded Y-axis domain producing meaningless ticks, the last
-   X label clipped, the Y axis sliced off at 360px, the closed-trades table
+7. **Three trades on one session drew three dots on one pixel.** The chart
+   pushed one marker per TRADE, keyed by `kind-date` — so 2026-08-31, which
+   bought LIEN and REFI and sold GLSI, collided in React and rendered as a
+   single dot that said nothing about any of them. Markers are now grouped by
+   session and drawn as the standard idiom (buy below the line pointing up, sell
+   above pointing down), and the tooltip names every ticker traded that day.
+8. **A "nice" axis domain was still labelled on an ugly step.** Handing Recharts
+   −4% … +6% and letting it choose left the axis reading −4.0 / −1.5 / +1.0 /
+   +3.5 / +6.0 — a 2.5-point step nobody reads in their head, which also stepped
+   straight over zero. The ticks are now generated on the same 1/2/5 step as the
+   domain, so zero is always a gridline. Zero also lost its `+` sign: "+0.0%"
+   reads as a rounded-down gain.
+9. Presentation: unrounded Y-axis domain producing meaningless ticks, the last
+   X label clipped (again at 393px, where a 22px right gutter cut "Aug 31, 2026"
+   to "Aug 31, 202"), the Y axis sliced off at 360px, the closed-trades table
    overflowing its card by 28px, and `Einstellungen` no longer fitting the tab
    bar with a sixth tab (shortened to `Setup`/`Settings` — the label, not the
    touch target).
+
+---
+
+## 2b. The 2026-09-01 reset
+
+Everything in section 3 below was measured on a **backfill**: the rules replayed
+over signal history that had already happened. That was the right way to build
+the thing — you cannot debug a simulator against data you do not have — but it
+cannot be the evidence for it. The entry threshold, the barriers and the hold
+cap were all chosen with that history on screen, so quoting its return is
+quoting the fit, not a result.
+
+So the book was reset. `PORTFOLIO_INCEPTION = '2026-09-01'`: the curve, the
+positions and the events were cleared, and from that day the book only ever acts
+on signals that arrived after the rules were fixed. Signals older than the
+inception date are **dropped, not deferred** — resolving a seven-week-old
+sighting forward would buy it on opening day at a price that had already moved
+without it, which is the one thing `earliestEntryDate` exists to prevent, and it
+would land on day one where it reads as alpha. Verified against the real DB with
+an inception of 2026-08-24: 21 of 29 candidates dropped, curve starting exactly
+on the inception date, zero positions or events before it, and the dropped
+tickers correctly absent from `untradable` — a dropped signal is not a missing
+price.
+
+`inceptionDate` lives in the stored config, not in a constant, so moving it
+invalidates the curve through the same `sameConfig` check every other rule uses.
+Nothing else was touched: signals, labeled outcomes, insider trades and the
+price cache are all still there, and the numbers below stay on the record as
+what the rehearsal looked like.
+
+The figures in section 3 are therefore **historical**. The live book starts from
+zero trades on 2026-09-01, and until it has a few dozen closed trades it will
+say very little — which is the honest position, not a regression.
 
 ---
 

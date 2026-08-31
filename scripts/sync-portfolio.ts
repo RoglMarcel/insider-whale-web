@@ -34,6 +34,11 @@ async function main(): Promise<void> {
 
   if (!report.ok) {
     console.log(`[portfolio] not run: ${report.reason}`);
+    // The JSON is republished ANYWAY. A reset whose inception is still in the
+    // future reports "not run" by design, and returning here would leave the
+    // previous book's curve on the hosted site until the first session settles.
+    const empty = writePortfolioJson(path.resolve(process.cwd(), 'public', 'data'));
+    console.log(`[portfolio] wrote public/data/portfolio.json (${empty} point(s))`);
     closeDatabase();
     return;
   }

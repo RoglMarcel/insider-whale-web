@@ -20,6 +20,7 @@ import { translate, type Lang } from '../src/lib/i18n';
 import {
   DEFAULT_PORTFOLIO_CONFIG,
   PORTFOLIO_ENTRY_SCORE,
+  PORTFOLIO_INCEPTION,
   PORTFOLIO_SCORE_SPAN,
   CONVICTION_THRESHOLDS,
   PORTFOLIO_TRADING_DAYS_PER_CALENDAR_DAY,
@@ -39,6 +40,14 @@ import {
  */
 
 const cfg = (over: Partial<PortfolioConfig> = {}): PortfolioConfig => ({ ...DEFAULT_PORTFOLIO_CONFIG, ...over });
+
+/**
+ * The shipped rules with the book already OPEN. Every fixture below trades a
+ * synthetic January 2026 calendar, and the real inception (2026-09-01) would
+ * correctly empty all of them; `null` is the engine's "as far back as the data
+ * reaches". Inception itself is tested against real dates further down.
+ */
+const simCfg = (over: Partial<PortfolioConfig> = {}): PortfolioConfig => cfg({ inceptionDate: null, ...over });
 
 /** N consecutive WEEKDAYS from `start` — a stand-in trading calendar. */
 function calendar(start: string, n: number): string[] {
@@ -67,7 +76,7 @@ function path(days: readonly string[], values: readonly number[]): Record<string
 function input(over: Partial<PortfolioSimInput> = {}): PortfolioSimInput {
   const days = calendar('2026-01-05', 40);
   return {
-    config: cfg(),
+    config: simCfg(),
     tradingDays: days,
     spy: flat(days, 500),
     prices: {},
@@ -162,7 +171,7 @@ describe('slippage', () => {
     const days = calendar('2026-01-05', 6);
     const res = simulatePortfolio(
       input({
-        config: cfg({ cashPolicy: 'idle' }),
+        config: simCfg({ cashPolicy: 'idle' }),
         tradingDays: days,
         spy: flat(days, 500),
         prices: { AAA: flat(days, 100) },
@@ -494,7 +503,7 @@ describe('book invariants', () => {
     const prices = Object.fromEntries(tickers.map((t) => [t, flat(days, 100)]));
     const res = simulatePortfolio(
       input({
-        config: cfg({ cashPolicy: 'idle' }),
+        config: simCfg({ cashPolicy: 'idle' }),
         tradingDays: days,
         spy: flat(days, 500),
         prices,
@@ -512,7 +521,7 @@ describe('book invariants', () => {
     const res = simulatePortfolio(
       input({
         // Tiny, fixed weights so the CAP binds before the CASH does.
-        config: cfg({ cashPolicy: 'idle', baseWeight: 0.03, maxWeight: 0.03, minWeight: 0.03 }),
+        config: simCfg({ cashPolicy: 'idle', baseWeight: 0.03, maxWeight: 0.03, minWeight: 0.03 }),
         tradingDays: days,
         spy: flat(days, 500),
         prices,
@@ -535,7 +544,7 @@ describe('book invariants', () => {
     // test is about the cooldown, not about which barrier caused the sale.
     const res = simulatePortfolio(
       input({
-        config: cfg({ takeProfit: 0.2 }),
+        config: simCfg({ takeProfit: 0.2 }),
         tradingDays: days,
         spy: flat(days, 500),
         prices: { AAA: path(days, [100, 100, 130, 130, 130, 130, 130, 130, 130, 130, 130]) },
@@ -572,7 +581,7 @@ describe('book invariants', () => {
   it("leaves idle cash flat under the 'idle' policy", () => {
     const days = calendar('2026-01-05', 15);
     const res = simulatePortfolio(
-      input({ config: cfg({ cashPolicy: 'idle' }), tradingDays: days, spy: path(days, days.map((_, i) => 500 + i * 3)) }),
+      input({ config: simCfg({ cashPolicy: 'idle' }), tradingDays: days, spy: path(days, days.map((_, i) => 500 + i * 3)) }),
     );
     for (const p of res.equity) expect(p.equity).toBeCloseTo(10_000, 6);
   });
@@ -701,7 +710,7 @@ describe('trade alpha', () => {
     const days = calendar('2026-01-05', 12);
     const res = simulatePortfolio(
       input({
-        config: cfg({ takeProfit: 0.2 }), // explicit: the shipped book has none
+        config: simCfg({ takeProfit: 0.2 }), // explicit: the shipped book has none
         tradingDays: days,
         spy: path(days, [500, 505, 510, 515, 520, 525, 530, 535, 540, 545, 550, 555]),
         prices: { AAA: path(days, [100, 100, 100, 100, 125, 125, 125, 125, 125, 125, 125, 125]) },
@@ -715,6 +724,65 @@ describe('trade alpha', () => {
     // Position ≈ +24.9% after two-sided slippage, SPY +4% over the same 4 days.
     expect(closed.tradeAlpha).toBeCloseTo(closed.returnPct - 0.04, 10);
     expect(closed.holdDays).toBe(diffDaysYmd(days[0], days[4]));
+  });
+});
+
+describe('inception', () => {
+  // The book opens mid-calendar so both sides of the boundary are real days.
+  const days = calendar('2026-01-05', 20);
+  const open = days[8];
+  const base = {
+    tradingDays: days,
+    spy: flat(days, 500),
+    prices: { OLD: flat(days, 100), NEW: flat(days, 100) },
+  };
+
+  it('does not exist before opening day', () => {
+    const res = simulatePortfolio(input({ ...base, config: cfg({ inceptionDate: open }) }));
+    expect(res.equity.length).toBeGreaterThan(0);
+    expect(res.equity[0].date).toBe(open);
+    expect(res.equity.every((p) => p.date >= open)).toBe(true);
+  });
+
+  it('DROPS a signal from before it rather than buying it late', () => {
+    // The whole point of the reset. Resolving a stale signal forward would buy
+    // a sighting the market has already digested, at a price that moved without
+    // the book — and it would do it on opening day, where it looks like alpha.
+    const res = simulatePortfolio(
+      input({
+        ...base,
+        config: cfg({ inceptionDate: open }),
+        candidates: [
+          cand({ ticker: 'OLD', earliestDate: days[1], score: 90 }),
+          cand({ ticker: 'NEW', earliestDate: days[10], score: 90 }),
+        ],
+      }),
+    );
+    const bought = res.positions.map((p) => p.ticker);
+    expect(bought).toContain('NEW');
+    expect(bought).not.toContain('OLD');
+    // Dropped is not the same as UNTRADABLE: OLD has a perfectly good price
+    // series and must not turn up in the data-quality warning.
+    expect(res.untradable).not.toContain('OLD');
+    expect(res.events.some((e) => e.ticker === 'OLD')).toBe(false);
+  });
+
+  it('reaches as far back as the data does when it is null', () => {
+    const res = simulatePortfolio(
+      input({
+        ...base,
+        config: cfg({ inceptionDate: null }),
+        candidates: [cand({ ticker: 'OLD', earliestDate: days[1], score: 90 })],
+      }),
+    );
+    expect(res.equity[0].date).toBe(days[0]);
+    expect(res.positions.map((p) => p.ticker)).toContain('OLD');
+  });
+
+  it('ships with a real opening day, so the shipped book is live-only', () => {
+    // A default of null would silently restore the backfill on the next rebuild.
+    expect(DEFAULT_PORTFOLIO_CONFIG.inceptionDate).toBe(PORTFOLIO_INCEPTION);
+    expect(PORTFOLIO_INCEPTION).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 });
 

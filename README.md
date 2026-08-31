@@ -890,6 +890,21 @@ It is a **measuring instrument, not a product feature**. A flattering number
 here is worth nothing; an honest negative one is worth a lot. Everything below
 exists so a sceptic can check the arithmetic rather than trust the chart.
 
+**The book opens on 2026-09-01** (`PORTFOLIO_INCEPTION`). Everything before that
+date was a *backfill* — the rules replayed over signal history that had already
+happened — and a backfill can only ever be a rehearsal: the entry threshold, the
+barriers and the hold cap were all chosen while that history was on screen, so
+it cannot also be the evidence for them. From inception the book only ever acts
+on signals that arrived after the rules were fixed. A signal older than the
+inception date is **dropped, not deferred**: buying a seven-week-old sighting on
+opening day would price in a move the book never took part in, and it would land
+on day one where it reads as alpha.
+
+`inceptionDate` is part of the stored config rather than a constant, so moving
+it invalidates the curve through the same check every other rule uses — a book
+that opens on a different day is a different book. Set it to `null` to go back
+to "as far back as the data reaches".
+
 Full write-up, current figures and the parameter sweep: [`docs/portfolio/REPORT.md`](docs/portfolio/REPORT.md).
 Where the **exit rules** come from — the insider-return literature, the settings
 table and the holding-period curve: [`docs/portfolio/EXIT-STRATEGY.md`](docs/portfolio/EXIT-STRATEGY.md).
@@ -988,7 +1003,9 @@ line in the chart.
   filing date. A sighting at or after 20:00 UTC prices at the *next* session.
 - **Backfill is deliberately pessimistic.** Signals reconstructed from
   `signal_outcomes` carry a date but no time, so they are entered one session
-  later than the date they carry. That can only cost return, never add it.
+  later than the date they carry. That can only cost return, never add it. Since
+  the 2026-09-01 inception the live book contains no backfilled days at all, so
+  the rule now only matters if `inceptionDate` is moved back.
 - **Fractional shares** are allowed, so a $1,500 share price cannot distort the
   weighting.
 - **No taxes, no withholding tax.** Adjusted prices contain gross dividends.

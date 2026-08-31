@@ -1510,6 +1510,19 @@ export const PORTFOLIO_TRADING_DAYS_PER_CALENDAR_DAY = 252 / 365;
 /** 5 bps = 0.05% per side, charged on every fill including the SPY cash leg. */
 export const PORTFOLIO_SLIPPAGE_BPS = 5;
 export const PORTFOLIO_STARTING_CASH = 10_000;
+
+/**
+ * The day the book opens. Nothing before it exists: no curve, no positions, and
+ * no signal older than it is bought late.
+ *
+ * Set to 2026-09-01 for the reset. Everything before it was a BACKFILL — the
+ * strategy replayed over signal history that had already happened, which can
+ * only ever be a rehearsal: the rules were chosen while that history was
+ * visible, so it cannot also be the evidence for them. From here the book only
+ * ever acts on signals it did not know about in advance, which is the only
+ * version of this number worth quoting.
+ */
+export const PORTFOLIO_INCEPTION = '2026-09-01';
 /**
  * Search window for a tradable close. A date without a price is not a trading
  * day; beyond this many calendar days the series is treated as gone.
@@ -1569,6 +1582,13 @@ export interface PortfolioSigmaBarriers {
 
 export interface PortfolioConfig {
   startingCash: number;
+  /**
+   * First day the book may trade, `null` for "as far back as the data reaches".
+   * Part of the CONFIG rather than a constant so that changing it invalidates
+   * the stored curve through the same `sameConfig` check every other rule uses
+   * — a curve that starts on a different day is a different book.
+   */
+  inceptionDate: string | null;
   entryScore: number;
   scoreSpan: number;
   baseWeight: number;
@@ -1597,6 +1617,7 @@ export interface PortfolioConfig {
 
 export const DEFAULT_PORTFOLIO_CONFIG: PortfolioConfig = {
   startingCash: PORTFOLIO_STARTING_CASH,
+  inceptionDate: PORTFOLIO_INCEPTION,
   entryScore: PORTFOLIO_ENTRY_SCORE,
   scoreSpan: PORTFOLIO_SCORE_SPAN,
   baseWeight: PORTFOLIO_BASE_WEIGHT,

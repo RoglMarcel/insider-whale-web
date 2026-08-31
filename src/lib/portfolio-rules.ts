@@ -392,7 +392,12 @@ export function firstTradableDay(
 export function simulatePortfolio(input: PortfolioSimInput): PortfolioSimResult {
   const cfg = input.config;
   const slip = cfg.slippageBps;
-  const days = [...input.tradingDays].sort();
+  // The book does not exist before it opens. Enforced HERE as well as in the
+  // caller's price window: the engine is what the tests and the sweep run
+  // against, and a rule this load-bearing should not depend on a caller
+  // remembering to pre-filter its input.
+  const inception = cfg.inceptionDate;
+  const days = [...input.tradingDays].sort().filter((d) => !inception || d >= inception);
   const equity: PortfolioEquityPoint[] = [];
   const events: PortfolioEvent[] = [];
   const untradable = new Set<string>();
@@ -408,6 +413,10 @@ export function simulatePortfolio(input: PortfolioSimInput): PortfolioSimResult 
     (a, b) => a.earliestDate.localeCompare(b.earliestDate) || b.score - a.score || a.ticker.localeCompare(b.ticker),
   )) {
     if (c.score < cfg.entryScore) continue;
+    // A signal from before inception is DROPPED, not deferred. Resolving it
+    // forward would buy a seven-week-old sighting on opening day at a price
+    // that already moved — the one thing `earliestEntryDate` exists to prevent.
+    if (inception && c.earliestDate < inception) continue;
     const day = firstTradableDay(c.ticker, c.earliestDate, days, input.prices);
     if (!day) {
       // PENDING, not missing. A signal from the most recent session has not had

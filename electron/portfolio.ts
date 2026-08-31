@@ -29,7 +29,6 @@ import {
   getPortfolioPositions,
   getPortfolioRunMeta,
   getPortfolioSignalCandidates,
-  getPortfolioUniverse,
   getPriceAsOf,
   getPriceBook,
   getPriceCoverage,
@@ -65,6 +64,9 @@ import { PRICE_REQUEST_GAP_MS, fetchAdjCloseSeries, screenSeries, sleep } from '
  */
 
 const BENCHMARK = 'SPY';
+
+/** UTC, to match every other date in this module — all of them are YYYY-MM-DD. */
+const todayYmd = (): string => new Date().toISOString().slice(0, 10);
 
 /**
  * Bump when a fix changes how the curve is BUILT, not what it is built from.
@@ -217,12 +219,59 @@ export async function syncPortfolio(): Promise<PortfolioSyncReport> {
 
 async function runSync(): Promise<PortfolioSyncReport> {
   const config = getPortfolioConfig();
-  const start = getPortfolioHistoryStart(config.entryScore);
-  if (!start) {
+  const firstSignal = getPortfolioHistoryStart(config.entryScore);
+  if (!firstSignal) {
     return { ok: false, reason: 'no signal has ever reached the entry threshold', daysWritten: 0, restatedDays: 0, rebuilt: false, pricesFetched: 0, suspectPoints: 0 };
   }
+  // Never fetch or simulate before the book opens. The engine enforces this
+  // too, but doing it here is what keeps the price sync from pulling months of
+  // closes the curve will immediately throw away.
+  const start = config.inceptionDate && config.inceptionDate > firstSignal ? config.inceptionDate : firstSignal;
 
-  const universe = getPortfolioUniverse(config.entryScore);
+  // Opening day has not arrived. There is no book yet, so the stored one is
+  // emptied rather than left alone: a reset whose inception is still in the
+  // future would otherwise keep serving the PREVIOUS book's curve — the exact
+  // "chart no strategy ever followed" this module already guards against, just
+  // arriving through a different door. Writing meta keeps the stored parameters
+  // matching the active config, which `verify:portfolio` asserts.
+  if (config.inceptionDate && config.inceptionDate > todayYmd()) {
+    clearPortfolio();
+    setPortfolioRunMeta({
+      config,
+      curveVersion: CURVE_BUILDER_VERSION,
+      builtAt: new Date().toISOString(),
+      backfillStart: null,
+      liveStart: getPortfolioLiveStart(),
+      skippedNoCash: 0,
+      skippedCap: 0,
+      missingPrices: 0,
+      suspectPrices: 0,
+      untradableTickers: [],
+      restatedDays: 0,
+    });
+    return {
+      ok: false,
+      reason: `the book opens on ${config.inceptionDate} — nothing to simulate yet`,
+      daysWritten: 0,
+      restatedDays: 0,
+      rebuilt: false,
+      pricesFetched: 0,
+      suspectPoints: 0,
+    };
+  }
+
+  // Candidates first, so the price sync only covers what the book can actually
+  // buy. `getPortfolioUniverse` answers "every ticker that ever cleared the
+  // threshold", which after the reset is mostly signals from before inception —
+  // dozens of series fetched from Yahoo on every run for tickers the engine is
+  // about to discard. Narrowing an existing list can only ever remove work.
+  const candidates = buildCandidates(config).filter(
+    (c) => !config.inceptionDate || c.earliestDate >= config.inceptionDate,
+  );
+  // Derived FROM the candidates, not intersected with the old worklist: an
+  // intersection can only lose a ticker, and a candidate without prices comes
+  // back as a false "not tradable" in the data-quality line.
+  const universe = [...new Set(candidates.map((c) => c.ticker))].sort();
   const priceSync = await syncPrices([BENCHMARK, ...universe.filter((t) => t !== BENCHMARK)], start);
 
   const spy = getPriceBook([BENCHMARK], start)[BENCHMARK];
@@ -233,7 +282,6 @@ async function runSync(): Promise<PortfolioSyncReport> {
 
   const prices = getPriceBook(universe, start);
   const tradingDays = Object.keys(spy).sort();
-  const candidates = buildCandidates(config);
 
   const sim = simulatePortfolio({ config, tradingDays, spy, prices, candidates });
 
@@ -289,7 +337,7 @@ async function runSync(): Promise<PortfolioSyncReport> {
     curveVersion: CURVE_BUILDER_VERSION,
     builtAt: new Date().toISOString(),
     backfillStart: sim.equity[0]?.date ?? null,
-    liveStart: getPortfolioLiveStart(),
+    liveStart: liveBoundary(sim.equity[0]?.date ?? null),
     skippedNoCash: counts.skippedNoCash,
     skippedCap: counts.skippedCap,
     missingPrices: counts.dataMissing,
@@ -306,6 +354,22 @@ async function runSync(): Promise<PortfolioSyncReport> {
     pricesFetched: priceSync.fetched,
     suspectPoints: priceSync.suspect.length,
   };
+}
+
+/**
+ * The backfill → live boundary, or `null` when there is no backfilled portion.
+ *
+ * After the 2026-09-01 reset the book opens WEEKS after the live `signals`
+ * table started covering it, so every day of the curve is live. Reporting
+ * 2026-08-15 then would draw a "Live from Aug 15" divider on the very first
+ * point of a curve that begins in September — a boundary marked inside a window
+ * that does not contain it. `null` is what the UI reads as "all of this is
+ * live", and the divider is simply not drawn.
+ */
+function liveBoundary(firstDay: string | null): string | null {
+  const live = getPortfolioLiveStart();
+  if (!live || !firstDay) return live;
+  return live <= firstDay ? null : live;
 }
 
 function countEvents(events: readonly PortfolioEvent[]): {
@@ -406,7 +470,11 @@ export function getPortfolioState(): PortfolioState {
       restatedDays: runMeta?.restatedDays ?? 0,
       priceAsOf: getPriceAsOf(),
       readOnly: false,
-      note: equity.length ? null : 'No run yet — press Sync to build the curve from stored signal history.',
+      note: equity.length
+        ? null
+        : config.inceptionDate && config.inceptionDate > todayYmd()
+          ? `The book opens on ${config.inceptionDate}. Nothing is simulated before then.`
+          : 'No run yet — press Sync to build the curve from stored signal history.',
     },
     equity,
     open,

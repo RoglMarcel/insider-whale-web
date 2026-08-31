@@ -60,8 +60,12 @@ const money = (v: number): string =>
   '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 /** Axis labels on a phone: no cents. The tooltip still carries the exact figure. */
 const moneyShort = (v: number): string => '$' + Math.round(v).toLocaleString('en-US');
-const pct = (v: number | null | undefined, digits = 2): string =>
-  v == null ? '—' : `${v >= 0 ? '+' : ''}${(v * 100).toFixed(digits)}%`;
+/** Zero carries no sign: a "+0.0%" axis tick reads as a rounded-down gain. */
+const pct = (v: number | null | undefined, digits = 2): string => {
+  if (v == null) return '—';
+  const shown = (v * 100).toFixed(digits);
+  return `${Number(shown) > 0 ? '+' : ''}${shown}%`;
+};
 const sign = (v: number | null | undefined): string | undefined =>
   v == null ? undefined : v >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
 
@@ -201,17 +205,29 @@ export function PortfolioView() {
     );
   }, [windowed, unit, equity, config.startingCash]);
 
+  // One marker per SESSION, carrying that day's tickers. Three trades on
+  // 2026-08-31 used to push three separate dots onto the same pixel, and the
+  // `kind-date` key collided in React as soon as two of them were the same kind.
   const markers: TradeMarker[] = useMemo(() => {
     if (!showMarkers || !chartData.length) return [];
     const byDate = new Map(chartData.map((p) => [p.date, p.portfolio]));
-    const out: TradeMarker[] = [];
+    const grouped = new Map<string, TradeMarker>();
     for (const e of state.events) {
       if (e.kind !== 'buy' && e.kind !== 'sell') continue;
       const v = byDate.get(e.date);
-      if (v == null) continue;
-      out.push({ date: e.date, value: v, kind: e.kind });
+      if (v == null || !e.ticker) continue;
+      let m = grouped.get(e.date);
+      if (!m) {
+        m = { date: e.date, value: v, buys: [], sells: [] };
+        grouped.set(e.date, m);
+      }
+      (e.kind === 'buy' ? m.buys : m.sells).push(e.ticker);
     }
-    return out;
+    for (const m of grouped.values()) {
+      m.buys.sort();
+      m.sells.sort();
+    }
+    return [...grouped.values()].sort((a, b) => a.date.localeCompare(b.date));
   }, [state.events, chartData, showMarkers]);
 
   // The divider is drawn on a CATEGORY axis, so it has to name a date that is
@@ -353,7 +369,14 @@ export function PortfolioView() {
           ) : chartData.length < 2 ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
               <div className="text-sm font-semibold">{t('pf.headline.noData')}</div>
-              <div className="max-w-sm text-xs text-secondary">{t('pf.headline.noDataHint')}</div>
+              <div className="max-w-sm text-xs text-secondary">
+                {/* Before opening day "run a sync to compute it" is wrong advice:
+                    there is nothing to compute yet, and the hosted build has no
+                    button to press either. */}
+                {!equity.length && config.inceptionDate
+                  ? t('pf.headline.opensOn', { date: formatDate(config.inceptionDate) })
+                  : t('pf.headline.noDataHint')}
+              </div>
             </div>
           ) : (
             <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-secondary">…</div>}>
@@ -371,6 +394,9 @@ export function PortfolioView() {
                   idle: t('pf.chart.idle'),
                   difference: t('pf.chart.difference'),
                   liveFrom: meta.liveStart ? t('pf.chart.liveFrom', { date: formatDate(meta.liveStart) }) : '',
+                  buy: t('pf.chart.buy'),
+                  sell: t('pf.chart.sell'),
+                  more: (n: number) => t('pf.chart.moreTrades', { n }),
                 }}
                 formatValue={(v) => (unit === '$' ? money(v) : pct(v, 1))}
                 formatTick={tickFormatter}
@@ -380,6 +406,11 @@ export function PortfolioView() {
           )}
         </div>
 
+        {/* Series toggles and the how-to-read caption describe a chart. With no
+            curve drawn they are two switches that change nothing and a
+            paragraph about lines that are not there. */}
+        {chartData.length >= 2 && (
+        <>
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
           <label className="flex cursor-pointer items-center gap-1.5 text-xs text-secondary">
             <input
@@ -405,6 +436,8 @@ export function PortfolioView() {
           </label>
         </div>
         <p className="mt-2 text-[11px] leading-snug text-secondary">{t('pf.chart.hint')}</p>
+        </>
+        )}
       </GlassCard>
 
       <PortfolioStatsPanel stats={stats} />

@@ -145,10 +145,13 @@ export function RulesCard({
           </ul>
 
           <p className="mt-4 text-[11px] text-secondary">
+            {/* No live boundary means there is no BACKFILLED portion at all —
+                the book opened after the live signal table already covered it,
+                so every trade in it was decided without knowing the outcome. */}
             {meta.backfillStart && meta.liveStart
               ? t('pf.meta.backfill', { from: formatDate(meta.backfillStart), live: formatDate(meta.liveStart) })
               : meta.backfillStart
-                ? t('pf.meta.backfillOnly', { from: formatDate(meta.backfillStart) })
+                ? t('pf.meta.liveOnly', { from: formatDate(meta.backfillStart) })
                 : ''}
           </p>
         </div>
