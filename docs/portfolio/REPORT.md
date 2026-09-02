@@ -7,6 +7,14 @@
 > book's 20-position capacity rather than by hand; see the README section
 > "Why 70". The exit rules changed on the same day this was written; see the
 > correction on design decision 4.
+>
+> **v1.5.2** then found that the "20-position capacity" was never real: at the
+> 5% base weight the book could only fund ~15 positions, so `maxPositions` was
+> dead code and roughly a third of qualifying signals were rejected as
+> `skipped_no_cash`. Sizing is now 3% / 2% / 6% over ≤30 positions, and the
+> weight floor is enforced on the funded size rather than the target. Entries,
+> exits and the hold cap are unchanged. See the README section "Why the sizing,
+> not the cap".
 
 A simulated, rule-based $10,000 book that "invests" in the terminal's strongest
 signals and is plotted against the S&P 500. The rules, the assumptions and the

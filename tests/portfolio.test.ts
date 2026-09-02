@@ -25,6 +25,9 @@ import {
   CONVICTION_THRESHOLDS,
   PORTFOLIO_TRADING_DAYS_PER_CALENDAR_DAY,
   PORTFOLIO_V1_EXIT_DEFAULTS,
+  PORTFOLIO_V3_DEFAULTS,
+  PORTFOLIO_SUPERSEDED_DEFAULTS,
+  PORTFOLIO_CONFIG_VERSION,
   type PortfolioCandidate,
   type PortfolioConfig,
 } from '../src/types';
@@ -96,22 +99,31 @@ const cand = (over: Partial<PortfolioCandidate> = {}): PortfolioCandidate => ({
 
 // ──────────────────────────────────────────────────────────────────────────
 
+const BASE_W = DEFAULT_PORTFOLIO_CONFIG.baseWeight;
+const MIN_W = DEFAULT_PORTFOLIO_CONFIG.minWeight;
+const MAX_W = DEFAULT_PORTFOLIO_CONFIG.maxWeight;
+
 describe('position sizing', () => {
   it('starts at the base weight exactly at the entry score', () => {
     const s = positionSize(PORTFOLIO_ENTRY_SCORE, 10_000);
-    expect(s.targetWeight).toBeCloseTo(0.05, 10);
-    expect(s.value).toBeCloseTo(500, 10);
+    expect(s.targetWeight).toBeCloseTo(BASE_W, 10);
+    expect(s.value).toBeCloseTo(10_000 * BASE_W, 10);
   });
 
-  it('scales with the score: 78 → 7.5%', () => {
-    expect(positionSize(78, 10_000).targetWeight).toBeCloseTo(0.075, 10);
-    expect(positionSize(78, 10_000).value).toBeCloseTo(750, 10);
+  it('scales with the score: half a span up is 1.5x the base weight', () => {
+    // Shape, not magnitude — the magnitude is pinned in "shipped position
+    // sizing" below. Hardcoding it here meant six tests broke on every resize
+    // while none of them was actually about the resize.
+    const half = PORTFOLIO_ENTRY_SCORE + PORTFOLIO_SCORE_SPAN / 2;
+    expect(positionSize(half, 10_000).targetWeight).toBeCloseTo(BASE_W * 1.5, 10);
+    expect(positionSize(half, 10_000).value).toBeCloseTo(10_000 * BASE_W * 1.5, 10);
   });
 
   it('caps at the maximum weight', () => {
-    expect(positionSize(86, 10_000).targetWeight).toBeCloseTo(0.1, 10);
-    expect(positionSize(95, 10_000).targetWeight).toBeCloseTo(0.1, 10);
-    expect(positionSize(140, 10_000).targetWeight).toBeCloseTo(0.1, 10);
+    const top = PORTFOLIO_ENTRY_SCORE + PORTFOLIO_SCORE_SPAN;
+    expect(positionSize(top, 10_000).targetWeight).toBeCloseTo(MAX_W, 10);
+    expect(positionSize(top + 9, 10_000).targetWeight).toBeCloseTo(MAX_W, 10);
+    expect(positionSize(140, 10_000).targetWeight).toBeCloseTo(MAX_W, 10);
   });
 
   it('has a ramp the real score range can actually reach', () => {
@@ -123,7 +135,7 @@ describe('position sizing', () => {
     expect(PORTFOLIO_ENTRY_SCORE + PORTFOLIO_SCORE_SPAN).toBeGreaterThan(ALL_TIME_HIGH_SCORE);
     expect(PORTFOLIO_ENTRY_SCORE + PORTFOLIO_SCORE_SPAN).toBeLessThan(ALL_TIME_HIGH_SCORE + 3);
     // ...which puts the best signal ever seen within a hair of the cap.
-    expect(positionSize(ALL_TIME_HIGH_SCORE, 10_000).targetWeight).toBeGreaterThan(0.096);
+    expect(positionSize(ALL_TIME_HIGH_SCORE, 10_000).targetWeight).toBeGreaterThan(MAX_W * 0.96);
   });
 
   it('is zero below the threshold — the score does not qualify at all', () => {
@@ -135,12 +147,80 @@ describe('position sizing', () => {
     // Threshold 60 anchors the span, so a score of 60 is the BASE weight, not
     // the floor — the floor only binds for scores under the configured entry.
     const c = cfg({ entryScore: 60 });
-    expect(positionSize(60, 10_000, c).targetWeight).toBeCloseTo(0.05, 10);
-    expect(positionSize(76, 10_000, c).targetWeight).toBeCloseTo(0.1, 10);
+    expect(positionSize(60, 10_000, c).targetWeight).toBeCloseTo(BASE_W, 10);
+    expect(positionSize(60 + PORTFOLIO_SCORE_SPAN, 10_000, c).targetWeight).toBeCloseTo(MAX_W, 10);
   });
 
   it('sizes off current equity, not the starting cash', () => {
-    expect(positionSize(PORTFOLIO_ENTRY_SCORE, 20_000).value).toBeCloseTo(1000, 10);
+    expect(positionSize(PORTFOLIO_ENTRY_SCORE, 20_000).value).toBeCloseTo(20_000 * BASE_W, 10);
+  });
+});
+
+describe('shipped position sizing', () => {
+  it('is 3% / 2% / 6% over at most 30 positions — set by what the book can FUND', () => {
+    // `maxPositions` and the weights are the same constraint twice, and the
+    // tighter one wins: a fully-invested book funds ~1/mean(weight) positions
+    // before `available()` runs dry, and past that the cap never gets a say.
+    // At the old 5% base the mean target over the 16 tickers that have crossed
+    // 70 was 6.56% -> ~15 fundable positions, against a steady-state demand of
+    // L = λW = 2.17 × 90/7 ≈ 28. The book rejected a third of its own signals
+    // and called it a cash problem. Derivation: comment on PORTFOLIO_BASE_WEIGHT.
+    expect(BASE_W).toBe(0.03);
+    expect(MIN_W).toBe(0.02);
+    expect(MAX_W).toBe(0.06);
+    expect(DEFAULT_PORTFOLIO_CONFIG.maxPositions).toBe(30);
+  });
+
+  it('can fund enough positions to cover the measured signal demand', () => {
+    // The property that actually matters, stated as an inequality rather than
+    // as four numbers: whatever the weights are, the book must be able to hold
+    // the steady-state position count without the funding running out first.
+    const OBSERVED_SCORES = [70.4, 71.1, 71.8, 71.8, 72.8, 74.1, 74.1, 74.1, 74.5, 75.0, 75.1, 75.2, 76.6, 77.9, 80.1, 85.1];
+    const mean =
+      OBSERVED_SCORES.reduce((a, s) => a + positionSize(s, 1, DEFAULT_PORTFOLIO_CONFIG).targetWeight, 0) /
+      OBSERVED_SCORES.length;
+    const fundable = 1 / mean;
+    const LITTLES_LAW_L = (2.17 * DEFAULT_PORTFOLIO_CONFIG.maxHoldDays) / 7;
+    expect(LITTLES_LAW_L).toBeGreaterThan(20); // the demand this book is sized for
+    expect(fundable).toBeLessThanOrEqual(DEFAULT_PORTFOLIO_CONFIG.maxPositions);
+    expect(fundable).toBeGreaterThan(LITTLES_LAW_L * 0.85);
+  });
+
+  it('keeps maxWeight at exactly 2x baseWeight so the ramp still ends at the span', () => {
+    expect(MAX_W).toBeCloseTo(BASE_W * 2, 10);
+    expect(positionSize(PORTFOLIO_ENTRY_SCORE + PORTFOLIO_SCORE_SPAN, 10_000).targetWeight).toBeCloseTo(MAX_W, 10);
+  });
+});
+
+describe('superseded defaults (the migration the rules editor makes necessary)', () => {
+  // `getPortfolioConfig` merges the stored overlay OVER the defaults, and the
+  // rules editor writes the WHOLE merged object back — so a new constant here
+  // never reaches an installation that has opened that editor once. The
+  // migration deletes overlay values that still equal a default this project
+  // has since replaced. Getting the map wrong fails silently and permanently,
+  // which is why it is pinned rather than trusted.
+  it('lists the v3 sizing that v1.5.2 replaced', () => {
+    for (const [key, was] of Object.entries(PORTFOLIO_V3_DEFAULTS)) {
+      expect(PORTFOLIO_SUPERSEDED_DEFAULTS[key]).toContain(was);
+    }
+  });
+
+  it('never lists a CURRENT default as superseded', () => {
+    // The failure mode of the next bump: adding the new value to the map
+    // instead of the old one, which would make the migration delete a choice
+    // the user actually made.
+    for (const [key, superseded] of Object.entries(PORTFOLIO_SUPERSEDED_DEFAULTS)) {
+      const current = (DEFAULT_PORTFOLIO_CONFIG as unknown as Record<string, unknown>)[key];
+      expect(superseded).not.toContain(current);
+    }
+  });
+
+  it('bumps the config version whenever the map grows', () => {
+    // v1 exits (5 keys) + v2 entryScore (1) + v3 sizing (4).
+    expect(Object.keys(PORTFOLIO_SUPERSEDED_DEFAULTS).length).toBe(
+      Object.keys(PORTFOLIO_V1_EXIT_DEFAULTS).length + 1 + Object.keys(PORTFOLIO_V3_DEFAULTS).length,
+    );
+    expect(PORTFOLIO_CONFIG_VERSION).toBe(4);
   });
 });
 
@@ -183,9 +263,11 @@ describe('slippage', () => {
     );
     const p = res.positions[0];
     expect(p.entryPrice).toBeCloseTo(100.05, 10);
-    // 5% of 10,000 buys fewer than 5 shares because the fill is above the close.
-    expect(p.shares).toBeLessThan(5);
-    expect(p.shares).toBeCloseTo(500 / 100.05, 10);
+    // The base-weight ticket buys fewer shares than the close implies, because
+    // the fill is above it.
+    const ticket = 10_000 * BASE_W;
+    expect(p.shares).toBeLessThan(ticket / 100);
+    expect(p.shares).toBeCloseTo(ticket / 100.05, 10);
   });
 });
 
@@ -515,13 +597,17 @@ describe('book invariants', () => {
   });
 
   it('holds at most maxPositions and never two lots of one ticker', () => {
+    const CAP = DEFAULT_PORTFOLIO_CONFIG.maxPositions;
+    const OVER = 6;
     const days = calendar('2026-01-05', 12);
-    const tickers = Array.from({ length: 26 }, (_, i) => `T${String(i).padStart(2, '0')}`);
+    const tickers = Array.from({ length: CAP + OVER }, (_, i) => `T${String(i).padStart(2, '0')}`);
     const prices = Object.fromEntries(tickers.map((t) => [t, flat(days, 100)]));
     const res = simulatePortfolio(
       input({
-        // Tiny, fixed weights so the CAP binds before the CASH does.
-        config: simCfg({ cashPolicy: 'idle', baseWeight: 0.03, maxWeight: 0.03, minWeight: 0.03 }),
+        // Tiny, fixed weights so the CAP binds before the CASH does — which,
+        // with the shipped weights, it does not: see "shipped position sizing".
+        // minWeight sits below them so the funding floor cannot interfere.
+        config: simCfg({ cashPolicy: 'idle', baseWeight: 0.02, maxWeight: 0.02, minWeight: 0.01 }),
         tradingDays: days,
         spy: flat(days, 500),
         prices,
@@ -532,9 +618,83 @@ describe('book invariants', () => {
         ],
       }),
     );
-    for (const p of res.equity) expect(p.openPositions).toBeLessThanOrEqual(DEFAULT_PORTFOLIO_CONFIG.maxPositions);
-    expect(res.events.filter((e) => e.kind === 'skipped_cap').length).toBe(6);
+    for (const p of res.equity) expect(p.openPositions).toBeLessThanOrEqual(CAP);
+    expect(res.events.filter((e) => e.kind === 'skipped_cap').length).toBe(OVER);
     expect(res.positions.filter((p) => p.ticker === 'T00').length).toBe(1);
+  });
+
+  it('never opens a position below minWeight, however full the book is', () => {
+    // REGRESSION (v1.5.2). `spend = min(targetValue, available)` was checked
+    // against `minTicket` alone, so once the book was nearly full the leftover
+    // opened a position at whatever weight it happened to be — below the floor
+    // the rules card promises, silently, and precisely when several signals
+    // land at once.
+    //
+    // 30% tickets against a 25% floor: three fit, the fourth can only be funded
+    // to ~10% of equity. That is far above the $100 ticket and far below the
+    // floor, which is exactly the band the old check waved through.
+    const days = calendar('2026-01-05', 6);
+    const tickers = ['AAA', 'BBB', 'CCC', 'DDD'];
+    const prices = Object.fromEntries(tickers.map((t) => [t, flat(days, 100)]));
+    const config = simCfg({
+      cashPolicy: 'idle',
+      baseWeight: 0.3,
+      maxWeight: 0.3,
+      minWeight: 0.25,
+      minTicket: 100,
+    });
+    const res = simulatePortfolio(
+      input({
+        config,
+        tradingDays: days,
+        spy: flat(days, 500),
+        prices,
+        candidates: tickers.map((t) => cand({ ticker: t, earliestDate: days[0], score: 80 })),
+      }),
+    );
+
+    expect(res.positions.length).toBe(3);
+    const skipped = res.events.filter((e) => e.kind === 'skipped_no_cash');
+    expect(skipped.length).toBe(1);
+    expect(skipped[0].ticker).toBe('DDD');
+    // The rejected amount was well over the minimum ticket — the OLD code would
+    // have bought it.
+    expect(skipped[0].amount).toBeGreaterThan(config.minTicket);
+    expect(skipped[0].amount).toBeLessThan(config.minWeight * 10_000);
+  });
+
+  it('holds every funded position at or above minWeight of equity on its entry day', () => {
+    // The invariant behind the regression above, over the SHIPPED rules and a
+    // stream dense enough to exhaust the funding.
+    const days = calendar('2026-01-05', 40);
+    const tickers = Array.from({ length: 40 }, (_, i) => `T${String(i).padStart(2, '0')}`);
+    const prices = Object.fromEntries(tickers.map((t) => [t, flat(days, 100)]));
+    const res = simulatePortfolio(
+      input({
+        config: simCfg(),
+        tradingDays: days,
+        spy: flat(days, 500),
+        prices,
+        // Two a day, so the book fills and then keeps being asked.
+        candidates: tickers.map((t, i) => cand({ ticker: t, earliestDate: days[Math.floor(i / 2)], score: 80 })),
+      }),
+    );
+    const equityOn = new Map(res.equity.map((e) => [e.date, e.equity]));
+    expect(res.positions.length).toBeGreaterThan(0);
+    // Prove the fixture reached the interesting region rather than passing
+    // vacuously: the funding must actually have run out, and at least one
+    // position must have been PARTIALLY funded (bought for less than its
+    // target) — that is the branch the floor now guards.
+    expect(res.events.some((e) => e.kind === 'skipped_no_cash')).toBe(true);
+    expect(
+      res.positions.some((p) => p.costBasis < p.targetWeight * (equityOn.get(p.entryDate) as number) * 0.99),
+    ).toBe(true);
+    for (const p of res.positions) {
+      const eq = equityOn.get(p.entryDate);
+      expect(eq).toBeDefined();
+      // 0.999 absorbs the slippage the buy itself takes out of equity.
+      expect(p.costBasis).toBeGreaterThanOrEqual(MIN_W * (eq as number) * 0.999);
+    }
   });
 
   it('locks a ticker out for the cooldown after a sale', () => {

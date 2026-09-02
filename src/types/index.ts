@@ -1412,11 +1412,21 @@ export const DEFAULT_SETTINGS: AppSettings = {
  *   ≥ 70        1.34                      17.2                       86%  ✓
  *   ≥ 74        1.04                      13.4                       67%
  *
- * 70 is the highest threshold that fills the 20-position book without
- * over-subscribing it. Over-subscribing is the worse error: signals past the
- * cap are silently rejected (`skipped_cap`), which biases the very measurement
- * the portfolio exists to make. 74 leaves a third of the capacity permanently
- * in SPY, so a third of the "result" was never a test of the signals at all.
+ * 70 is the highest threshold that fills the book without over-subscribing it.
+ * Over-subscribing is the worse error: signals past the capacity are silently
+ * rejected, which biases the very measurement the portfolio exists to make. 74
+ * leaves a third of the capacity permanently in SPY, so a third of the "result"
+ * was never a test of the signals at all.
+ *
+ * CORRECTION (v1.5.2). The "of 20 slots" column above compared λW against
+ * `maxPositions`, and `maxPositions` was never what limited this book — the
+ * SIZING was. At the then-shipped 5% base weight the average target across the
+ * observed score mix is 6.56% of equity, so SPY was exhausted after ~15
+ * positions and the 20-slot cap could not bind. Read against the capacity that
+ * actually existed, ≥ 70 was at 115%, not 86% — over-subscribed on the day it
+ * was chosen. The threshold stays at 70; the sizing was fixed instead (see
+ * PORTFOLIO_BASE_WEIGHT). Nothing in the derivation above depended on the cap
+ * being the limit, only on the limit being ~20, which it now is.
  *
  * Two properties confirm the level rather than choosing it:
  *  - 70 sits at p99.21 of content-bearing signals (74 at p99.45) and inside the
@@ -1426,9 +1436,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
  *    book with them.
  *  - It makes the sizing ramp reachable. `maxWeight` binds at
  *    `entryScore + scoreSpan`; at 74 that was 90, above the all-time high score
- *    of 85.1, so the 10% cap was dead code and every position sized off a
- *    fraction of the intended range. At 70 the ramp ends at 86 — just past the
- *    observed maximum, which is where a ramp should end.
+ *    of 85.1, so the weight cap was dead code and every position sized off
+ *    a fraction of the intended range. At 70 the ramp ends at 86 — just past
+ *    the observed maximum, which is where a ramp should end. `maxWeight` is
+ *    held at exactly 2× `baseWeight` so that this property survives a resize.
  *
  * This is a decision about statistical power, NOT a claim that 70-scored
  * signals beat 74-scored ones. Revisit when the closed-trade count reaches ~20,
@@ -1437,10 +1448,51 @@ export const DEFAULT_SETTINGS: AppSettings = {
 export const PORTFOLIO_ENTRY_SCORE = 70;
 /** Score points above the threshold that double the base weight. */
 export const PORTFOLIO_SCORE_SPAN = 16;
-export const PORTFOLIO_BASE_WEIGHT = 0.05;
-export const PORTFOLIO_MIN_WEIGHT = 0.03;
-export const PORTFOLIO_MAX_WEIGHT = 0.1;
-export const PORTFOLIO_MAX_POSITIONS = 20;
+/**
+ * Position size, as a fraction of CURRENT equity, before the score ramp.
+ *
+ * `maxPositions` and the weights are the same constraint written twice, and the
+ * tighter one wins. A book that is always fully invested (cash parks in SPY)
+ * can fund about `1 / mean(targetWeight)` positions before `available()` runs
+ * dry; past that, entries are rejected as `skipped_no_cash` and the position
+ * cap never gets a say.
+ *
+ * Measured against the 16 distinct tickers that have crossed 70 (scores 70.4 …
+ * 85.1), on 2026-09-01:
+ *
+ *   base / min / max   mean target weight   positions the book can fund
+ *   5% / 3% / 10%      6.56%                15.3      <- shipped through v1.5.1
+ *   3% / 2% /  6%      3.93%                25.4      <- now
+ *
+ * Demand, by the same Little's Law used for the entry threshold: λ over
+ * 2026-08-04 → 09-01 is 2.17 distinct tickers/wk (1.60 over the original
+ * 07-10 → 08-26 window — the rate rose), so at the 90-day hold cap
+ * L = 2.17 × 90/7 = 27.9 positions in steady state. A book that could fund 15
+ * therefore had to reject roughly a third of every signal it was built to
+ * measure, and reject them exactly when several arrive at once — signal
+ * clusters are the correlated, non-random part of the sample, which is the one
+ * kind of loss a measuring instrument cannot absorb.
+ *
+ * 3% funds ~25, and `maxPositions` 30 sits just above L so the cap is a
+ * backstop rather than the operative limit. The book is deliberately flatter
+ * than a conviction book would be: within real signals the score does not rank
+ * returns (5d IC +0.052 t=1.89 · 20d −0.023 t=−0.43), so concentration here
+ * buys variance without expected return — and the v1.4.0 measurement was
+ * already dominated by one name, where a single trade (GLSI, +$133.32) exceeded
+ * the entire lead over SPY (+$102.32). More, smaller, and none rejected is what
+ * this book is for.
+ *
+ * This changes what each trade contributes to the equity curve. It does NOT
+ * change which signals are taken or how long they are held — those are the
+ * rules under test, and they are untouched.
+ */
+export const PORTFOLIO_BASE_WEIGHT = 0.03;
+/** Floor. Enforced on the FUNDED size too, not just the target — see `simulatePortfolio`. */
+export const PORTFOLIO_MIN_WEIGHT = 0.02;
+/** Exactly 2 × base, so the score ramp still tops out at `entryScore + scoreSpan`. */
+export const PORTFOLIO_MAX_WEIGHT = 0.06;
+/** Backstop above the L ≈ 28 steady state, not the operative limit — the weights are. */
+export const PORTFOLIO_MAX_POSITIONS = 30;
 /** Below this the remaining cash is not worth a trade — the signal is skipped. */
 export const PORTFOLIO_MIN_TICKET = 100;
 /** Same ticker is locked out for this long after a sale (kills alarm loops). */
@@ -1647,8 +1699,13 @@ export const DEFAULT_PORTFOLIO_CONFIG: PortfolioConfig = {
  * default the rules editor has written back into the overlay, which is why the
  * migration now reads PORTFOLIO_SUPERSEDED_DEFAULTS rather than the exit rules
  * alone.
+ *
+ * 4: position sizing 5/3/10% → 3/2/6% and `maxPositions` 20 → 30. An overlay
+ * pinned at the old weights keeps a book that can only fund ~15 positions and
+ * goes on rejecting a third of its own signals, which is exactly the bias this
+ * change exists to remove.
  */
-export const PORTFOLIO_CONFIG_VERSION = 3;
+export const PORTFOLIO_CONFIG_VERSION = 4;
 
 /**
  * The v1 (v1.4.0) exit rules, kept verbatim so the migration can tell an
@@ -1668,6 +1725,18 @@ export const PORTFOLIO_V2_DEFAULTS = {
 } as const;
 
 /**
+ * The v3 (v1.5.1) sizing, superseded once it turned out that the weights — not
+ * `maxPositions` — were what capped the book, at ~15 fundable positions against
+ * a steady-state demand of ~28.
+ */
+export const PORTFOLIO_V3_DEFAULTS = {
+  baseWeight: 0.05,
+  minWeight: 0.03,
+  maxWeight: 0.1,
+  maxPositions: 20,
+} as const;
+
+/**
  * Every default this project has shipped and then replaced, by key. A stored
  * value equal to any of them was never chosen — it is a default that got frozen
  * into the overlay by the rules editor, which writes the whole merged object
@@ -1677,6 +1746,7 @@ export const PORTFOLIO_V2_DEFAULTS = {
 export const PORTFOLIO_SUPERSEDED_DEFAULTS: Readonly<Record<string, readonly unknown[]>> = {
   ...Object.fromEntries(Object.entries(PORTFOLIO_V1_EXIT_DEFAULTS).map(([k, v]) => [k, [v]])),
   ...Object.fromEntries(Object.entries(PORTFOLIO_V2_DEFAULTS).map(([k, v]) => [k, [v]])),
+  ...Object.fromEntries(Object.entries(PORTFOLIO_V3_DEFAULTS).map(([k, v]) => [k, [v]])),
 };
 
 /** Where a candidate signal came from — decides how its entry date is derived. */

@@ -196,6 +196,27 @@ function main(): void {
     equity.every((p) => p.openPositions <= config.maxPositions),
     `max ${Math.max(...equity.map((p) => p.openPositions))}`,
   );
+  {
+    // Every FUNDED position clears the weight floor, not just every target.
+    // `positionSize` clamps the target, but the fill is `min(target, available)`
+    // and that clamp used to be checked against `minTicket` alone — so a nearly
+    // full book could open a position at a fraction of the stated floor.
+    const equityOn = new Map(equity.map((e) => [e.date, e.equity]));
+    const underweight = positions.filter((p) => {
+      const eq = equityOn.get(p.entryDate);
+      if (eq == null || !(eq > 0)) return false;
+      return p.costBasis < Math.max(config.minTicket, config.minWeight * eq) * 0.999;
+    });
+    check(
+      `every position is funded to at least minWeight (${(config.minWeight * 100).toFixed(1)}%) of equity`,
+      underweight.length === 0,
+      underweight
+        .slice(0, 5)
+        .map((p) => `${p.ticker} ${money(p.costBasis)} on ${p.entryDate}`)
+        .join(', '),
+    );
+  }
+
   check(
     'every entry score clears the configured threshold',
     positions.every((p) => p.entryScore >= config.entryScore),

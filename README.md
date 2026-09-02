@@ -915,10 +915,10 @@ table and the holding-period curve: [`docs/portfolio/EXIT-STRATEGY.md`](docs/por
 |---|---|
 | Starting capital | $10,000 |
 | Entry | score ≥ **70** on first sighting, at that session's closing price |
-| Position size | `clamp(5% × (1 + (score − 70) / 16), 3%, 10%)` of **current** equity — score 70 → 5.0%, 78 → 7.5%, 86+ → capped at 10% |
+| Position size | `clamp(3% × (1 + (score − 70) / 16), 2%, 6%)` of **current** equity — score 70 → 3.0%, 78 → 4.5%, 86+ → capped at 6%. A position that cannot be funded to the 2% floor is **rejected, not opened underweight** |
 | Exits (first barrier wins) | **no take profit — the upside is never capped**, stop loss **−25%**, trailing **20%** below the highest close once **+25%** up, time stop **90 calendar days** |
 | Priority when several break on one day | stop loss → trailing → take profit → time (the most pessimistic reading of a daily bar) |
-| Limits | max 20 open positions · one position per ticker, no averaging up · 10-day lockout after a sale · $100 minimum ticket |
+| Limits | max 30 open positions · one position per ticker, no averaging up · 10-day lockout after a sale · $100 minimum ticket |
 | Uninvested capital | held in **SPY** (`cashPolicy: 'spy'`) |
 | Costs | $0 commission, **0.05% slippage per side** on every fill including the SPY cash leg |
 | Benchmark | SPY buy & hold, same start day, same $10,000, same entry slippage |
@@ -948,11 +948,71 @@ capacity, via Little's Law `L = λW` over 2026-07-10 → 08-26.
 | **≥ 70** | **1.34** | **17.2** | **86%** ✓ |
 | ≥ 74 | 1.04 | 13.4 | 67% |
 
-70 is the highest threshold that fills the 20-position book without
-over-subscribing it. Over-subscribing is the worse error — signals past the cap
-are silently rejected (`skipped_cap`), biasing the measurement the portfolio
-exists to make — while 74 parked a third of the capacity in SPY permanently, so
-a third of the "result" was never a test of the signals at all.
+70 is the highest threshold that fills the book without over-subscribing it.
+Over-subscribing is the worse error — signals past the capacity are silently
+rejected, biasing the measurement the portfolio exists to make — while 74 parked
+a third of the capacity in SPY permanently, so a third of the "result" was never
+a test of the signals at all.
+
+**Correction (v1.5.2):** the "of 20 slots" column compared demand against
+`maxPositions`, and `maxPositions` was never what limited this book — see
+"Why the sizing, not the cap" below. Read against the capacity that actually
+existed, ≥ 70 was at 115%, not 86%. The threshold stays at 70 and the sizing was
+fixed instead; nothing in the derivation depended on the cap being the limit,
+only on the limit being ~20, which it now is.
+
+### Why the sizing, not the cap (v1.5.2)
+
+`maxPositions` and the position weights are the same constraint written twice,
+and the tighter one wins. Cash parks in SPY, so the book is always fully
+invested and can fund about `1 / mean(target weight)` positions before
+`available()` runs dry. Past that point entries are rejected as
+`skipped_no_cash` and the position cap never gets a say.
+
+Measured against the 16 distinct tickers that have crossed 70 (scores 70.4 …
+85.1), on 2026-09-01:
+
+| base / min / max | mean target weight | positions the book can fund |
+|---|---|---|
+| 5% / 3% / 10% | 6.56% | **15.3** — shipped through v1.5.1 |
+| **3% / 2% / 6%** | **3.93%** | **25.4** — now |
+
+Demand, by the same Little's Law: λ over 2026-08-04 → 09-01 is **2.17** distinct
+tickers/week (1.60 over the original 07-10 → 08-26 window — the rate rose), so
+at the 90-day hold cap `L = 2.17 × 90/7 = 27.9` positions in steady state.
+
+A book that could fund 15 against a demand of 28 had to reject roughly a third
+of every signal it was built to measure — and reject them *exactly when several
+arrive at once*, because that is when the funding is tightest. Signal clusters
+are the correlated part of the sample, which is the one kind of loss a measuring
+instrument cannot absorb. `maxPositions` 20 → 30 on its own changes nothing
+(simulated: identical entries, identical rejections); the weights are the fix,
+and the cap now sits just above `L` as a backstop.
+
+The book is deliberately flatter than a conviction book would be. Within real
+signals the score does **not** rank returns (5d IC +0.052 `t=1.89` · 20d −0.023
+`t=−0.43`), so concentration buys variance without expected return — and the
+v1.4.0 measurement was already dominated by one name, where a single trade
+(GLSI, +$133.32) exceeded the entire lead over SPY (+$102.32). More, smaller,
+and none rejected is what this book is for.
+
+This changes what each trade contributes to the equity curve. It does **not**
+change which signals are taken or how long they are held — those are the rules
+under test, and they are untouched. `maxHoldDays` stays at 90 for the same
+reason: shortening it would yield more closed trades by year end, but the
+holding period is the rule being measured, and more `n` bought by changing the
+treatment is a different experiment, not more power.
+
+**The floor is now enforced on the funded size, not just the target.**
+`positionSize` clamps the *target* to `minWeight`, but the fill is
+`min(target, available)` and that clamp was checked against `minTicket` alone —
+so a nearly full book could open a position at 1% of equity where the stated
+floor was 3%, silently, and precisely during the signal clusters above. A
+position that cannot be funded to the floor is now rejected and recorded;
+`verify:portfolio` checks the invariant against the stored book. Rejecting costs
+an observation, which is a real price for a measuring instrument and is why it is
+paid explicitly: a rejection is a counted event, an underweight fill is a chart
+that does not match its own rules card.
 
 Two properties confirm the level rather than choosing it: 70 sits at p99.21 of
 content-bearing signals (74 at p99.45) inside the *same* 60–79 bucket, which is
@@ -1031,7 +1091,7 @@ and their range button is disabled. There is no extrapolation anywhere.
 npm run portfolio:sync              # incremental: price cache + new days
 npm run portfolio:sync -- --rebuild # wipe the simulation and recompute
 npm run portfolio:sweep             # sensitivity across thresholds/barriers (read-only)
-npm run verify:portfolio            # 19 audit checks against the real DB (read-only)
+npm run verify:portfolio            # 20 audit checks against the real DB (read-only)
 ```
 
 On the desktop app the sync runs automatically after every successful scrape
@@ -1154,7 +1214,8 @@ Notes:
 - `verify:portfolio` opens the DB read-only and checks the NAV identity on every
   day, that the curve has no gaps against SPY's own calendar, that the benchmark
   really is a plain buy & hold, that no ticker is held twice, that the cooldown
-  holds, and that re-simulating the stored window reproduces the stored curve.
+  holds, that every position was funded to at least `minWeight` of equity, and
+  that re-simulating the stored window reproduces the stored curve.
 - In restricted sandbox sessions, `npm run typecheck` may fail before TypeScript
   starts if Node is not allowed to resolve parent folders. That is an environment
   permission issue, not necessarily a code issue.

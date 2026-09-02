@@ -571,16 +571,38 @@ export function simulatePortfolio(input: PortfolioSimInput): PortfolioSimResult 
 
       const eq = bookEquity(b, spyPx);
       const { targetWeight, value } = positionSize(c.score, eq, cfg);
+      // A funded position must clear BOTH floors: the absolute ticket, and the
+      // weight floor the sizing rules promise.
+      //
+      // `positionSize` clamps the TARGET to `minWeight`, but the target is not
+      // what gets bought — `Math.min(value, available)` is, and that clamp used
+      // to be checked against `minTicket` alone. In a $10,000 book with a $100
+      // ticket that let a position open at 1% of equity where the stated floor
+      // was 3%, and it did so precisely when the book was nearly full, i.e.
+      // when several signals arrive at once. So the distortion was silent, it
+      // landed on the equity curve rather than in an event, and it correlated
+      // with signal clusters — the one part of the sample that is not noise.
+      //
+      // Rejecting costs an observation, which for a measuring instrument is a
+      // real price and is why it is paid explicitly here: a rejection is an
+      // event `verify:portfolio` counts, an underweight fill is a chart that
+      // does not match its own rules card. With the v1.5.2 sizing the case is
+      // rare (~0.5 per 4 months simulated, against ~7 before).
+      const floor = Math.max(cfg.minTicket, cfg.minWeight * Math.max(0, eq));
       const spend = Math.min(value, available(b, spyPx, slip));
-      if (spend < cfg.minTicket) {
+      if (spend < floor) {
         if (record) {
+          const why =
+            floor > cfg.minTicket
+              ? `${(cfg.minWeight * 100).toFixed(1)}% of ${round2(eq)} equity`
+              : `minimum ticket ${cfg.minTicket}`;
           events.push({
             date: d,
             kind: 'skipped_no_cash',
             ticker: c.ticker,
             score: c.score,
             amount: round2(spend),
-            note: `only ${spend.toFixed(2)} investable, minimum ticket is ${cfg.minTicket}`,
+            note: `only ${spend.toFixed(2)} investable, floor is ${floor.toFixed(2)} (${why})`,
           });
         }
         continue;

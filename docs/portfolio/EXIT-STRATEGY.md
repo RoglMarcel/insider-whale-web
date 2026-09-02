@@ -313,8 +313,16 @@ cannot see. What our data *can* see (§6) points the same way as the literature.
 
 ## 8. Transferability to a $10,000, ≤20-position book
 
+> **Resized in v1.5.2** to ≤30 positions at 2–6% weights. The book could only
+> ever *fund* ~15 positions at the old 5% base, against a steady-state demand of
+> ~28, so it was rejecting about a third of its own signals — see the README
+> section "Why the sizing, not the cap". Nothing in this section's reasoning
+> turns on the exact count; the Bessembinder row below gets *weaker*, not
+> stronger, with more names, which is noted there. The exit rules themselves
+> are unchanged.
+
 Every source in §2 measures a monthly-rebalanced, often value-weighted portfolio
-over decades. We run 3–10% weights on daily adjusted closes with 5 bps slippage
+over decades. We run 2–6% weights on daily adjusted closes with 5 bps slippage
 and no shorting. Per finding:
 
 | Finding | Transfers? | Why |
@@ -322,7 +330,7 @@ and no shorting. Per finding:
 | JMZ's curve shape (front-load then flat tail) | **Yes** | A property of the return path, independent of weighting scheme |
 | JMZ / LL / CMP effect *magnitudes* | **Partly** | CMP is value-weighted; LL's effect is concentrated in small caps where we can trade a $10k account but where costs are worst. Treat magnitudes as an order of magnitude, not a target |
 | CMP's opportunistic/routine split | **Yes, and unused** | `scripts/backtest-opportunistic.ts` cites the paper; its classifier reads the per-insider `pattern` column. The paper's own rule is "same calendar month, 3 consecutive years". **Not verified in this pass** — see §11 |
-| Bessembinder's skew | **Yes, amplified** | 20 positions is a *smaller* sample of the same skewed distribution, so we depend on the tail even more than a 500-name index does |
+| Bessembinder's skew | **Yes, amplified** | ~25 positions is a *smaller* sample of the same skewed distribution, so we depend on the tail even more than a 500-name index does. v1.5.2's flatter sizing reduces that dependence somewhat — it does not remove it, which is why there is still no take-profit |
 | Kaminski/Lo's stop result | **Weakly** | Measured on monthly index/futures returns, not on single stocks at daily frequency. It is used only for its *precondition* ("stops need momentum"), not for its magnitudes |
 | Vendor ATR-stop backtests | **No** | FX/crypto, vendor-run, not peer-reviewed. Excluded from the table |
 | The microcap cost warning | **Yes, and it binds** | Our 5 bps assumption is optimistic for $30M–$500M names. This is the weakest link in the whole chain — see §10 |
