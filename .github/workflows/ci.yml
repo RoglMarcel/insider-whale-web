@@ -51,6 +51,9 @@ jobs:
 
       # Both projects: tsconfig.json (renderer) and tsconfig.node.json
       # (electron + scripts + tests + build configs).
+      - name: History persistence regression checks
+        run: python3 -m unittest discover -s tests/persistence -v
+
       - name: Typecheck
         run: npm run typecheck
 

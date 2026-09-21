@@ -1713,6 +1713,9 @@ export interface PortfolioPosition {
 
 /** An open position enriched with today's mark — never stored, always derived. */
 export interface PortfolioOpenPosition extends PortfolioPosition {
+  /** Date of the actual quote; optional for older static payloads. */
+  priceAsOf?: string | null;
+  priceStale?: boolean;
   lastPrice: number | null;
   marketValue: number;
   unrealizedPct: number | null;
