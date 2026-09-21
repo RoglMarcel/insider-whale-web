@@ -524,14 +524,22 @@ export function simulatePortfolio(input: PortfolioSimInput): PortfolioSimResult 
       }
     }
 
-    // 2. Exits. A series that simply stops (delisting, symbol change) is closed
-    //    at the last price that genuinely existed — not held forever at a mark
-    //    nobody could trade.
+    // 2. Missing quotes are a data incident, not evidence of an executable sale.
+    // Keep the holding at its last known mark and report the gap once. Evaluate
+    // exit rules only when a real close returns (including overdue time exits).
     for (const p of [...b.open]) {
       let reason: PortfolioExitReason | null = null;
-      if (p.staleDays > PORTFOLIO_PRICE_SEARCH_DAYS) {
-        reason = 'data_missing';
-      } else if (p.staleDays === 0) {
+      if (record && p.staleDays === PORTFOLIO_PRICE_SEARCH_DAYS + 1) {
+        events.push({
+          date: d,
+          kind: 'data_missing',
+          ticker: p.ticker,
+          score: null,
+          amount: null,
+          note: 'Price data unavailable — position retained at its last known mark; no sale executed',
+        });
+      }
+      if (p.staleDays === 0) {
         reason = evaluateExit(
           {
             entryPrice: p.entryPrice,

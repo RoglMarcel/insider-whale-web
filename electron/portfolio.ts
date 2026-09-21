@@ -81,7 +81,8 @@ const todayYmd = (): string => new Date().toISOString().slice(0, 10);
  * 2 (2026-08-31): rebuild curves written by the append-only builder, which
  * spliced the v1.4.0 and v1.5.0 exit rules into a single line.
  */
-const CURVE_BUILDER_VERSION = 2;
+// 3: repair synthetic exits caused by missing quotes; no trade without a price.
+const CURVE_BUILDER_VERSION = 3;
 
 let runInFlight = false;
 
@@ -164,15 +165,17 @@ interface PriceSyncResult {
  * catches up to SPY's newest date, so "refetch until current" would re-hammer
  * the same 404 on every run forever.
  */
-async function syncPrices(tickers: readonly string[], fromYmd: string): Promise<PriceSyncResult> {
+export async function syncPrices(tickers: readonly string[], fromYmd: string): Promise<PriceSyncResult> {
   const coverage = getPriceCoverage();
   const today = new Date().toISOString().slice(0, 10);
-  const spyLast = coverage[BENCHMARK]?.last ?? '';
+  let spyLast = coverage[BENCHMARK]?.last ?? '';
+  // Benchmark first: other tickers must catch up to the NEW benchmark date.
+  const ordered = [BENCHMARK, ...tickers.filter((t) => t !== BENCHMARK)];
   const suspect: PortfolioEvent[] = [];
   const missing: string[] = [];
   let fetched = 0;
 
-  for (const ticker of tickers) {
+  for (const ticker of ordered) {
     const cov = coverage[ticker];
     const triedToday = cov?.fetchedAt?.slice(0, 10) === today;
     const current = ticker === BENCHMARK ? false : !!cov && !!spyLast && cov.last >= spyLast;
@@ -200,6 +203,9 @@ async function syncPrices(tickers: readonly string[], fromYmd: string): Promise<
     }
     const rows: PriceRow[] = screened.clean.map((p) => ({ ticker, date: p.date, adjClose: p.px }));
     upsertPriceRows(rows);
+    if (ticker === BENCHMARK && rows.length) {
+      spyLast = rows.reduce((latest, row) => row.date > latest ? row.date : latest, spyLast);
+    }
   }
 
   return { fetched, suspect, missing };
@@ -442,10 +448,23 @@ export function getPortfolioState(): PortfolioState {
   const last = equity[equity.length - 1] ?? null;
 
   const openRaw = positions.filter((p) => !p.exitDate);
-  const marks = last ? getPriceBook(openRaw.map((p) => p.ticker), last.date) : {};
+  const earliestOpen = openRaw.reduce((date, p) => p.entryDate < date ? p.entryDate : date, last?.date ?? '');
+  const marks = last ? getPriceBook(openRaw.map((p) => p.ticker), earliestOpen) : {};
 
   const open: PortfolioOpenPosition[] = last
-    ? openRaw.map((p) => toOpenPosition(p, marks[p.ticker]?.[last.date] ?? p.highWaterClose ?? null, last.date, last.equity, config))
+    ? openRaw.map((p) => {
+        const series = marks[p.ticker] ?? {};
+        const priceAsOf = Object.keys(series)
+          .filter((d) => d >= p.entryDate && d <= last.date && Number.isFinite(series[d]) && series[d] > 0)
+          .sort().at(-1) ?? null;
+        // A high-water mark is not the last traded price. Keep the same
+        // carry-forward mark as the simulator and disclose its age.
+        const mark = priceAsOf ? series[priceAsOf] : null;
+        const position = toOpenPosition(p, mark, last.date, last.equity, config);
+        return { ...position, priceAsOf, priceStale: priceAsOf !== last.date,
+          nearestBarrier: priceAsOf === last.date ? position.nearestBarrier : null,
+          nearestBarrierPct: priceAsOf === last.date ? position.nearestBarrierPct : null };
+      })
     : [];
   const closed: PortfolioClosedPosition[] = positions
     .filter((p) => !!p.exitDate)

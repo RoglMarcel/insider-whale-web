@@ -4,8 +4,9 @@ name: Scrape & Publish (web)
 # runner a few times a day, build the web UI with the fresh data baked in, and
 # deploy it to GitHub Pages. No server, no cost, no phone battery used.
 #
-# The SQLite history DB is committed back to the repo (data/insider-tracker.db)
-# so track-records / score-trend / "new signal" detection accumulate across runs.
+# SQLite history is restored from and saved to immutable release assets.
+# The tracked DB is only the migration seed / desktop delivery channel.
+# See docs/history-persistence.md.
 #
 # NOTE: GitHub cron is best-effort. Under load a scheduled run is delayed, and
 # past a certain delay GitHub drops it entirely — we lost every slot between
@@ -22,7 +23,7 @@ on:
   schedule:
     - cron: '23 13-21 * * 1-5'   # hourly across the US session (13:23–21:23 UTC)
 
-# contents:write lets the run commit the updated history DB back to the repo.
+# contents:write lets the run upload durable history release assets.
 permissions:
   contents: write
   pages: write
@@ -101,6 +102,15 @@ jobs:
             echo "desktop=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Restore durable history
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DESKTOP: ${{ steps.mode.outputs.desktop }}
+        run: |
+          ARGS=()
+          if [ "$DESKTOP" = 'true' ]; then ARGS+=(--desktop); fi
+          python3 scripts/history-snapshot.py restore "${ARGS[@]}"
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -153,6 +163,24 @@ jobs:
       - name: Sync testing portfolio
         run: npm run portfolio:sync || echo "portfolio sync failed — continuing (never blocks the site)"
 
+      # Save before deployment: a failed build must not discard collected history.
+      - name: Persist and verify history snapshot
+        id: persist
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/history-snapshot.py save
+
+      - name: Retain recovery backup if persistence fails
+        if: failure() && steps.persist.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: history-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            tmp/history-backup/*.db.gz
+            data/insider-tracker.db*
+          if-no-files-found: error
+          retention-days: 30
+
       # Optional phone push: set the repo secret NTFY_TOPIC (any hard-to-guess
       # string) and subscribe to it in the ntfy Android app. No-op if unset.
       - name: Notify new signals (ntfy)
@@ -182,18 +210,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deploy
         uses: actions/deploy-pages@v4
-
-      # Persist history AFTER a successful deploy so a persist hiccup never blocks
-      # the site. [skip ci] stops this commit from re-triggering the workflow.
-      - name: Persist history DB
-        run: |
-          [ -f data/insider-tracker.db ] || { echo "no DB to persist"; exit 0; }
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f data/insider-tracker.db
-          if git diff --staged --quiet; then
-            echo "DB unchanged — nothing to commit."
-          else
-            git commit -m "chore(data): update history DB [skip ci]"
-            git push || echo "push rejected (concurrent run?) — will persist next run."
-          fi

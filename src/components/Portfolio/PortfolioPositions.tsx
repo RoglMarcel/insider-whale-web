@@ -109,7 +109,14 @@ export function OpenPositionsTable({ positions }: { positions: PortfolioOpenPosi
                   <td className="py-2 pr-3 text-right tabular-nums">{p.entryScore.toFixed(1)}</td>
                   <td className="py-2 pr-3 text-right tabular-nums text-secondary">{(p.weight * 100).toFixed(1)}%</td>
                   <td className="py-2 pr-3 text-right tabular-nums">{formatPrice(p.entryPrice)}</td>
-                  <td className="py-2 pr-3 text-right tabular-nums">{formatPrice(p.lastPrice)}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">
+                    {formatPrice(p.lastPrice)}
+                    {p.priceStale && (
+                      <div className="text-xs text-secondary">
+                        {p.priceAsOf ? t('pf.price.stale', { date: formatDate(p.priceAsOf) }) : t('pf.price.unavailable')}
+                      </div>
+                    )}
+                  </td>
                   <td className="py-2 pr-3 text-right font-semibold tabular-nums" style={{ color: sign(p.unrealizedPct) }}>
                     {pct(p.unrealizedPct)}
                   </td>

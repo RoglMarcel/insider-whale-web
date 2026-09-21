@@ -646,15 +646,31 @@ describe('price gaps', () => {
     expect(res.positions.length).toBe(0);
   });
 
-  it('closes a position whose series simply stops', () => {
+  it('keeps a position open when quotes stop and reports the stale mark', () => {
     const long = calendar('2026-01-05', 25);
     const px: Record<string, number> = {};
     for (const d of long.slice(0, 6)) px[d] = 100;
     const res = simulatePortfolio(
       input({ tradingDays: long, spy: flat(long, 500), prices: { AAA: px }, candidates: [cand({ earliestDate: long[0] })] }),
     );
-    expect(res.positions[0].exitReason).toBe('data_missing');
-    expect(res.positions[0].exitPrice).toBeCloseTo(applySlippage(100, 'sell', 5), 10);
+    expect(res.positions[0].exitReason).toBeNull();
+    expect(res.positions[0].exitDate).toBeNull();
+    expect(res.positions[0].realizedPnl).toBeNull();
+    expect(res.events.filter((e) => e.kind === 'sell')).toHaveLength(0);
+    expect(res.events.filter((e) => e.kind === 'data_missing')).toHaveLength(1);
+    expect(res.equity.at(-1)?.openPositions).toBe(1);
+  });
+
+  it('executes a real stop only when a quote returns after a long gap', () => {
+    const long = calendar('2026-01-05', 25);
+    const px = { ...flat(long.slice(0, 6), 100), [long[20]]: 60 };
+    const res = simulatePortfolio(input({
+      tradingDays: long, spy: flat(long, 500), prices: { AAA: px },
+      candidates: [cand({ earliestDate: long[0] })],
+    }));
+    expect(res.positions[0].exitReason).toBe('stop_loss');
+    expect(res.positions[0].exitDate).toBe(long[20]);
+    expect(res.positions[0].exitPrice).toBeCloseTo(applySlippage(60, 'sell', 5), 10);
   });
 
   it('does not mark a ticker untradable when another sighting of it did trade', () => {
