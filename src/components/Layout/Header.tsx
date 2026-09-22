@@ -95,13 +95,11 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
         </div>
       )}
 
-      {/* Data freshness. On the hosted build this is the ONLY cue for how old the
-          data is (the client never scrapes and the Refresh button is hidden), so
-          it must survive on a phone — previously it was `hidden sm:block`. */}
-      <div className="shrink-0 text-right">
+      {/* Hosted freshness is shown by the per-stage update panel below. */}
+      {!isWeb && <div className="shrink-0 text-right">
         <div className="hidden text-xs uppercase tracking-wide text-secondary sm:block">{t('header.lastScrape')}</div>
         <div className="text-xs font-semibold tabular-nums sm:text-sm">{timeAgo(lastScrapeAt, language)}</div>
-      </div>
+      </div>}
 
       {/* Interactive controls */}
       <div className="flex items-center gap-2 lg:gap-4" style={isWeb ? undefined : ({ WebkitAppRegion: 'no-drag' } as any)}>

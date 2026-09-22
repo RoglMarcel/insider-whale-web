@@ -9,13 +9,13 @@
  * so the hosted build has something to read. This is the same code path the
  * desktop app runs after a scrape — there is no separate "CI" simulation.
  *
- * Never blocks anything: the workflow calls it with `|| echo`, and a failure
- * here must not stop the site from deploying.
+ * Failures are reported to the workflow; usable data can still be deployed.
  */
 import path from 'node:path';
+import { recordUpdate } from './update-report';
 import fs from 'node:fs';
 import { initDatabase, closeDatabase } from '../electron/database';
-import { getPortfolioState, rebuildPortfolio, syncPortfolio, writePortfolioJson } from '../electron/portfolio';
+import { getPortfolioState, rebuildPortfolio, syncPortfolio } from '../electron/portfolio';
 
 const pct = (v: number | null | undefined): string =>
   v == null ? 'n/a' : `${v >= 0 ? '+' : ''}${(v * 100).toFixed(2)}%`;
@@ -24,7 +24,7 @@ async function main(): Promise<void> {
   const dbPath = (process.env.DB_PATH ?? path.resolve(process.cwd(), 'data', 'insider-tracker.db')).trim();
   if (!fs.existsSync(dbPath)) {
     console.log(`[portfolio] no DB at ${dbPath} — nothing to simulate.`);
-    return;
+    throw new Error('Database unavailable');
   }
   const rebuild = process.argv.includes('--rebuild');
   initDatabase(dbPath);
@@ -37,9 +37,12 @@ async function main(): Promise<void> {
     // The JSON is republished ANYWAY. A reset whose inception is still in the
     // future reports "not run" by design, and returning here would leave the
     // previous book's curve on the hosted site until the first session settles.
-    const empty = writePortfolioJson(path.resolve(process.cwd(), 'public', 'data'));
+    const empty = publishPortfolio();
     console.log(`[portfolio] wrote public/data/portfolio.json (${empty} point(s))`);
     closeDatabase();
+    const expected = report.reason?.startsWith('the book opens on ') || report.reason === 'no signal has ever reached the entry threshold';
+    recordUpdate(expected ? 'skipped' : 'failed', expected ? 'not_ready' : 'update_failed');
+    if (!expected) process.exitCode = 1;
     return;
   }
 
@@ -73,13 +76,26 @@ async function main(): Promise<void> {
     }
   }
 
-  const points = writePortfolioJson(path.resolve(process.cwd(), 'public', 'data'));
+  const points = publishPortfolio();
   console.log(`[portfolio] wrote public/data/portfolio.json (${points} point(s))`);
 
+  const incomplete = state.open.some((p) => p.priceStale) || !!report.missingPriceTickers?.length;
+  recordUpdate(incomplete ? 'partial' : 'success', incomplete ? 'prices_unavailable' : 'updated');
   closeDatabase();
+}
+
+function publishPortfolio(): number {
+  const state = getPortfolioState();
+  const directory = path.resolve(process.cwd(), 'public', 'data');
+  fs.mkdirSync(directory, { recursive: true });
+  const temporary = path.join(directory, 'portfolio.json.tmp');
+  fs.writeFileSync(temporary, JSON.stringify({ ...state, meta: { ...state.meta, readOnly: true } }));
+  fs.renameSync(temporary, path.join(directory, 'portfolio.json'));
+  return state.equity.length;
 }
 
 main().catch((err) => {
   console.error('[portfolio] THREW:', err);
+  recordUpdate('failed', 'update_failed');
   process.exit(1);
 });
