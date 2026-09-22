@@ -3,24 +3,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { packageDesktopSnapshot, DESKTOP_SNAPSHOT_PATH } from './desktopSnapshot';
 import { SCHEMA, runMigrations, snapshotDatabase } from './database';
 
 /**
- * Desktop → web publish. The desktop app and the hosted web terminal each own a
- * SEPARATE SQLite file: the app writes `<userData>/insider-tracker.db`, while the
- * site is built from `data/insider-tracker.db` in the repo checkout, which CI
- * commits back after every cloud run. Nothing connected the two, so a scrape run
- * from the desktop UI — including the login-gated options flow that only works
- * on a real machine — never reached the web at all.
- *
- * This copies the run's rows into the repo DB and pushes it. GitHub Actions
- * picks the push up and, seeing the DESKTOP_PUBLISH_MARKER in the commit
- * message, skips its own scrape and just rebuilds the site from the DB (see
- * .github/workflows/scrape.yml) — so the desktop's richer data is published as
- * it is instead of being overwritten by a redundant cloud scrape.
- *
- * Everything here is best-effort by contract: a scrape must never fail, or be
- * held up, because publishing did not work.
+ * Export only public signal/trade tables into bounded, checksummed Git chunks.
+ * The cloud merges them into its durable history; desktop never replaces it.
+ * Existing Git credentials suffice. Failures are reported without failing the scrape.
  */
 
 /** CI greps the commit subject for this to take the no-scrape fast path. */
@@ -117,9 +106,9 @@ function copyTable(
 ): number {
   const targetCols = columnsOf(target, 'main', table);
   const sourceCols = columnsOf(target, 'src', table);
-  if (!targetCols.length || !sourceCols.length) return 0;
+  if (!targetCols.length || !sourceCols.length) throw new Error(`Missing export table: ${table}`);
   const cols = targetCols.filter((c) => c !== 'id' && sourceCols.includes(c));
-  if (!cols.length) return 0;
+  if (!identity.every((c) => cols.includes(c))) throw new Error(`Missing identity columns: ${table}`);
 
   const list = cols.map((c) => `"${c}"`).join(', ');
   // Idempotency: re-publishing the same run must not duplicate rows, and the
@@ -152,8 +141,8 @@ export interface PublishOptions {
   /** When false, write the repo DB but leave pushing to the user. */
   push?: boolean;
   /**
-   * Publish from this file instead of a live snapshot of the app's DB. Only for
-   * tests — production must snapshot, or WAL-resident rows are missed.
+   * Publish from this file instead of a live snapshot of the app's DB. For the CLI after closing its database and for tests. Live desktop databases
+   * must use snapshotDatabase so WAL-resident rows are included.
    */
   sourceDbPathForTest?: string;
 }
@@ -170,7 +159,8 @@ export async function publishToWeb(opts: PublishOptions = {}): Promise<WebPublis
 
     const dbDir = path.join(repo, 'data');
     fs.mkdirSync(dbDir, { recursive: true });
-    const repoDbPath = path.join(dbDir, 'insider-tracker.db');
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'iwt-publish-'));
+    const repoDbPath = path.join(tmpDir, 'export.db');
 
     // Snapshot the live DB rather than attaching it: publishing runs moments
     // after a scrape, when the newest rows are still in the -wal sidecar, and
@@ -180,7 +170,6 @@ export async function publishToWeb(opts: PublishOptions = {}): Promise<WebPublis
       sourcePath = opts.sourceDbPathForTest;
       if (!fs.existsSync(sourcePath)) return { ok: false, skipped: `source DB not found: ${sourcePath}` };
     } else {
-      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'iwt-publish-'));
       sourcePath = path.join(tmpDir, 'snapshot.db');
       await snapshotDatabase(sourcePath);
     }
@@ -188,14 +177,8 @@ export async function publishToWeb(opts: PublishOptions = {}): Promise<WebPublis
     // Start from the remote tip so this appends to the shared history instead of
     // forking it — otherwise the push below is rejected and the run is wasted.
     if (opts.push !== false) {
-      try {
-        git(repo, ['fetch', 'origin', '--quiet']);
-        git(repo, ['pull', '--ff-only', 'origin', 'main', '--quiet']);
-      } catch {
-        console.warn(
-          '[web-publish] git pull --ff-only failed — continuing; the push may need a manual rebase.',
-        );
-      }
+      git(repo, ['fetch', 'origin', '--quiet']);
+      git(repo, ['pull', '--ff-only', 'origin', 'main', '--quiet']);
     }
 
     target = new Database(repoDbPath);
@@ -211,13 +194,8 @@ export async function publishToWeb(opts: PublishOptions = {}): Promise<WebPublis
     try {
       const tx = target.transaction(() => {
         for (const { table, identity } of COPIED_TABLES) {
-          try {
-            copied[table] = copyTable(target as Database.Database, table, identity, since);
-          } catch (err) {
-            // One unexpected table shape must not abandon the rest of the copy.
-            console.error(`[web-publish] copy of "${table}" failed:`, err);
-            copied[table] = 0;
-          }
+          // A partial export must not be reported as successful.
+          copied[table] = copyTable(target as Database.Database, table, identity, since);
         }
       });
       tx();
@@ -228,30 +206,33 @@ export async function publishToWeb(opts: PublishOptions = {}): Promise<WebPublis
         /* already detached */
       }
     }
-    // Collapse the WAL into the .db file — git only ever sees the main file, so
-    // an uncheckpointed write would be committed as a no-op.
+    // Close/checkpoint the export before compressing it; no WAL sidecar travels.
     target.pragma('wal_checkpoint(TRUNCATE)');
     target.close();
     target = null;
 
+    await packageDesktopSnapshot(repoDbPath, path.join(repo, DESKTOP_SNAPSHOT_PATH));
     const signalsCopied = copied.signals ?? 0;
     if (opts.push === false) {
-      return { ok: true, copied, pushed: false, skipped: 'push disabled — repo DB updated locally' };
+      return { ok: true, copied, pushed: false, skipped: 'push disabled — snapshot package prepared locally' };
     }
 
-    const DB_PATHSPEC = 'data/insider-tracker.db';
+    const DB_PATHSPEC = DESKTOP_SNAPSHOT_PATH;
+    git(repo, ['add', '-f', '--all', '--', DB_PATHSPEC]);
     try {
       execFileSync('git', ['diff', '--quiet', 'HEAD', '--', DB_PATHSPEC], {
         cwd: repo,
         timeout: GIT_TIMEOUT_MS,
       });
-      return { ok: true, copied, pushed: false, skipped: 'repo DB unchanged — nothing to push' };
+      // Retry delivery of a previous local commit whose push failed.
+      git(repo, ['push', 'origin', 'HEAD:main']);
+      return { ok: true, copied, pushed: true, skipped: 'snapshot unchanged — remote synchronized' };
     } catch {
-      /* the DB differs from HEAD → commit + push below */
+      /* the package differs from HEAD → commit + push below */
     }
     git(repo, ['add', '-f', DB_PATHSPEC]);
     // Pathspec-limited commit. This runs unattended after every scrape, so it
-    // must capture ONLY the database — committing whatever else happened to be
+    // must capture ONLY the generated package — committing whatever else happened to be
     // staged would sweep unrelated work-in-progress into an automated push.
     git(repo, [
       'commit',

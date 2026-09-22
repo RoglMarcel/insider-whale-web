@@ -27,8 +27,21 @@ to bypass a restore error: that would fall back to old history.
 Desktop-marked pushes still use the no-scrape path. Restoration merges the incoming
 `signals`, `scrape_log`, and `insider_trades` using the desktop publisher's natural
 keys; it preserves cloud portfolio, prices and outcomes. Duplicate rows are not
-inserted. The desktop app's own Git upload mechanism is unchanged and remains
-subject to Git's file-size limit; moving that transport is a separate change.
+inserted. Updated desktop builds and `npm run publish:web` send a filtered SQLite export
+through `data/desktop-publish/`: gzip parts of at most 32 MiB plus a SHA-256
+manifest. The raw database is never staged. Only signals, scrape logs and insider
+trades are exported; desktop settings and other private tables are excluded.
+The runner checks every part, the combined archive, and SQLite integrity before
+merging. Scheduled runs also ingest the latest package idempotently so a skipped
+push workflow cannot lose delivery. Desktop-marked commits skip cloud scraping
+only on the actual push event, never on later scheduled runs.
+
+Desktop requires an updated app build (or updated source checkout); an already
+installed executable does not change when this repository is merged. Existing Git
+credentials and configured checkout are reused; no Python or GitHub CLI is needed
+on the desktop. The CLI keeps its working history in ignored `tmp/desktop-history`,
+seeded from the existing committed DB on first use. Older builds can still deliver
+raw databases until they reach Git's limit, but should be upgraded.
 
 The shared `scrape-publish` concurrency group serializes restore/write cycles.
 `contents: write` and the built-in `github.token` suffice; no new secret or external

@@ -86,7 +86,7 @@ jobs:
           fetch-depth: 0          # full history so the persist-step push is clean
 
       # Fast path for a desktop publish. The desktop app pushes its own scrape
-      # into data/insider-tracker.db and marks the commit; those rows are richer
+      # as checksummed chunks and marks the commit; those rows are richer
       # than a runner can produce (login-gated options flow needs a real
       # machine), so re-scraping here would burn minutes to publish something
       # WEAKER than what was just pushed. Detect the marker and skip the scrape.
@@ -95,7 +95,7 @@ jobs:
         run: |
           MSG=$(git log -1 --pretty=%s)
           echo "commit subject: $MSG"
-          if printf '%s' "$MSG" | grep -qF '[desktop-publish]'; then
+          if [ "$GITHUB_EVENT_NAME" = 'push' ] && printf '%s' "$MSG" | grep -qF '[desktop-publish]'; then
             echo "desktop=true" >> "$GITHUB_OUTPUT"
             echo "-> desktop publish detected: skipping the cloud scrape."
           else

@@ -21,6 +21,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { app, safeStorage } from 'electron';
+import { publishToWeb } from '../electron/webPublish';
 import { runScrape } from '../electron/scraper';
 import {
   initDatabase,
@@ -79,7 +80,7 @@ async function main(): Promise<void> {
     );
   }
 
-  const dbDir = path.resolve(process.cwd(), 'data');
+  const dbDir = path.resolve(process.cwd(), 'tmp', 'desktop-history');
   const outDir = path.resolve(process.cwd(), 'public', 'data');
   fs.mkdirSync(dbDir, { recursive: true });
   fs.mkdirSync(outDir, { recursive: true });
@@ -95,6 +96,8 @@ async function main(): Promise<void> {
   }
 
   const dbPath = path.join(dbDir, 'insider-tracker.db');
+  const seed = path.resolve(process.cwd(), 'data', 'insider-tracker.db');
+  if (!fs.existsSync(dbPath) && fs.existsSync(seed)) fs.copyFileSync(seed, dbPath);
   console.log(`[publish-web] init DB at ${dbPath} (${fs.existsSync(dbPath) ? 'existing' : 'fresh'})`);
   initDatabase(dbPath);
 
@@ -161,30 +164,14 @@ async function main(): Promise<void> {
     `${combos} combo(s) · status=${result.status}`,
   );
 
-  if (!DO_PUSH) {
-    console.log('\n[publish-web] --push not set → wrote locally only. To publish:');
-    console.log('    git add data/insider-tracker.db && git commit -m "chore(data): desktop publish" && git push');
-    app.exit(0);
-    return;
-  }
-
-  try {
-    git(['add', 'data/insider-tracker.db']);
-    // Only commit if the DB actually changed.
-    try {
-      execFileSync('git', ['diff', '--staged', '--quiet'], { cwd: process.cwd() });
-      console.log('[publish-web] DB unchanged — nothing to push.');
-    } catch {
-      git(['commit', '-m', 'chore(data): desktop publish (login sources)']);
-      git(['push', 'origin', 'main']);
-      console.log('[publish-web] pushed — GitHub Actions will redeploy the site.');
-    }
-  } catch (err) {
-    console.error('[publish-web] git push failed:', err instanceof Error ? err.message : err);
-    console.error('    Fix: git pull --rebase origin main   then   git push   (or re-run publish:web).');
+  const delivery = await publishToWeb({ repoPath: process.cwd(), sourceDbPathForTest: dbPath, push: DO_PUSH });
+  if (!delivery.ok) {
+    console.error('[publish-web] delivery failed:', delivery.error ?? delivery.skipped);
     app.exit(1);
     return;
   }
+  console.log(DO_PUSH ? '[publish-web] snapshot delivered to GitHub.' :
+    '[publish-web] snapshot prepared locally. Re-run with --push to publish.');
   app.exit(0);
 }
 

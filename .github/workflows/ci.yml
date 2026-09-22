@@ -54,6 +54,12 @@ jobs:
       - name: History persistence regression checks
         run: python3 -m unittest discover -s tests/persistence -v
 
+      - name: Desktop snapshot delivery integration
+        run: |
+          npm rebuild better-sqlite3 --build-from-source
+          npx esbuild electron/webPublish.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --alias:electron=./scripts/electron-stub.ts --outfile=tmp/web-publish-test.cjs
+          node tests/persistence/desktop-publish.integration.cjs
+
       - name: Typecheck
         run: npm run typecheck
 
