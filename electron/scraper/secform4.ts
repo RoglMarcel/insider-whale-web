@@ -17,10 +17,12 @@ export async function scrapeSecForm4(context: BrowserContext): Promise<RawInside
     context,
     URL,
     async (page) => {
-      await page.waitForSelector('table', { timeout: 15_000 }).catch(() => undefined);
+      await page.waitForSelector('table', { timeout: 10_000 });
       const table = await extractFirstTable(page, TABLE_SELECTORS);
-      return mapInsiderTable(table, 'secform4', URL);
+      const trades = mapInsiderTable(table, 'secform4', URL);
+      if (!trades.length) throw new Error('SECForm4 purchase table missing or unreadable');
+      return trades;
     },
-    { waitUntil: 'domcontentloaded' },
-  ).catch(() => [] as RawInsiderTrade[]);
+    { waitUntil: 'domcontentloaded', timeout: 20_000, reliable: true },
+  );
 }
