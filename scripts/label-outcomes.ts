@@ -18,6 +18,7 @@
  *    only fills genuine gaps.
  */
 import path from 'node:path';
+import { recordUpdate } from './update-report';
 import fs from 'node:fs';
 import { fetchAdjCloseSeries, priceOnOrAfter, PRICE_REQUEST_GAP_MS, sleep } from '../electron/prices';
 import {
@@ -68,7 +69,7 @@ async function main(): Promise<void> {
   const dbPath = process.env.DB_PATH ?? path.resolve(process.cwd(), 'data', 'insider-tracker.db');
   if (!fs.existsSync(dbPath)) {
     console.log(`[label] no DB at ${dbPath} — nothing to label.`);
-    return;
+    throw new Error('Database unavailable');
   }
   initDatabase(dbPath);
 
@@ -102,6 +103,7 @@ async function main(): Promise<void> {
       `already labeled=${labeled.size} · ripe+missing=${todo.length} · tickers this run=${tickers.length}`,
   );
   if (!tickers.length) {
+    recordUpdate('skipped', 'no_work');
     report();
     closeDatabase();
     return;
@@ -109,22 +111,22 @@ async function main(): Promise<void> {
 
   const spy = await fetchSeries('SPY');
   if (!spy) {
-    console.log('[label] SPY series unavailable — aborting (alpha needs the benchmark).');
     closeDatabase();
-    return;
+    throw new Error('Benchmark unavailable');
   }
 
   const out: SignalOutcome[] = [];
   let done = 0;
+  const missing = new Set<string>();
   for (const ticker of tickers) {
     const series = await fetchSeries(ticker);
     done++;
     if (done % 50 === 0) console.log(`   …${done}/${tickers.length}`);
-    if (!series) continue;
+    if (!series) { missing.add(ticker); continue; }
     for (const c of todo.filter((x) => x.ticker === ticker)) {
       const entry = priceOnOrAfter(series, c.entryDate);
       const spyEntry = priceOnOrAfter(spy, c.entryDate);
-      if (!entry || !spyEntry) continue;
+      if (!entry || !spyEntry) { missing.add(ticker); continue; }
       for (const h of HORIZONS) {
         const key = `${c.ticker}|${c.entryDate}|${h}`;
         if (labeled.has(key)) continue;
@@ -132,7 +134,7 @@ async function main(): Promise<void> {
         if (target > today) continue;
         const exit = priceOnOrAfter(series, target);
         const spyExit = priceOnOrAfter(spy, target);
-        if (!exit || !spyExit) continue;
+        if (!exit || !spyExit) { missing.add(ticker); continue; }
         const ret = exit.px / entry.px - 1;
         const spyRet = spyExit.px / spyEntry.px - 1;
         out.push({
@@ -154,6 +156,8 @@ async function main(): Promise<void> {
 
   const written = upsertSignalOutcomes(out);
   console.log(`[label] wrote ${written} new labeled outcome(s).`);
+  const deferred = new Set(todo.map((c) => c.ticker)).size > tickers.length;
+  recordUpdate(missing.size || deferred ? 'partial' : 'success', missing.size ? 'prices_unavailable' : deferred ? 'work_remaining' : 'updated', missing.size);
   report();
   closeDatabase();
 }
@@ -184,5 +188,6 @@ function report(): void {
 
 main().catch((err) => {
   console.error('[label] THREW:', err);
+  recordUpdate('failed', 'update_failed');
   process.exit(1);
 });

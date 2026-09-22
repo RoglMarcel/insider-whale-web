@@ -95,6 +95,7 @@ export interface PortfolioSyncReport {
   rebuilt: boolean;
   pricesFetched: number;
   suspectPoints: number;
+  missingPriceTickers?: string[];
 }
 
 /**
@@ -359,6 +360,7 @@ async function runSync(): Promise<PortfolioSyncReport> {
     rebuilt,
     pricesFetched: priceSync.fetched,
     suspectPoints: priceSync.suspect.length,
+    missingPriceTickers: priceSync.missing,
   };
 }
 

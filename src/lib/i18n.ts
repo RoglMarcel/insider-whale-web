@@ -21,6 +21,29 @@ export const LANGUAGES: { key: Lang; label: string; flag: string }[] = [
 ];
 
 const en = {
+  'updates.title': 'Update status',
+  'updates.partial': 'Partial update — some data could not be refreshed.',
+  'updates.unknown': 'Update status unavailable',
+  'updates.signals': 'Signals',
+  'updates.portfolio': 'Portfolio',
+  'updates.outcomes': 'Outcome labeling',
+  'updates.success': 'Completed',
+  'updates.failed': 'Failed',
+  'updates.skipped': 'Not needed this run',
+  'updates.partialStatus': 'Incomplete',
+  'updates.updated': 'Updated',
+  'updates.lastSuccess': 'Last complete update',
+  'updates.checked': 'Checked',
+  'updates.details': 'Details',
+  'updates.prices_unavailable': 'Some prices are unavailable.',
+  'updates.work_remaining': 'More history will be processed in later runs.',
+  'updates.source_errors': 'Some sources could not be refreshed.',
+  'updates.update_failed': 'Refresh failed; displayed data may be older.',
+  'updates.no_work': 'No new outcomes are due yet.',
+  'updates.desktop_publish': 'Not run during desktop publication.',
+  'updates.not_ready': 'The portfolio is not ready to start yet.',
+  'updates.unavailable': 'Portfolio data is unavailable.',
+
   // ── Navigation / chrome ──
   'nav.alerts': 'Alerts',
   'nav.news': 'Live News',
@@ -562,6 +585,29 @@ const en = {
 export type TKey = keyof typeof en;
 
 const de: Record<TKey, string> = {
+  'updates.title': 'Aktualisierungsstatus',
+  'updates.partial': 'Teilweise aktualisiert — einige Daten konnten nicht aktualisiert werden.',
+  'updates.unknown': 'Aktualisierungsstatus nicht verfügbar',
+  'updates.signals': 'Signale',
+  'updates.portfolio': 'Portfolio',
+  'updates.outcomes': 'Ergebnisbewertung',
+  'updates.success': 'Abgeschlossen',
+  'updates.failed': 'Fehlgeschlagen',
+  'updates.skipped': 'In diesem Durchlauf nicht nötig',
+  'updates.partialStatus': 'Unvollständig',
+  'updates.updated': 'Aktualisiert',
+  'updates.lastSuccess': 'Letzte vollständige Aktualisierung',
+  'updates.checked': 'Geprüft',
+  'updates.details': 'Details',
+  'updates.prices_unavailable': 'Einige Kurse sind nicht verfügbar.',
+  'updates.work_remaining': 'Weitere historische Daten folgen in späteren Durchläufen.',
+  'updates.source_errors': 'Einige Quellen konnten nicht aktualisiert werden.',
+  'updates.update_failed': 'Aktualisierung fehlgeschlagen; angezeigte Daten können älter sein.',
+  'updates.no_work': 'Noch keine neuen Ergebnisse fällig.',
+  'updates.desktop_publish': 'Bei Desktop-Veröffentlichung nicht ausgeführt.',
+  'updates.not_ready': 'Das Portfolio ist noch nicht startbereit.',
+  'updates.unavailable': 'Portfoliodaten sind nicht verfügbar.',
+
   // ── Navigation / chrome ──
   'nav.alerts': 'Alerts',
   'nav.news': 'Live-News',

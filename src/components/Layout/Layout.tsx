@@ -3,6 +3,7 @@ import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { BottomTabBar } from './BottomTabBar';
 import { UpdateNotification } from '@/components/UI/UpdateNotification';
+import { UpdateHealth } from '@/components/UI/UpdateHealth';
 import { SourceHealthBanner } from '@/components/UI/SourceHealth';
 
 export function Layout({ children }: { children: ReactNode }) {
@@ -35,6 +36,7 @@ export function Layout({ children }: { children: ReactNode }) {
             scrollPaddingBottom: 'calc(var(--tabbar-h) + var(--sa-bottom))',
           }}
         >
+          <UpdateHealth />
           <SourceHealthBanner />
           {children}
         </main>
