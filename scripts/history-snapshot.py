@@ -90,30 +90,66 @@ def merge_desktop(target, incoming):
         db.commit()
 
 
+def unpack_desktop(directory, target):
+    manifest = json.loads((directory / 'manifest.json').read_text())
+    if manifest.get('version') != 1 or manifest.get('format') != 'sqlite-gzip':
+        raise RuntimeError('Unsupported desktop snapshot format')
+    parts = manifest.get('parts')
+    if not isinstance(parts, list) or not parts:
+        raise RuntimeError('Desktop snapshot has no parts')
+    archive = target.with_suffix('.gz')
+    with open(archive, 'wb') as out:
+        for index, part in enumerate(parts):
+            name = f'part-{index:06d}.gzpart'
+            if part.get('name') != name:
+                raise RuntimeError('Invalid desktop part order or path')
+            source = directory / name
+            size = source.stat().st_size
+            if source.is_symlink() or size != part.get('bytes') or not 0 < size <= 32 * 1024 * 1024:
+                raise RuntimeError('Invalid desktop part size or link')
+            if digest(source) != part.get('sha256'):
+                raise RuntimeError('Desktop part checksum mismatch')
+            with open(source, 'rb') as stream:
+                shutil.copyfileobj(stream, out)
+    unpack(archive, target, manifest.get('sha256'))
+
+
 def restore(repo, path, desktop=False):
     rel = release(repo)
-    if rel is None:
+    package = path.parent / 'desktop-publish'
+    has_package = (package / 'manifest.json').is_file()
+    if rel is None and not has_package:
         check_db(path)
         print('No history release yet: bootstrapping from the committed database.')
         return
-    candidates = assets(repo, rel['id'])
-    if not candidates:
+    candidates = assets(repo, rel['id']) if rel else []
+    if rel and not candidates:
         raise RuntimeError('History release exists but has no complete snapshot; refusing stale fallback')
-    latest = max(candidates, key=lambda a: (a['created_at'], a['id']))
-    # Restore beside the destination, validate, then atomically replace it.
     with tempfile.TemporaryDirectory(dir=path.parent) as directory:
         tmp = Path(directory)
-        gh('release', 'download', TAG, '--repo', repo, '--pattern', latest['name'], '--dir', str(tmp))
         restored = tmp / 'restored.db'
-        unpack(tmp / latest['name'], restored, ASSET.fullmatch(latest['name'])[1])
-        if desktop:
+        if rel:
+            latest = max(candidates, key=lambda a: (a['created_at'], a['id']))
+            gh('release', 'download', TAG, '--repo', repo, '--pattern', latest['name'], '--dir', str(tmp))
+            unpack(tmp / latest['name'], restored, ASSET.fullmatch(latest['name'])[1])
+            print(f'Restored {latest["name"]}')
+        else:
             check_db(path)
-            merge_desktop(restored, path)
-            check_db(restored)
+            shutil.copyfile(path, restored)
+        # Also ingest on scheduled runs: a skipped/coalesced desktop push must
+        # not lose rows. Natural-key merging is idempotent.
+        if has_package:
+            incoming = tmp / 'desktop.db'
+            unpack_desktop(package, incoming)
+            merge_desktop(restored, incoming)
+            print('Verified and merged desktop snapshot')
+        elif desktop:
+            check_db(path)
+            merge_desktop(restored, path)  # compatibility with old desktop builds
+        check_db(restored)
         if any(Path(str(path) + suffix).exists() for suffix in ('-wal', '-shm')):
             raise RuntimeError('Refusing to replace a database with active SQLite sidecars')
         os.replace(restored, path)
-    print(f'Restored {latest["name"]}' + (' and merged desktop rows' if desktop else ''))
 
 
 def save(repo, path, output, run_id, attempt):

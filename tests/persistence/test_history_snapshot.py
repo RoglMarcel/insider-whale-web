@@ -126,6 +126,38 @@ class PersistenceTests(unittest.TestCase):
             self.assertEqual(db.execute('SELECT count(*) FROM signals').fetchone()[0], 2)
             self.assertEqual(db.execute('SELECT value FROM portfolio_equity').fetchone()[0], 12345)
 
+    def test_chunked_desktop_merge_on_scheduled_run_and_corrupt_part_rejected(self):
+        self.save()
+        incoming = self.root / 'incoming.db'
+        shutil.copyfile(self.db, incoming)
+        with sqlite3.connect(incoming) as db:
+            db.execute("INSERT INTO signals VALUES(2, 'DESKTOP', '2026-09-22')")
+        db.close()
+        import gzip
+        payload = gzip.compress(incoming.read_bytes())
+        package = self.root / 'desktop-publish'
+        package.mkdir()
+        parts = []
+        for offset in range(0, len(payload), 100):
+            block = payload[offset:offset + 100]
+            name = f'part-{len(parts):06d}.gzpart'
+            (package / name).write_bytes(block)
+            parts.append({'name': name, 'bytes': len(block), 'sha256': hashlib.sha256(block).hexdigest()})
+        (package / 'manifest.json').write_text(json.dumps({
+            'version': 1, 'format': 'sqlite-gzip', 'parts': parts,
+            'sha256': hashlib.sha256(payload).hexdigest(),
+        }))
+        history.restore('owner/repo', self.db)  # no desktop flag on a schedule
+        with sqlite3.connect(self.db) as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM signals').fetchone()[0], 2)
+            self.assertEqual(db.execute('SELECT value FROM portfolio_equity').fetchone()[0], 12345)
+        db.close()
+        before = history.digest(self.db)
+        (package / parts[0]['name']).write_bytes(b'x' * parts[0]['bytes'])
+        with self.assertRaisesRegex(RuntimeError, 'checksum'):
+            history.restore('owner/repo', self.db)
+        self.assertEqual(history.digest(self.db), before)
+
     def test_sqlite_backup_includes_live_wal(self):
         with sqlite3.connect(self.db) as db:
             db.execute('PRAGMA journal_mode=WAL')
