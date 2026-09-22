@@ -1,5 +1,6 @@
 import { chromium, type Browser, type BrowserContext, type BrowserContextOptions, type Page } from 'playwright';
 import type { RawInsiderTrade, OptionsActivity } from '../../src/types';
+import { SourceHttpError, retryTransient } from './reliability';
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
@@ -66,7 +67,7 @@ export function installChromium(): Promise<void> {
 export const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
-export type InsiderScraper = (context: BrowserContext) => Promise<RawInsiderTrade[]>;
+export type InsiderScraper = (context: BrowserContext, reportIssue?: (message: string) => void) => Promise<RawInsiderTrade[]>;
 export type OptionsScraper = (context: BrowserContext) => Promise<OptionsActivity[]>;
 
 export async function launchBrowser(headless: boolean): Promise<Browser> {
@@ -329,6 +330,8 @@ export function randomDelay(min = 1500, max = 3000): Promise<void> {
 }
 
 export interface NavOptions {
+  /** Check HTTP status and retry temporary failures once on a fresh page. */
+  reliable?: boolean;
   waitUntil?: 'load' | 'domcontentloaded' | 'networkidle';
   timeout?: number;
 }
@@ -340,14 +343,20 @@ export async function withPage<T>(
   parse: (page: Page) => Promise<T>,
   options: NavOptions = {},
 ): Promise<T> {
-  const page = await context.newPage();
-  try {
-    await page.goto(url, {
-      waitUntil: options.waitUntil ?? 'domcontentloaded',
-      timeout: options.timeout ?? 30_000,
-    });
-    return await parse(page);
-  } finally {
-    await page.close().catch(() => undefined);
-  }
+  const run = async () => {
+    const page = await context.newPage();
+    try {
+      const response = await page.goto(url, {
+        waitUntil: options.waitUntil ?? 'domcontentloaded',
+        timeout: options.timeout ?? 30_000,
+      });
+      if (options.reliable && response && !response.ok()) {
+        throw new SourceHttpError(response.status(), response.headers()['retry-after'] ?? null);
+      }
+      return await parse(page);
+    } finally {
+      await page.close().catch(() => undefined);
+    }
+  };
+  return options.reliable ? retryTransient(run) : run();
 }

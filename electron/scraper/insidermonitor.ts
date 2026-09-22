@@ -33,7 +33,7 @@ export async function scrapeInsiderMonitor(context: BrowserContext): Promise<Raw
     context,
     URL,
     async (page) => {
-      await page.waitForSelector('table', { timeout: 15_000 }).catch(() => undefined);
+      await page.waitForSelector('table', { timeout: 10_000 });
       const table = await extractFirstTable(page, ['table']);
       const idx = {
         ticker: colIndex(table.headers, ['symbol', 'ticker']),
@@ -93,8 +93,9 @@ export async function scrapeInsiderMonitor(context: BrowserContext): Promise<Raw
           sourceUrl: URL,
         });
       }
+      if (!out.length) throw new Error('Insider Monitor purchase table missing or unreadable');
       return out;
     },
-    { waitUntil: 'domcontentloaded' },
-  ).catch(() => [] as RawInsiderTrade[]);
+    { waitUntil: 'domcontentloaded', timeout: 20_000, reliable: true },
+  );
 }

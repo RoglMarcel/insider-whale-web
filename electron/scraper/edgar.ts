@@ -1,6 +1,7 @@
 import type { BrowserContext } from 'playwright';
 import { XMLParser } from 'fast-xml-parser';
 import type { RawInsiderTrade } from '../../src/types';
+import { createRequestPacer, retryTransient, SourceHttpError } from './reliability';
 import { cleanText, isValidTicker, canonicalTicker } from './util';
 
 /**
@@ -19,24 +20,33 @@ const ATOM_URL =
 const SEC_UA = 'insider-whale-terminal/1.0 (marcel.rogls@gmail.com)';
 const FILING_LIMIT = 60;
 const CONCURRENCY = 4;
-const PER_REQUEST_DELAY_MS = 250; // 4 workers × ~2–3 req/s each stays under SEC's 10/s
 const TOTAL_BUDGET_MS = 60_000;
 const FETCH_TIMEOUT_MS = 10_000;
-
+const pace = createRequestPacer(300); // one shared queue for all EDGAR workers
 const xml = new XMLParser({ ignoreAttributes: false, parseTagValue: false });
 
-async function secFetch(url: string): Promise<string | null> {
-  await new Promise((r) => setTimeout(r, PER_REQUEST_DELAY_MS));
-  try {
+type ReadSec = (url: string) => Promise<string>;
+function createSecReader(deadline: number): ReadSec {
+  let blocked: Error | null = null;
+  return (url) => retryTransient(async () => {
+    await pace();
+    if (blocked) throw blocked;
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new Error('EDGAR request budget exhausted');
     const res = await fetch(url, {
       headers: { 'User-Agent': SEC_UA, 'Accept-Encoding': 'gzip, deflate' },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      signal: AbortSignal.timeout(Math.min(FETCH_TIMEOUT_MS, remaining)),
     });
-    if (!res.ok) return null;
-    return await res.text();
-  } catch {
-    return null;
-  }
+    if (!res.ok) {
+      const error = new SourceHttpError(res.status, res.headers.get('retry-after'));
+      await res.body?.cancel();
+      // Stop the whole source on an access denial or rate limit. Waiting for
+      // the next scrape is safer than each worker hammering the same block.
+      if (res.status === 403 || res.status === 429) blocked = error;
+      throw error;
+    }
+    return res.text();
+  });
 }
 
 function asArray<T>(v: T | T[] | undefined | null): T[] {
@@ -71,7 +81,8 @@ interface FilingRef {
 /** Parse the getcurrent Atom feed into unique filing references. */
 export function parseAtomFilings(atomText: string): FilingRef[] {
   const doc = xml.parse(atomText);
-  const entries = asArray(doc?.feed?.entry);
+  if (!doc || !Object.prototype.hasOwnProperty.call(doc, 'feed')) throw new Error('EDGAR returned an invalid Atom feed');
+  const entries = asArray(doc.feed.entry);
   const seen = new Set<string>();
   const out: FilingRef[] = [];
   for (const entry of entries) {
@@ -91,6 +102,7 @@ export function parseAtomFilings(atomText: string): FilingRef[] {
       filingDate: /^\d{4}-\d{2}-\d{2}/.test(updated) ? updated.slice(0, 10) : undefined,
     });
   }
+  if (entries.length && !out.length) throw new Error('EDGAR feed contains no readable filing references');
   return out;
 }
 
@@ -160,52 +172,53 @@ export function mapOwnershipDocument(doc: any, ref: FilingRef): RawInsiderTrade[
 }
 
 /** Locate + fetch a filing's primary Form 4 XML, then map it. */
-async function fetchFiling(ref: FilingRef): Promise<RawInsiderTrade[]> {
+async function fetchFiling(ref: FilingRef, read: ReadSec): Promise<RawInsiderTrade[]> {
   const folder = `https://www.sec.gov/Archives/edgar/data/${ref.cik}/${ref.accession.replace(/-/g, '')}`;
-  const indexText = await secFetch(`${folder}/index.json`);
-  if (!indexText) return [];
-  let items: any[] = [];
-  try {
-    items = asArray(JSON.parse(indexText)?.directory?.item);
-  } catch {
-    return [];
+  const indexText = await read(`${folder}/index.json`);
+  const items = asArray<any>(JSON.parse(indexText)?.directory?.item);
+  const documents = items.filter((it) => typeof it?.name === 'string' && /^[^/]+\.xml$/i.test(it.name));
+  for (const item of documents) {
+    const doc = xml.parse(await read(`${folder}/${encodeURIComponent(item.name)}`));
+    if (doc?.ownershipDocument) return mapOwnershipDocument(doc, ref);
   }
-  const xmlItem = items.find((it) => typeof it?.name === 'string' && /\.xml$/i.test(it.name));
-  if (!xmlItem) return [];
-  const xmlText = await secFetch(`${folder}/${xmlItem.name}`);
-  if (!xmlText) return [];
-  try {
-    return mapOwnershipDocument(xml.parse(xmlText), ref);
-  } catch {
-    return [];
-  }
+  throw new Error('EDGAR filing has no readable ownership document');
 }
 
-export async function scrapeEdgar(_context: BrowserContext): Promise<RawInsiderTrade[]> {
-  const atomText = await secFetch(ATOM_URL);
-  if (!atomText) return [];
-
-  let filings: FilingRef[] = [];
-  try {
-    filings = parseAtomFilings(atomText).slice(0, FILING_LIMIT);
-  } catch {
-    return [];
-  }
+export async function scrapeEdgar(
+  _context: BrowserContext,
+  reportIssue: (message: string) => void = (message) => console.warn(`[edgar] ${message}`),
+): Promise<RawInsiderTrade[]> {
+  const deadline = Date.now() + TOTAL_BUDGET_MS;
+  const read = createSecReader(deadline);
+  const filings = parseAtomFilings(await read(ATOM_URL)).slice(0, FILING_LIMIT);
   if (!filings.length) return [];
 
-  const deadline = Date.now() + TOTAL_BUDGET_MS;
   const out: RawInsiderTrade[] = [];
   let next = 0;
+  let completed = 0;
+  let failed = 0;
+  let stopped = false;
+  let lastError = '';
   const workers = Array.from({ length: Math.min(CONCURRENCY, filings.length) }, async () => {
-    while (next < filings.length && Date.now() < deadline) {
+    while (next < filings.length && Date.now() < deadline && !stopped) {
       const ref = filings[next++];
       try {
-        out.push(...(await fetchFiling(ref)));
-      } catch {
-        /* per-filing best-effort */
+        out.push(...(await fetchFiling(ref, read)));
+        completed++;
+      } catch (error) {
+        failed++;
+        lastError = error instanceof Error ? error.message : String(error);
+        if (error instanceof SourceHttpError && [403, 429].includes(error.status)) stopped = true;
       }
     }
   });
   await Promise.all(workers);
+  const skipped = filings.length - next;
+  console.log(`[edgar] ${completed}/${filings.length} filings read; ${out.length} purchases; ${failed} failed; ${skipped} deferred`);
+  if (failed || skipped) {
+    const message = `EDGAR coverage incomplete: ${completed}/${filings.length} filings read, ${failed} failed, ${skipped} deferred${lastError ? '; ' + lastError : ''}`;
+    if (!completed) throw new Error(message);
+    reportIssue(message);
+  }
   return out;
 }

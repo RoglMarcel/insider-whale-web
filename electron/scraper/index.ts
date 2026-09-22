@@ -851,7 +851,7 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
           } else {
             const timedOut = Symbol('timeout');
             const result = await Promise.race([
-              fn(context).then((rows) => rows as RawInsiderTrade[]),
+              fn(context, (message) => errors.push({ source: source.key, message })).then((rows) => rows as RawInsiderTrade[]),
               new Promise<typeof timedOut>((resolve) =>
                 setTimeout(() => resolve(timedOut), PER_SCRAPER_TIMEOUT_MS),
               ),
@@ -1427,7 +1427,7 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
   // valuation) alone must not mark a productive scrape as failed.
   const persistFailed = errors.some((e) => e.source === 'database');
   const trackedKeys = new Set([...enabled.map((s) => s.key), ...SIDE_KEYS]);
-  const sourceErrorCount = errors.filter((e) => trackedKeys.has(e.source)).length;
+  const sourceErrorCount = new Set(errors.filter((e) => trackedKeys.has(e.source)).map((e) => e.source)).size;
   const status: ScrapeResult['status'] = persistFailed
     ? 'failed'
     : errors.length === 0
