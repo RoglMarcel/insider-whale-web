@@ -16,7 +16,7 @@ import { cleanText, isValidTicker, canonicalTicker } from './util';
  */
 
 const ATOM_URL =
-  'https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=4&company=&dateb=&owner=include&count=100&output=atom';
+  'https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=4&company=&dateb=&owner=only&count=100&output=atom';
 const SEC_UA = 'insider-whale-terminal/1.0 (marcel.rogls@gmail.com)';
 const FILING_LIMIT = 60;
 const CONCURRENCY = 4;
@@ -85,7 +85,16 @@ export function parseAtomFilings(atomText: string): FilingRef[] {
   const entries = asArray(doc.feed.entry);
   const seen = new Set<string>();
   const out: FilingRef[] = [];
+  let eligible = 0;
   for (const entry of entries) {
+    // SEC's type=4 is a prefix search: 424B2/40-F also match. Only exact
+    // ownership forms belong here; filter before the filing budget/dedup.
+    const category = asArray<any>(entry?.category).find((c) => c?.['@_label'] === 'form type');
+    const form = String(category?.['@_term'] ?? /^([^ ]+)\s+-/.exec(String(entry?.title ?? ''))?.[1] ?? '').trim().toUpperCase();
+    if (!form) throw new Error('EDGAR feed entry has no form type');
+    if (form !== '4' && form !== '4/A') continue;
+    eligible++;
+
     const href: string = entry?.link?.['@_href'] ?? '';
     const m = /Archives\/edgar\/data\/(\d+)\/.*?(\d{10}-\d{2}-\d{6})-index/.exec(href);
     if (!m) continue;
@@ -102,7 +111,7 @@ export function parseAtomFilings(atomText: string): FilingRef[] {
       filingDate: /^\d{4}-\d{2}-\d{2}/.test(updated) ? updated.slice(0, 10) : undefined,
     });
   }
-  if (entries.length && !out.length) throw new Error('EDGAR feed contains no readable filing references');
+  if (eligible && !out.length) throw new Error('EDGAR feed contains no readable filing references');
   return out;
 }
 
