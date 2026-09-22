@@ -3,7 +3,7 @@ import { createRequestPacer, retryTransient, SourceHttpError } from '../electron
 import { parseAtomFilings, scrapeEdgar } from '../electron/scraper/edgar';
 import type { BrowserContext } from 'playwright';
 
-const feed = (n: number) => `<feed>${Array.from({ length: n }, (_, i) => `<entry><link href="https://www.sec.gov/Archives/edgar/data/1/0000000001-26-00000${i}-index.htm"/><updated>2026-09-22</updated></entry>`).join('')}</feed>`;
+const feed = (n: number) => `<feed>${Array.from({ length: n }, (_, i) => `<entry><category label="form type" term="4"/><link href="https://www.sec.gov/Archives/edgar/data/1/0000000001-26-00000${i}-index.htm"/><updated>2026-09-22</updated></entry>`).join('')}</feed>`;
 const ownership = (code: string) => `<ownershipDocument><issuer><issuerTradingSymbol>ABC</issuerTradingSymbol></issuer><nonDerivativeTable><nonDerivativeTransaction><transactionCoding><transactionCode>${code}</transactionCode></transactionCoding><transactionDate><value>2026-09-21</value></transactionDate><transactionAmounts><transactionShares><value>10</value></transactionShares><transactionPricePerShare><value>20</value></transactionPricePerShare></transactionAmounts></nonDerivativeTransaction></nonDerivativeTable></ownershipDocument>`;
 const context = {} as BrowserContext;
 
@@ -49,6 +49,18 @@ describe('EDGAR coverage', () => {
   it('rejects an HTML block page but accepts a genuinely empty Atom feed', () => {
     expect(() => parseAtomFilings('<html>Access denied</html>')).toThrow('invalid Atom');
     expect(parseAtomFilings('<feed/>')).toEqual([]);
+  });
+
+  it('excludes prefix matches before deduplication and accepts Form 4 amendments', () => {
+    const purchase = feed(1);
+    const unrelated = purchase.replace('term="4"', 'term="424B2"').replace('<feed>', '').replace('</feed>', '');
+    expect(parseAtomFilings(purchase.replace('<feed>', '<feed>' + unrelated))).toHaveLength(1);
+    expect(parseAtomFilings(purchase.replace('term="4"', 'term="4/A"'))).toHaveLength(1);
+    expect(parseAtomFilings(purchase.replace('term="4"', 'term="40-F"'))).toEqual([]);
+  });
+
+  it('supports the Atom title as a form-type fallback', () => {
+    expect(parseAtomFilings(feed(1).replace('<category label="form type" term="4"/>', '<title>4 - Example (Issuer)</title>'))).toHaveLength(1);
   });
 
   it('reports a failed feed as a failure, not zero purchases', async () => {
