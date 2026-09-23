@@ -82,7 +82,8 @@ const todayYmd = (): string => new Date().toISOString().slice(0, 10);
  * spliced the v1.4.0 and v1.5.0 exit rules into a single line.
  */
 // 3: repair synthetic exits caused by missing quotes; no trade without a price.
-const CURVE_BUILDER_VERSION = 3;
+// 4: enforce the funded weight floor; replay affected entries and equity together.
+const CURVE_BUILDER_VERSION = 4;
 
 let runInFlight = false;
 
