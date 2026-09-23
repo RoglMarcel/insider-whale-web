@@ -579,8 +579,11 @@ export function simulatePortfolio(input: PortfolioSimInput): PortfolioSimResult 
 
       const eq = bookEquity(b, spyPx);
       const { targetWeight, value } = positionSize(c.score, eq, cfg);
+      // The target's clamp is not enough: limited cash can fund a smaller fill.
+      // Enforce both minimums against equity immediately before this entry.
+      const minimumFunding = Math.max(cfg.minTicket, cfg.minWeight * Math.max(0, eq));
       const spend = Math.min(value, available(b, spyPx, slip));
-      if (spend < cfg.minTicket) {
+      if (spend < minimumFunding) {
         if (record) {
           events.push({
             date: d,
@@ -588,7 +591,7 @@ export function simulatePortfolio(input: PortfolioSimInput): PortfolioSimResult 
             ticker: c.ticker,
             score: c.score,
             amount: round2(spend),
-            note: `only ${spend.toFixed(2)} investable, minimum ticket is ${cfg.minTicket}`,
+            note: `only ${spend.toFixed(2)} investable, minimum funding is ${minimumFunding.toFixed(2)} (ticket ${cfg.minTicket}, weight ${(cfg.minWeight * 100).toFixed(2)}%)`,
           });
         }
         continue;
