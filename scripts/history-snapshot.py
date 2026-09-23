@@ -16,6 +16,7 @@ import shutil
 import sqlite3
 import subprocess
 import tempfile
+import time
 
 TAG = 'history-data'
 ASSET = re.compile(r'^history-\d+-\d+-([0-9a-f]{64})\.db\.gz$')
@@ -44,6 +45,27 @@ def assets(repo, release_id):
                          f'repos/{repo}/releases/{release_id}/assets?per_page=100'))
     return [a for page in pages for a in page
             if a['state'] == 'uploaded' and ASSET.fullmatch(a['name'])]
+
+
+def download_asset(repo, asset, target):
+    """Use the selected immutable ID, avoiding a second cached release lookup."""
+    for attempt in range(3):
+        try:
+            with open(target, 'wb') as dest:
+                result = subprocess.run(
+                    ['gh', 'api', '-H', 'Accept: application/octet-stream',
+                     f'repos/{repo}/releases/assets/{asset["id"]}'],
+                    stdout=dest, stderr=subprocess.PIPE, timeout=180,
+                )
+            if result.returncode == 0:
+                return
+            error = result.stderr.decode('utf-8', errors='replace').strip()
+        except subprocess.TimeoutExpired:
+            error = 'download timed out'
+        target.unlink(missing_ok=True)
+        if attempt < 2:
+            time.sleep(2 ** attempt)
+    raise RuntimeError(f'History asset {asset["id"]} download failed: {error}')
 
 
 def digest(path):
@@ -130,7 +152,7 @@ def restore(repo, path, desktop=False):
         restored = tmp / 'restored.db'
         if rel:
             latest = max(candidates, key=lambda a: (a['created_at'], a['id']))
-            gh('release', 'download', TAG, '--repo', repo, '--pattern', latest['name'], '--dir', str(tmp))
+            download_asset(repo, latest, tmp / latest['name'])
             unpack(tmp / latest['name'], restored, ASSET.fullmatch(latest['name'])[1])
             print(f'Restored {latest["name"]}')
         else:
