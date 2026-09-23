@@ -46,7 +46,7 @@ export function RulesCard({
   const [editing, setEditing] = useState(false);
 
   const assumptions: TKey[] = [
-    'pf.assume.cash',
+    config.cashPolicy === 'spy' ? 'pf.assume.cash' : 'pf.assume.cashIdle',
     'pf.assume.prices',
     'pf.assume.lookahead',
     'pf.assume.backfill',
@@ -74,7 +74,7 @@ export function RulesCard({
             <Line label={t('pf.rules.entry')} value={t('pf.rules.entryValue', { score: config.entryScore })} />
             <Line
               label={t('pf.rules.sizing')}
-              value={t('pf.rules.sizingValue', {
+              value={config.baseWeight === config.maxWeight && config.minWeight === config.baseWeight ? t('pf.rules.fixedSizing', { weight: p1(config.baseWeight) }) : t('pf.rules.sizingValue', {
                 base: p1(config.baseWeight),
                 entry: config.entryScore,
                 max: p1(config.maxWeight),

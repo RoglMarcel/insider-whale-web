@@ -59,6 +59,8 @@ jobs:
           npm rebuild better-sqlite3 --build-from-source
           npx esbuild electron/webPublish.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --alias:electron=./scripts/electron-stub.ts --outfile=tmp/web-publish-test.cjs
           node tests/persistence/desktop-publish.integration.cjs
+          npx esbuild electron/database.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --alias:electron=./scripts/electron-stub.ts --outfile=tmp/experiment-db-test.cjs
+          node tests/persistence/portfolio-experiment.integration.cjs
 
       - name: Typecheck
         run: npm run typecheck

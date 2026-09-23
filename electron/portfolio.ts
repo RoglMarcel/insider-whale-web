@@ -1,3 +1,4 @@
+import { buildInsiderOnly, INSIDER_ONLY_ID } from '../src/lib/insider-only';
 import nodeFs from 'node:fs';
 import nodePath from 'node:path';
 import {
@@ -18,6 +19,9 @@ import {
 } from '../src/lib/portfolio-rules';
 import {
   clearPortfolio,
+  getPortfolioExperiment,
+  setPortfolioExperiment,
+  archiveExperimentCandidates,
   clearPortfolioEquity,
   deletePortfolioEquityDay,
   getPortfolioConfig,
@@ -227,7 +231,8 @@ export async function syncPortfolio(): Promise<PortfolioSyncReport> {
 
 async function runSync(): Promise<PortfolioSyncReport> {
   const config = getPortfolioConfig();
-  const firstSignal = getPortfolioHistoryStart(config.entryScore);
+  const previousExperiment = getPortfolioExperiment(INSIDER_ONLY_ID);
+  const firstSignal = getPortfolioHistoryStart(config.entryScore) ?? previousExperiment?.state.meta.firstDate;
   if (!firstSignal) {
     return { ok: false, reason: 'no signal has ever reached the entry threshold', daysWritten: 0, restatedDays: 0, rebuilt: false, pricesFetched: 0, suspectPoints: 0 };
   }
@@ -279,19 +284,29 @@ async function runSync(): Promise<PortfolioSyncReport> {
   // Derived FROM the candidates, not intersected with the old worklist: an
   // intersection can only lose a ticker, and a candidate without prices comes
   // back as a false "not tradable" in the data-quality line.
-  const universe = [...new Set(candidates.map((c) => c.ticker))].sort();
-  const priceSync = await syncPrices([BENCHMARK, ...universe.filter((t) => t !== BENCHMARK)], start);
+  const experimentCandidates = archiveExperimentCandidates(INSIDER_ONLY_ID, candidates);
+  const universe = [...new Set([...candidates, ...experimentCandidates].map((c) => c.ticker))].sort();
+  // Preserve the experiment's calendar even after rolling source rows expire.
+  const archivedStart = previousExperiment?.state.meta.firstDate ?? start;
+  const experimentStart = config.inceptionDate && config.inceptionDate > archivedStart ? config.inceptionDate : archivedStart;
+  const fetchStart = experimentStart < start ? experimentStart : start;
+  const priceSync = await syncPrices([BENCHMARK, ...universe.filter((t) => t !== BENCHMARK)], fetchStart);
 
-  const spy = getPriceBook([BENCHMARK], start)[BENCHMARK];
+  const spy = getPriceBook([BENCHMARK], fetchStart)[BENCHMARK];
   if (!spy || !Object.keys(spy).length) {
     // A curve with no benchmark cannot answer the only question it exists for.
     return { ok: false, reason: 'SPY price series unavailable — nothing written', daysWritten: 0, restatedDays: 0, rebuilt: false, pricesFetched: priceSync.fetched, suspectPoints: priceSync.suspect.length };
   }
 
-  const prices = getPriceBook(universe, start);
-  const tradingDays = Object.keys(spy).sort();
+  const prices = getPriceBook(universe, fetchStart);
+  const allTradingDays = Object.keys(spy).sort();
+  const tradingDays = allTradingDays.filter((d) => d >= start);
 
   const sim = simulatePortfolio({ config, tradingDays, spy, prices, candidates });
+  const experiment = buildInsiderOnly({ config, tradingDays: allTradingDays.filter((d) => d >= experimentStart), spy, prices, candidates: experimentCandidates }, new Date().toISOString());
+  const previousPoints = new Map(previousExperiment?.state.equity.map((p) => [p.date, p.equity]) ?? []);
+  experiment.state.meta.restatedDays = experiment.state.equity.filter((p) => previousPoints.has(p.date) && Math.abs(previousPoints.get(p.date)! - p.equity) > 0.01).length;
+  experiment.state.meta.suspectPrices = priceSync.suspect.length;
 
   // A stored curve belongs to the config that built it. Append new rules onto
   // rows simulated under old ones and the chart becomes a splice of two
@@ -353,6 +368,8 @@ async function runSync(): Promise<PortfolioSyncReport> {
     untradableTickers: sim.untradable,
     restatedDays,
   });
+
+  setPortfolioExperiment(experiment);
 
   return {
     ok: true,
@@ -477,6 +494,7 @@ export function getPortfolioState(): PortfolioState {
   return {
     // The parameters the STORED curve was built with — never the current draft.
     config: runMeta?.config ?? config,
+    insiderOnly: getPortfolioExperiment(INSIDER_ONLY_ID),
     meta: {
       available: equity.length > 0,
       firstDate: equity[0]?.date ?? null,

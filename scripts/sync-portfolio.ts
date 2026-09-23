@@ -79,7 +79,7 @@ async function main(): Promise<void> {
   const points = publishPortfolio();
   console.log(`[portfolio] wrote public/data/portfolio.json (${points} point(s))`);
 
-  const incomplete = state.open.some((p) => p.priceStale) || !!report.missingPriceTickers?.length;
+  const incomplete = state.open.some((p) => p.priceStale) || state.insiderOnly?.state.open.some((p) => p.priceStale) || !state.insiderOnly || !!report.missingPriceTickers?.length;
   recordUpdate(incomplete ? 'partial' : 'success', incomplete ? 'prices_unavailable' : 'updated');
   closeDatabase();
 }
