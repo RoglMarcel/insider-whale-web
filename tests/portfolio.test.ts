@@ -908,3 +908,48 @@ describe('helpers', () => {
     expect(firstTradableDay('ZZZ', days[0], days, prices)).toBeNull();
   });
 });
+
+
+describe('minimum funded position size', () => {
+  const run = (over: Partial<PortfolioConfig> = {}) => {
+    const days = calendar('2026-01-05', 2);
+    const tickers = ['AAA', 'BBB', 'CCC', 'DDD'];
+    return simulatePortfolio(input({
+      config: simCfg({ cashPolicy: 'idle', slippageBps: 0, baseWeight: 0.3,
+        maxWeight: 0.3, minWeight: 0.25, minTicket: 100, ...over }),
+      tradingDays: days, spy: flat(days, 500),
+      prices: Object.fromEntries(tickers.map((t) => [t, flat(days, 100)])),
+      candidates: tickers.map((ticker) => cand({ ticker, earliestDate: days[0], score: 80 })),
+    }));
+  };
+
+  it.each(['idle', 'spy'] as const)('rejects above-ticket funding below minWeight with %s cash', (cashPolicy) => {
+    const result = run({ cashPolicy, slippageBps: 5 });
+    expect(result.positions.map((p) => p.ticker)).toEqual(['AAA', 'BBB', 'CCC']);
+    const skipped = result.events.find((e) => e.ticker === 'DDD' && e.kind === 'skipped_no_cash');
+    expect(skipped).toBeDefined();
+    expect(skipped!.amount).toBeGreaterThan(100);
+    expect(skipped!.amount).toBeLessThan(2500);
+    expect(result.equity.every((e) => e.cash >= 0)).toBe(true);
+  });
+
+  it('accepts a partial fill exactly at the weight floor', () => {
+    const result = run({ minWeight: 0.1 });
+    const last = result.positions.find((p) => p.ticker === 'DDD');
+    expect(last?.costBasis).toBe(1000);
+    expect(last?.targetWeight).toBe(0.3);
+    expect(result.events.filter((e) => e.kind === 'skipped_no_cash')).toHaveLength(0);
+  });
+
+  it('rejects a partial fill just below the weight floor', () => {
+    expect(run({ minWeight: 0.100001 }).positions).toHaveLength(3);
+  });
+
+  it('enforces the minimum ticket when it is the stricter floor', () => {
+    expect(run({ minWeight: 0.05, minTicket: 1100 }).positions).toHaveLength(3);
+  });
+
+  it('keeps the current shipped weights and position limit', () => {
+    expect(DEFAULT_PORTFOLIO_CONFIG).toMatchObject({ baseWeight: 0.05, minWeight: 0.03, maxWeight: 0.1, maxPositions: 20 });
+  });
+});
