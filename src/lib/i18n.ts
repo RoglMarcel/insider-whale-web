@@ -21,6 +21,18 @@ export const LANGUAGES: { key: Lang; label: string; flag: string }[] = [
 ];
 
 const en = {
+  'pf.compare.title': 'Three portfolios · one starting capital',
+  'pf.compare.market': '1 · S&P 500',
+  'pf.compare.overlay': '2 · Small positions + S&P 500',
+  'pf.compare.insider': '3 · Insider-only',
+  'pf.compare.history': 'Experiment defined on {date}. Earlier results are retrospective simulations, not a live track record.',
+  'pf.compare.pending': 'The comparison will appear after all portfolios have matching dates and starting capital.',
+  'pf.compare.exposure': 'Capital in insider positions',
+  'pf.compare.drawdown': 'Maximum drawdown',
+  'pf.compare.sameStart': 'Same dates and starting capital; simulated fills include slippage.',
+  'pf.compare.details': 'Portfolio details',
+  'pf.compare.rules': 'Insider-only: $10,000 start, equal 20% entry targets, up to 5 stocks. Unused capital stays in cash. No automatic rebalancing or follow-up buys; weights may drift after entry. Same entry threshold and exit rules as portfolio 2.',
+
   'updates.title': 'Update status',
   'updates.partial': 'Partial update — some data could not be refreshed.',
   'updates.unknown': 'Update status unavailable',
@@ -514,6 +526,8 @@ const en = {
   "pf.rules.entry": "Entry",
   "pf.rules.entryValue": "Score ≥ {score} on first sighting, at that session’s closing price",
   "pf.rules.sizing": "Position size",
+  "pf.rules.fixedSizing": "Each new position targets {weight}% of equity at entry; weights can drift afterwards. No automatic rebalancing or additional buys.",
+  "pf.assume.cashIdle": "Unused capital stays in cash with zero assumed interest. Returns include the effect of idle cash.",
   "pf.rules.sizingValue": "{base}% of equity at score {entry}, rising to {max}% (floor {min}%) — the higher the score, the larger the position",
   "bd.dormant": "Inactive (input missing, not a verdict):",
   "pf.rules.exits": "Exits (first barrier wins)",
@@ -585,6 +599,18 @@ const en = {
 export type TKey = keyof typeof en;
 
 const de: Record<TKey, string> = {
+  'pf.compare.title': 'Drei Portfolios · gleiches Startkapital',
+  'pf.compare.market': '1 · S&P 500',
+  'pf.compare.overlay': '2 · Kleine Positionen + S&P 500',
+  'pf.compare.insider': '3 · Nur Insider-Signale',
+  'pf.compare.history': 'Experiment seit {date}. Frühere Ergebnisse sind rückblickende Simulationen, keine live erzielte Rendite.',
+  'pf.compare.pending': 'Der Vergleich erscheint, sobald alle Portfolios dieselben Daten und dasselbe Startkapital haben.',
+  'pf.compare.exposure': 'Kapital in Insider-Positionen',
+  'pf.compare.drawdown': 'Maximaler Rückgang',
+  'pf.compare.sameStart': 'Gleicher Zeitraum und gleiches Startkapital; simulierte Käufe enthalten Slippage.',
+  'pf.compare.details': 'Portfoliodetails',
+  'pf.compare.rules': 'Nur Insider-Signale: 10.000 $ Startkapital, gleiche Kaufziele von 20 %, maximal 5 Aktien. Ungenutztes Kapital bleibt bar. Keine automatische Umschichtung oder Nachkäufe; Gewichte können nach Einstieg abweichen. Gleiche Einstiegsschwelle und Ausstiegsregeln wie Portfolio 2.',
+
   'updates.title': 'Aktualisierungsstatus',
   'updates.partial': 'Teilweise aktualisiert — einige Daten konnten nicht aktualisiert werden.',
   'updates.unknown': 'Aktualisierungsstatus nicht verfügbar',
@@ -1078,6 +1104,8 @@ const de: Record<TKey, string> = {
   "pf.rules.entry": "Einstieg",
   "pf.rules.entryValue": "Score ≥ {score} beim ersten Sichten, zum Schlusskurs dieser Sitzung",
   "pf.rules.sizing": "Positionsgröße",
+  "pf.rules.fixedSizing": "Jede neue Position erhält beim Einstieg {weight}% des Depotwerts; danach können Gewichte abweichen. Keine automatische Neugewichtung oder Nachkäufe.",
+  "pf.assume.cashIdle": "Nicht investiertes Kapital bleibt unverzinst als Cash. Die Rendite enthält den Effekt dieses Cash-Anteils.",
   "pf.rules.sizingValue": "{base} % des Depotwerts bei Score {entry}, steigend bis {max} % (Untergrenze {min} %) — je höher der Score, desto größer die Position",
   "bd.dormant": "Inaktiv (Eingabe fehlt, kein Urteil):",
   "pf.rules.exits": "Ausstiege (die erste Barriere gewinnt)",

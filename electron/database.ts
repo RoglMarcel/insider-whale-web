@@ -20,6 +20,8 @@ import {
   type PoliticianTrade,
   type DataQualityReport,
   type PortfolioConfig,
+  type PortfolioExperiment,
+  type PortfolioCandidate,
   type PortfolioEquityPoint,
   type PortfolioEvent,
   type PortfolioPosition,
@@ -233,6 +235,18 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_itr_name ON insider_track_records(insider_
 CREATE TABLE IF NOT EXISTS app_settings (
   key TEXT PRIMARY KEY,
   value TEXT
+);
+
+CREATE TABLE IF NOT EXISTS portfolio_experiments (
+  id TEXT PRIMARY KEY,
+  state_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS portfolio_experiment_candidates (
+  experiment_id TEXT NOT NULL,
+  ticker TEXT NOT NULL,
+  earliest_date TEXT NOT NULL,
+  candidate_json TEXT NOT NULL,
+  PRIMARY KEY (experiment_id, ticker, earliest_date)
 );
 
 CREATE TABLE IF NOT EXISTS politician_trades (
@@ -2452,4 +2466,29 @@ export function setPortfolioRunMeta(meta: PortfolioRunMeta): void {
        ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
     )
     .run(PORTFOLIO_META_KEY, JSON.stringify(meta));
+}
+
+
+/** Independent snapshot, included in normal SQLite history backups. */
+export function getPortfolioExperiment(id: string): PortfolioExperiment | null {
+  const row = getDb().prepare('SELECT state_json FROM portfolio_experiments WHERE id = ?').get(id) as { state_json: string } | undefined;
+  return row ? safeParse<PortfolioExperiment | null>(row.state_json, null) : null;
+}
+
+export function setPortfolioExperiment(experiment: PortfolioExperiment): void {
+  getDb().prepare('INSERT INTO portfolio_experiments(id, state_json) VALUES(?, ?) ON CONFLICT(id) DO UPDATE SET state_json=excluded.state_json')
+    .run(experiment.id, JSON.stringify(experiment));
+}
+
+/** Keep the first observed candidate when rolling source rows are pruned. */
+export function archiveExperimentCandidates(id: string, candidates: PortfolioCandidate[]): PortfolioCandidate[] {
+  const db = getDb();
+  const insert = db.prepare('INSERT OR IGNORE INTO portfolio_experiment_candidates VALUES(?, ?, ?, ?)');
+  db.transaction(() => {
+    for (const c of [...candidates].sort((a,b) => a.earliestDate.localeCompare(b.earliestDate) || (Number(b.source === 'signal') - Number(a.source === 'signal')))) {
+      insert.run(id, c.ticker, c.earliestDate, JSON.stringify(c));
+    }
+  })();
+  const rows = db.prepare('SELECT candidate_json FROM portfolio_experiment_candidates WHERE experiment_id = ? ORDER BY earliest_date, ticker').all(id) as { candidate_json: string }[];
+  return rows.map((r) => JSON.parse(r.candidate_json) as PortfolioCandidate);
 }

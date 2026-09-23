@@ -1849,7 +1849,15 @@ export interface PortfolioMeta {
   note: string | null;
 }
 
+export interface PortfolioExperiment {
+  id: string;
+  /** Earlier results are retrospective simulations, not a live track record. */
+  definedAt: string;
+  state: PortfolioState;
+}
+
 export interface PortfolioState {
+  insiderOnly?: PortfolioExperiment | null;
   config: PortfolioConfig;
   meta: PortfolioMeta;
   equity: PortfolioEquityPoint[];

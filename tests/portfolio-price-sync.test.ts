@@ -10,6 +10,7 @@ vi.mock('../electron/database', () => ({
   upsertPriceRows: mocks.upsert,
   getPortfolioConfig: mocks.config,
   getPortfolioRunMeta: () => null,
+  getPortfolioExperiment: () => null,
   getPortfolioEquity: mocks.equity,
   getPortfolioPositions: mocks.positions,
   getPortfolioEvents: () => [],
