@@ -37,6 +37,7 @@ class PersistenceTests(unittest.TestCase):
             ''')
         self.addCleanup(patch.stopall)
         patch.object(history, 'gh', side_effect=self.gh).start()
+        self.download = patch.object(history, 'download_asset', side_effect=lambda repo, asset, target: shutil.copyfile(self.remote / asset['name'], target)).start()
         patch.dict(os.environ, {'GITHUB_SHA': 'abc'}).start()
 
     def gh(self, *args):
@@ -63,6 +64,18 @@ class PersistenceTests(unittest.TestCase):
 
     def save(self, run='100'):
         history.save('owner/repo', self.db, self.root / f'output-{run}', run, '1')
+
+    def test_restore_downloads_selected_id_without_second_release_lookup(self):
+        self.save()
+        original = self.gh
+        def stale_release(*args):
+            if args[:2] == ('release', 'download'):
+                raise AssertionError('Release name lookup must not run during restore')
+            return original(*args)
+        with patch.object(history, 'gh', side_effect=stale_release):
+            history.restore('owner/repo', self.db)
+        self.download.assert_called_once()
+        self.assertEqual(self.download.call_args.args[1]['id'], 1)
 
     def test_large_database_roundtrip(self):
         # Larger than GitHub's raw Git blob limit, including an incompressible row.
@@ -169,6 +182,31 @@ class PersistenceTests(unittest.TestCase):
         history.restore('owner/repo', self.db)
         with sqlite3.connect(self.db) as restored:
             self.assertEqual(restored.execute('SELECT count(*) FROM signals').fetchone()[0], 2)
+
+
+class AssetDownloadTests(unittest.TestCase):
+    def test_retries_exact_asset_id_and_discards_partial_bytes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / 'snapshot.gz'
+            calls = []
+            def run(args, **kwargs):
+                calls.append(args)
+                kwargs['stdout'].write(b'partial' if len(calls) == 1 else b'complete')
+                return subprocess.CompletedProcess(args, 1 if len(calls) == 1 else 0, stderr=b'HTTP 503')
+            with patch.object(history.subprocess, 'run', side_effect=run), patch.object(history.time, 'sleep'):
+                history.download_asset('owner/repo', {'id': 123}, target)
+            self.assertEqual(target.read_bytes(), b'complete')
+            self.assertEqual(len(calls), 2)
+            self.assertTrue(all(c[-1] == 'repos/owner/repo/releases/assets/123' for c in calls))
+
+    def test_exhausted_download_reports_error_and_removes_partial_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / 'snapshot.gz'
+            result = subprocess.CompletedProcess([], 1, stderr=b'HTTP 403')
+            with patch.object(history.subprocess, 'run', return_value=result), patch.object(history.time, 'sleep'):
+                with self.assertRaisesRegex(RuntimeError, 'HTTP 403'):
+                    history.download_asset('owner/repo', {'id': 123}, target)
+            self.assertFalse(target.exists())
 
 
 if __name__ == '__main__':
