@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fetchAdjCloseSeries } from '../electron/prices';
+import { fetchAdjCloseSeries, outcomeCutoff } from '../electron/prices';
 const payload = { chart: { result: [{ timestamp: [1790294400], indicators: { adjclose: [{ adjclose: [100] }] } }] } };
 const ok = () => ({ ok: true, json: async () => payload });
 const fail = (status: number) => ({ ok: false, status });
@@ -42,5 +42,18 @@ describe('adjusted price request recovery', () => {
     const controller = new AbortController(); controller.abort();
     expect(await fetchAdjCloseSeries('AAA', { signal: controller.signal })).toBeNull();
     expect(fetcher).not.toHaveBeenCalled();
+  });
+});
+
+describe('outcome trading-calendar cutoff', () => {
+  it('keeps Saturday and Sunday outcomes pending until the next benchmark session', () => {
+    const prices = [{ date: '2026-09-25', px: 100 }];
+    expect(outcomeCutoff(prices, '2026-09-26')).toBe('2026-09-25');
+    expect(outcomeCutoff(prices, '2026-09-27')).toBe('2026-09-25');
+    expect(outcomeCutoff([...prices, { date: '2026-09-28', px: 101 }], '2026-09-28')).toBe('2026-09-28');
+  });
+  it('uses observed sessions across holidays and rejects future/invalid points', () => {
+    expect(outcomeCutoff([{ date: '2026-09-04', px: 100 }, { date: '2026-09-08', px: 101 }], '2026-09-07')).toBe('2026-09-04');
+    expect(outcomeCutoff([{ date: '2026-09-25', px: NaN }], '2026-09-26')).toBeNull();
   });
 });
