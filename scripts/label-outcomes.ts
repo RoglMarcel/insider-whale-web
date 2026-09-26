@@ -1,3 +1,4 @@
+import { tickerIssue } from '../src/lib/ticker-quality';
 /**
  * Outcome labeler — turns stored signals into TRAINING DATA (v1.1.13).
  *
@@ -80,12 +81,15 @@ async function main(): Promise<void> {
   // duplicate key, because they carry the freshest breakdown snapshot.
   const bySignal = getOutcomeCandidates().filter((c) => /^\d{4}-\d{2}-\d{2}$/.test(c.entryDate));
   const seenKeys = new Set(bySignal.map((c) => `${c.ticker}|${c.entryDate}`));
-  const candidates = [
+  const rawCandidates = [
     ...bySignal,
     ...getOutcomeBackfillCandidates().filter(
       (c) => /^\d{4}-\d{2}-\d{2}$/.test(c.entryDate) && !seenKeys.has(`${c.ticker}|${c.entryDate}`),
     ),
   ];
+  const quarantined = [...new Set(rawCandidates.filter((c) => tickerIssue(c.ticker)).map((c) => c.ticker))].sort();
+  const candidates = rawCandidates.filter((c) => !tickerIssue(c.ticker));
+  if (quarantined.length) console.log(`[label] quarantined malformed symbols (history retained): ${quarantined.join(', ')}`);
   const labeled = getLabeledKeys();
   const spy = await fetchSeries('SPY');
   const cutoff = spy && outcomeCutoff(spy, new Date().toISOString().slice(0, 10));
@@ -110,7 +114,7 @@ async function main(): Promise<void> {
       `already labeled=${labeled.size} · ripe+missing=${todo.length} · tickers this run=${tickers.length}`,
   );
   if (!tickers.length) {
-    recordUpdate('skipped', 'no_work');
+    recordUpdate('skipped', 'no_work', 0, [], undefined, quarantined);
     report();
     closeDatabase();
     return;
@@ -159,7 +163,7 @@ async function main(): Promise<void> {
   console.log(`[label] wrote ${written} new labeled outcome(s).`);
   const deferred = new Set(todo.map((c) => c.ticker)).size > tickers.length;
   if (missing.size) console.warn(`[label] missing historical prices: ${[...missing].sort().join(', ')}`);
-  recordUpdate(missing.size || deferred ? 'partial' : 'success', missing.size ? 'prices_unavailable' : deferred ? 'work_remaining' : 'updated', missing.size, [...missing]);
+  recordUpdate(missing.size || deferred ? 'partial' : 'success', missing.size ? 'prices_unavailable' : deferred ? 'work_remaining' : 'updated', missing.size, [...missing], undefined, quarantined);
   report();
   closeDatabase();
 }

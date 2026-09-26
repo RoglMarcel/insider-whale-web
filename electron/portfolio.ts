@@ -1,3 +1,4 @@
+import { cleanPortfolioCandidates } from '../src/lib/ticker-quality';
 import { buildInsiderOnly, INSIDER_ONLY_ID } from '../src/lib/insider-only';
 import nodeFs from 'node:fs';
 import nodePath from 'node:path';
@@ -19,6 +20,7 @@ import {
 } from '../src/lib/portfolio-rules';
 import {
   clearPortfolio,
+  archivePortfolioRevision,
   getPortfolioExperiment,
   setPortfolioExperiment,
   archiveExperimentCandidates,
@@ -87,7 +89,8 @@ const todayYmd = (): string => new Date().toISOString().slice(0, 10);
  */
 // 3: repair synthetic exits caused by missing quotes; no trade without a price.
 // 4: enforce the funded weight floor; replay affected entries and equity together.
-const CURVE_BUILDER_VERSION = 4;
+// 5: verified ticker identity repair; retain the previous book in portfolio_revisions.
+const CURVE_BUILDER_VERSION = 5;
 
 let runInFlight = false;
 
@@ -153,7 +156,7 @@ export function buildCandidates(config: PortfolioConfig): PortfolioCandidate[] {
       source: 'outcome',
     });
   }
-  return out.sort((a, b) => a.earliestDate.localeCompare(b.earliestDate) || b.score - a.score);
+  return cleanPortfolioCandidates(out).sort((a, b) => a.earliestDate.localeCompare(b.earliestDate) || b.score - a.score);
 }
 
 // ── Prices ────────────────────────────────────────────────────────────────
@@ -231,6 +234,8 @@ export async function syncPortfolio(): Promise<PortfolioSyncReport> {
 
 async function runSync(): Promise<PortfolioSyncReport> {
   const config = getPortfolioConfig();
+  const priorMeta = getPortfolioRunMeta();
+  if (priorMeta && (priorMeta.curveVersion ?? 1) < 5) archivePortfolioRevision('ticker-cleanup-v1', getPortfolioState());
   const previousExperiment = getPortfolioExperiment(INSIDER_ONLY_ID);
   const firstSignal = getPortfolioHistoryStart(config.entryScore) ?? previousExperiment?.state.meta.firstDate;
   if (!firstSignal) {
@@ -284,7 +289,7 @@ async function runSync(): Promise<PortfolioSyncReport> {
   // Derived FROM the candidates, not intersected with the old worklist: an
   // intersection can only lose a ticker, and a candidate without prices comes
   // back as a false "not tradable" in the data-quality line.
-  const experimentCandidates = archiveExperimentCandidates(INSIDER_ONLY_ID, candidates);
+  const experimentCandidates = cleanPortfolioCandidates(archiveExperimentCandidates(INSIDER_ONLY_ID, candidates));
   const universe = [...new Set([...candidates, ...experimentCandidates].map((c) => c.ticker))].sort();
   // Preserve the experiment's calendar even after rolling source rows expire.
   const archivedStart = previousExperiment?.state.meta.firstDate ?? start;
