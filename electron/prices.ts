@@ -127,6 +127,12 @@ export async function fetchAdjCloseSeries(
   }
 }
 
+/** Outcome dates cannot be due beyond the benchmark's available sessions. */
+export function outcomeCutoff(points: readonly PricePoint[], today: string): string | null {
+  return points.filter((p) => p.date <= today && p.px > 0 && Number.isFinite(p.px))
+    .map((p) => p.date).sort().at(-1) ?? null;
+}
+
 export interface ScreenedSeries {
   clean: PricePoint[];
   /** Points rejected by the plausibility check, with the move that failed. */

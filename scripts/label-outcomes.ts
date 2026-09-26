@@ -20,7 +20,7 @@
 import path from 'node:path';
 import { recordUpdate } from './update-report';
 import fs from 'node:fs';
-import { fetchAdjCloseSeries, priceOnOrAfter, PRICE_REQUEST_GAP_MS, sleep } from '../electron/prices';
+import { fetchAdjCloseSeries, outcomeCutoff, priceOnOrAfter, PRICE_REQUEST_GAP_MS, sleep } from '../electron/prices';
 import {
   initDatabase,
   closeDatabase,
@@ -87,11 +87,18 @@ async function main(): Promise<void> {
     ),
   ];
   const labeled = getLabeledKeys();
-  const today = new Date().toISOString().slice(0, 10);
+  const spy = await fetchSeries('SPY');
+  const cutoff = spy && outcomeCutoff(spy, new Date().toISOString().slice(0, 10));
+  if (!spy || !cutoff) {
+    closeDatabase();
+    throw new Error('Benchmark unavailable');
+  }
 
-  // Only ripe (entry + horizon in the past) and not-yet-labeled work.
+
+  // Only ripe (entry + horizon covered by the benchmark) and not-yet-labeled work.
+  // Saturday, holidays and future closes are pending work, not missing prices.
   const todo = candidates.filter((c) =>
-    HORIZONS.some((h) => addDays(c.entryDate, h) <= today && !labeled.has(`${c.ticker}|${c.entryDate}|${h}`)),
+    HORIZONS.some((h) => addDays(c.entryDate, h) <= cutoff && !labeled.has(`${c.ticker}|${c.entryDate}|${h}`)),
   );
   // Newest first: delisted / bad tickers never return prices, so they'd otherwise
   // consume the whole per-run budget every time and starve fresh signals.
@@ -107,12 +114,6 @@ async function main(): Promise<void> {
     report();
     closeDatabase();
     return;
-  }
-
-  const spy = await fetchSeries('SPY');
-  if (!spy) {
-    closeDatabase();
-    throw new Error('Benchmark unavailable');
   }
 
   const out: SignalOutcome[] = [];
@@ -131,7 +132,7 @@ async function main(): Promise<void> {
         const key = `${c.ticker}|${c.entryDate}|${h}`;
         if (labeled.has(key)) continue;
         const target = addDays(c.entryDate, h);
-        if (target > today) continue;
+        if (target > cutoff) continue;
         const exit = priceOnOrAfter(series, target);
         const spyExit = priceOnOrAfter(spy, target);
         if (!exit || !spyExit) { missing.add(ticker); continue; }
