@@ -6,6 +6,18 @@ const fail = (status: number) => ({ ok: false, status });
 beforeEach(() => { vi.useFakeTimers(); vi.spyOn(console, 'warn').mockImplementation(() => {}); });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 describe('adjusted price request recovery', () => {
+  it('fetches the verified current symbol for CYBN without altering the requested identity', async () => {
+    vi.setSystemTime(new Date('2026-09-26T12:00:00Z'));
+    const fetcher = vi.fn().mockResolvedValue(ok());
+    vi.stubGlobal('fetch', fetcher);
+    expect(await fetchAdjCloseSeries('CYBN')).not.toBeNull();
+    expect(fetcher.mock.calls[0][0]).toContain('/chart/HELP?');
+  });
+  it('never sends quarantined text to the price provider', async () => {
+    const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher);
+    expect(await fetchAdjCloseSeries('NVDAEARNINGS')).toBeNull();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
   it('recovers a throttled primary host through the secondary host', async () => {
     const fetcher = vi.fn().mockResolvedValueOnce(fail(429)).mockResolvedValueOnce(ok());
     vi.stubGlobal('fetch', fetcher);

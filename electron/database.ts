@@ -1,3 +1,4 @@
+import { tickerIssue, resolvedTicker } from '../src/lib/ticker-quality';
 import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -94,6 +95,13 @@ function backupDatabaseBeforeMigration(dbPath: string): void {
  * appear there.
  */
 export const PORTFOLIO_SCHEMA = `
+CREATE TABLE IF NOT EXISTS ticker_quarantine (
+ ticker TEXT PRIMARY KEY, reason TEXT NOT NULL, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS portfolio_revisions (
+ reason TEXT PRIMARY KEY, saved_at TEXT NOT NULL, state_json TEXT NOT NULL
+);
+
 -- ── Testing portfolio (v1.4.0) ────────────────────────────────────────────
 -- Adjusted-close cache. Every price the portfolio ever uses is read from here,
 -- so a Yahoo outage cannot silently reshape the stored curve and two runs on
@@ -514,6 +522,7 @@ export function initDatabase(dbPath: string, opts?: { readonly?: boolean }): Dat
   db.pragma('foreign_keys = ON');
   db.exec(SCHEMA);
   runMigrations(db);
+  quarantineLegacyTickers();
   // Seed the trade window from signal history the first time `insider_trades`
   // exists, so the first run after this lands isn't scored against an empty
   // window. Idempotent and best-effort — a failure here must not block startup.
@@ -671,6 +680,7 @@ function rowToSignal(row: SignalRow): Signal {
 let insertSignalStmt: Database.Statement | null = null;
 
 export function insertSignal(signal: Signal): number {
+  recordTickerQuality(signal.ticker);
   const stmt = (insertSignalStmt ??= getDb().prepare(`
     INSERT INTO signals (
       ticker, company_name, score, conviction_level, total_dollar_volume,
@@ -756,7 +766,13 @@ export function getLatestSignals(): Signal[] {
     `,
     )
     .all(cutoff) as SignalRow[];
-  return rows.map(rowToSignal);
+  const active = new Map<string, Signal>();
+  for (const signal of rows.map(rowToSignal).filter((r) => !tickerIssue(r.ticker))) {
+    const ticker = resolvedTicker(signal.ticker, signal.scrapedAt.slice(0, 10));
+    const previous = active.get(ticker);
+    if (!previous || signal.scrapedAt > previous.scrapedAt) active.set(ticker, { ...signal, ticker });
+  }
+  return [...active.values()].sort((a, b) => b.score - a.score);
 }
 
 /** Latest signals passed through the time/type/conviction filter (Feature 7). */
@@ -1743,6 +1759,7 @@ export function upsertInsiderTrades(trades: RawInsiderTrade[]): number {
   const tx = getDb().transaction((items: RawInsiderTrade[]) => {
     for (const t of items) {
       const ticker = (t.ticker ?? '').toUpperCase();
+      recordTickerQuality(ticker);
       const insiderKey = normalizeInsiderName(t.insiderName ?? '');
       // A trade with no ticker, no identifiable insider or no parseable date has
       // no stable key — storing it would create an unbounded pile of near-dupes.
@@ -2491,4 +2508,22 @@ export function archiveExperimentCandidates(id: string, candidates: PortfolioCan
   })();
   const rows = db.prepare('SELECT candidate_json FROM portfolio_experiment_candidates WHERE experiment_id = ? ORDER BY earliest_date, ticker').all(id) as { candidate_json: string }[];
   return rows.map((r) => JSON.parse(r.candidate_json) as PortfolioCandidate);
+}
+
+/** Additive quarantine: original signals, labels and trade payloads stay intact. */
+export function recordTickerQuality(ticker: string): void {
+  ticker = ticker ?? '';
+  const reason = tickerIssue(ticker);
+  if (!reason) return;
+  getDb().prepare(`INSERT INTO ticker_quarantine VALUES (?, ?, datetime('now'), datetime('now'))
+    ON CONFLICT(ticker) DO UPDATE SET reason=excluded.reason, last_seen=excluded.last_seen`).run(ticker, reason);
+}
+
+function quarantineLegacyTickers(): void {
+  const rows = getDb().prepare(`SELECT ticker FROM signals UNION SELECT ticker FROM signal_outcomes UNION SELECT ticker FROM insider_trades`).all() as { ticker: string }[];
+  getDb().transaction(() => { for (const row of rows) recordTickerQuality(row.ticker); })();
+}
+
+export function archivePortfolioRevision(reason: string, state: unknown): void {
+  getDb().prepare("INSERT OR IGNORE INTO portfolio_revisions VALUES (?, datetime('now'), ?)").run(reason, JSON.stringify(state));
 }

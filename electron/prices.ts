@@ -1,3 +1,4 @@
+import { tickerIssue, resolvedTicker } from '../src/lib/ticker-quality';
 import { yahooTicker } from './scraper/util';
 
 /**
@@ -62,11 +63,12 @@ export async function fetchAdjCloseSeries(
   symbol: string,
   opts: FetchSeriesOptions = {},
 ): Promise<PricePoint[] | null> {
+  if (tickerIssue(symbol)) return null;
   try {
     // Yahoo writes share classes with a DASH (BRK-B) while the pipeline stores
     // the canonical dot form. Without this every class share resolves to 404 and
     // vanishes from the portfolio without a trace.
-    const sym = encodeURIComponent(yahooTicker(symbol) || symbol);
+    const sym = encodeURIComponent(yahooTicker(resolvedTicker(symbol, new Date().toISOString().slice(0, 10))) || symbol);
     let window: string;
     if (opts.fromYmd) {
       const period1 = Math.floor((ymdUtcMs(opts.fromYmd) - 10 * 86_400_000) / 1000);

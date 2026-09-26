@@ -35,6 +35,7 @@ const en = {
 
   'updates.affected': 'Affected tickers: {n}',
   'updates.priceAsOf': 'Portfolio prices through',
+  'updates.quarantined': 'Invalid symbols excluded; history retained',
   'updates.title': 'Update status',
   'updates.partial': 'Partial update — some data could not be refreshed.',
   'updates.unknown': 'Update status unavailable',
@@ -615,6 +616,7 @@ const de: Record<TKey, string> = {
 
   'updates.affected': 'Betroffene Ticker: {n}',
   'updates.priceAsOf': 'Depotkurse bis',
+  'updates.quarantined': 'Ungültige Symbole ausgeschlossen; Historie erhalten',
   'updates.title': 'Aktualisierungsstatus',
   'updates.partial': 'Teilweise aktualisiert — einige Daten konnten nicht aktualisiert werden.',
   'updates.unknown': 'Aktualisierungsstatus nicht verfügbar',

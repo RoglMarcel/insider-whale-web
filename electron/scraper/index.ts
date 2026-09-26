@@ -1,3 +1,4 @@
+import { tickerIssue, resolvedTicker } from '../../src/lib/ticker-quality';
 import type { Browser, BrowserContext } from 'playwright';
 import {
   type AppSettings,
@@ -30,6 +31,7 @@ import { sanitizeTickerRows, classifyStockPageResponse } from './util';
 import { scoreTicker, isScoringEligible, getRankWeight, normalizeAggregateTrades } from '../scoring';
 import {
   insertSignals,
+  recordTickerQuality,
   finishScrapeLog,
   startScrapeLog,
   getMostRecentSessionSignals,
@@ -939,6 +941,8 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
       });
     }
 
+    mergedTrades = mergedTrades.filter((t) => !tickerIssue(t.ticker)).map((t) => ({ ...t, ticker: resolvedTicker(t.ticker, t.tradeDate) }));
+
     // Sell-side intelligence — collect same-company sale flow + Form 144
     // notices into insider_flow. Context/display only; failures never block
     // the signal pipeline.
@@ -1294,7 +1298,11 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
   } catch {
     /* shadow scoring is best-effort */
   }
-  let signals: Signal[] = aggregates.map((agg) => {
+  let signals: Signal[] = aggregates.filter((agg) => {
+    if (!tickerIssue(agg.ticker)) return true;
+    recordTickerQuality(agg.ticker);
+    return false;
+  }).map((agg) => {
     agg.vix = vix;
     agg.bestAccuracy3m = lookupBestAccuracy(agg);
     // Sell-side context: only attach when there is actual flow on record so
