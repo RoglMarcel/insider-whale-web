@@ -3,7 +3,7 @@ import { isWeb } from '@/lib/ipc';
 import { useI18n } from '@/hooks/useI18n';
 import type { TKey } from '@/lib/i18n';
 
-type Stage = { status: 'success' | 'partial' | 'failed' | 'skipped'; reason?: string; checkedAt?: string; lastSuccessAt?: string; lastUpdatedAt?: string };
+type Stage = { status: 'success' | 'partial' | 'failed' | 'skipped'; reason?: string; affected?: number; tickers?: string[]; priceAsOf?: string; checkedAt?: string; lastSuccessAt?: string; lastUpdatedAt?: string };
 type Health = { stages: Record<'signals' | 'portfolio' | 'outcomes', Stage> };
 const names = ['signals', 'portfolio', 'outcomes'] as const;
 const reasons = new Set(['prices_unavailable', 'work_remaining', 'source_errors', 'update_failed', 'no_work', 'desktop_publish', 'not_ready', 'unavailable']);
@@ -45,6 +45,9 @@ export function UpdateHealth() {
               return <div key={name}>
                 <p className="font-semibold">{t(`updates.${name}`)} · {t(`updates.${stage.status === 'partial' ? 'partialStatus' : stage.status}`)}</p>
                 {stage.reason && reasons.has(stage.reason) && <p className="mt-1 text-secondary">{t(`updates.${stage.reason}` as TKey)}</p>}
+                {!!stage.affected && <p className="text-secondary">{t('updates.affected', { n: stage.affected })}</p>}
+                {!!stage.tickers?.length && <p className="break-words text-secondary">{stage.tickers.join(', ')}</p>}
+                {stage.priceAsOf && <p className="text-secondary">{t('updates.priceAsOf')}: {stage.priceAsOf}</p>}
                 <p className="mt-1 text-secondary">{t('updates.checked')}: {stamp(stage.checkedAt)}</p>
                 <p className="text-secondary">{t('updates.lastSuccess')}: {stamp(stage.lastSuccessAt)}</p>
               </div>;

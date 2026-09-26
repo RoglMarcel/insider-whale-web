@@ -33,6 +33,8 @@ const en = {
   'pf.compare.details': 'Portfolio details',
   'pf.compare.rules': 'Insider-only: $10,000 start, equal 20% entry targets, up to 5 stocks. Unused capital stays in cash. No automatic rebalancing or follow-up buys; weights may drift after entry. Same entry threshold and exit rules as portfolio 2.',
 
+  'updates.affected': 'Affected tickers: {n}',
+  'updates.priceAsOf': 'Portfolio prices through',
   'updates.title': 'Update status',
   'updates.partial': 'Partial update — some data could not be refreshed.',
   'updates.unknown': 'Update status unavailable',
@@ -611,6 +613,8 @@ const de: Record<TKey, string> = {
   'pf.compare.details': 'Portfoliodetails',
   'pf.compare.rules': 'Nur Insider-Signale: 10.000 $ Startkapital, gleiche Kaufziele von 20 %, maximal 5 Aktien. Ungenutztes Kapital bleibt bar. Keine automatische Umschichtung oder Nachkäufe; Gewichte können nach Einstieg abweichen. Gleiche Einstiegsschwelle und Ausstiegsregeln wie Portfolio 2.',
 
+  'updates.affected': 'Betroffene Ticker: {n}',
+  'updates.priceAsOf': 'Depotkurse bis',
   'updates.title': 'Aktualisierungsstatus',
   'updates.partial': 'Teilweise aktualisiert — einige Daten konnten nicht aktualisiert werden.',
   'updates.unknown': 'Aktualisierungsstatus nicht verfügbar',
