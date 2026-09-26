@@ -14,14 +14,16 @@ the project without rediscovering the same context.
 
 - Product name: `Insider & Whale Terminal`
 - npm package: `insider-whale-terminal`
-- Current version: see `package.json` (currently `1.2.1`)
+- Current version: see `package.json`.
 - Release target: GitHub Releases at `RoglMarcel/insider-whale-terminal`
 - Local folder: `C:\Users\8marc\Desktop\Insider`
 - Source repo: `RoglMarcel/insider-whale-web` — this is the whole codebase AND
   the hosted site. `RoglMarcel/insider-whale-terminal` holds desktop releases
   only (no source), which is why the auto-updater points there.
-- Releases are built locally (`npm run dist:win`) and uploaded to GitHub
-  Releases; pushing to `main` is what redeploys the website.
+- Windows packages are built by the **Windows Desktop** GitHub Actions workflow
+  (or locally with `npm run dist:win -- --publish never`). Download the workflow's
+  artifact ZIP for the installer, blockmap and `latest.yml`. A build does not
+  publish a desktop release; pushing to `main` redeploys the website.
 
 - **v1.2.2** (Current) — line-by-line audit of the scoring model and the pipeline
   - **Test suite where there was none.** Vitest + 288 tests: every pure function,
@@ -1129,11 +1131,23 @@ npm run dist
 
 Release flow:
 
-1. Bump `version` in `package.json`.
-2. Run `npm run dist`.
-3. Upload the generated installer and `latest.yml` from `release/` to a GitHub
+1. Bump the version in both package files using `npm version patch --no-git-tag-version`.
+2. Run the **Windows Desktop** workflow and download its artifact, or on Windows
+   with Node.js 22 run `npm ci` then `npm run dist:win -- --x64 --publish never`.
+   All three files are generated together in `release/`; do not edit `latest.yml`.
+3. Upload the generated installer, `.exe.blockmap` and `latest.yml` to a GitHub
    Release in `RoglMarcel/insider-whale-terminal`.
 4. Installed apps pick up the update via `electron-updater`.
+
+To update an old source checkout without overwriting local work, close the app,
+rename the old `Insider` directory as a backup, extract the source repository's
+main ZIP into a new `Insider` directory, and put the three build artifacts in
+`Insider/release`. Run the installer to update the installed app. Keep the old
+source directory (including any `data`, `.env` and unpublished changes) until
+verified. The installed app's database is in its separate Electron user-data
+directory under `%APPDATA%`, not in `release/`; back that directory up with the
+app closed before upgrading. Development and packaged app names can use
+different directories (`insider-whale-terminal` and `Insider & Whale Terminal`).
 
 ## Verification Commands
 
