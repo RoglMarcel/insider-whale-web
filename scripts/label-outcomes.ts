@@ -157,7 +157,8 @@ async function main(): Promise<void> {
   const written = upsertSignalOutcomes(out);
   console.log(`[label] wrote ${written} new labeled outcome(s).`);
   const deferred = new Set(todo.map((c) => c.ticker)).size > tickers.length;
-  recordUpdate(missing.size || deferred ? 'partial' : 'success', missing.size ? 'prices_unavailable' : deferred ? 'work_remaining' : 'updated', missing.size);
+  if (missing.size) console.warn(`[label] missing historical prices: ${[...missing].sort().join(', ')}`);
+  recordUpdate(missing.size || deferred ? 'partial' : 'success', missing.size ? 'prices_unavailable' : deferred ? 'work_remaining' : 'updated', missing.size, [...missing]);
   report();
   closeDatabase();
 }

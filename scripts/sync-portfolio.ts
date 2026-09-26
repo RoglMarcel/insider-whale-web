@@ -79,8 +79,14 @@ async function main(): Promise<void> {
   const points = publishPortfolio();
   console.log(`[portfolio] wrote public/data/portfolio.json (${points} point(s))`);
 
-  const incomplete = state.open.some((p) => p.priceStale) || state.insiderOnly?.state.open.some((p) => p.priceStale) || !state.insiderOnly || !!report.missingPriceTickers?.length;
-  recordUpdate(incomplete ? 'partial' : 'success', incomplete ? 'prices_unavailable' : 'updated');
+  const missing = [...new Set([
+    ...(report.missingPriceTickers ?? []),
+    ...state.open.filter((p) => p.priceStale).map((p) => p.ticker),
+    ...(state.insiderOnly?.state.open.filter((p) => p.priceStale).map((p) => p.ticker) ?? []),
+  ])].sort();
+  if (missing.length) console.warn(`[portfolio] incomplete price refresh: ${missing.join(', ')}; cached prices retained`);
+  const incomplete = missing.length > 0 || !state.insiderOnly;
+  recordUpdate(incomplete ? 'partial' : 'success', incomplete ? 'prices_unavailable' : 'updated', missing.length, missing, state.meta.priceAsOf ?? undefined);
   closeDatabase();
 }
 

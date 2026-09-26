@@ -75,13 +75,38 @@ export async function fetchAdjCloseSeries(
     } else {
       window = `range=${opts.range ?? '1y'}`;
     }
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&${window}`;
-    const res = await fetch(url, {
-      headers: { 'User-Agent': YF_UA },
-      signal: opts.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-    if (!res.ok) return null;
-    const json = (await res.json()) as YahooChart;
+    let json: YahooChart | null = null;
+    let failure = 'no adjusted closes';
+    // One retry via Yahoo's other chart host. Never substitute unadjusted
+    // quotes: split-adjustment differences can trigger fictitious exits.
+    for (const host of ['query1', 'query2']) {
+      if (opts.signal?.aborted) return null;
+      if (host === 'query2') await sleep(400);
+      try {
+        const res = await fetch(`https://${host}.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&${window}`, {
+          headers: { 'User-Agent': YF_UA },
+          signal: opts.signal ? AbortSignal.any([opts.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) : AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        });
+        if (!res.ok) {
+          failure = `HTTP ${res.status}`;
+          if (res.status === 404) break;
+          continue;
+        }
+        const candidate = (await res.json()) as YahooChart;
+        if (!candidate.chart?.result?.[0]?.indicators?.adjclose?.[0]?.adjclose?.some((p) => p != null && Number.isFinite(p) && p > 0)) {
+          failure = 'no adjusted closes';
+          continue;
+        }
+        json = candidate;
+        break;
+      } catch {
+        failure = 'network error or timeout';
+      }
+    }
+    if (!json) {
+      console.warn(`[prices] ${symbol}: ${failure} after bounded chart lookup`);
+      return null;
+    }
     const result = json.chart?.result?.[0];
     const ts = result?.timestamp ?? [];
     const adj = result?.indicators?.adjclose?.[0]?.adjclose ?? [];
@@ -89,7 +114,7 @@ export async function fetchAdjCloseSeries(
     const out: PricePoint[] = [];
     ts.forEach((t, i) => {
       const v = adj[i];
-      if (v == null || !Number.isFinite(v) || v <= 0) return;
+      if (v == null || !Number.isFinite(v) || v <= 0 || !Number.isFinite(t)) return;
       const date = new Date(t * 1000).toISOString().slice(0, 10);
       if (seen.has(date)) return;
       seen.add(date);
