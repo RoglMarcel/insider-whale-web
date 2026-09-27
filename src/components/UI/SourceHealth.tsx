@@ -1,7 +1,5 @@
-import { useState } from 'react';
 import { useI18n } from '@/hooks/useI18n';
 import { GlassCard } from '@/components/UI/GlassCard';
-import { AlertIcon } from '@/components/UI/icons';
 import { useSourceHealth, type SourceHealthEntry } from '@/hooks/useSourceHealth';
 import { useStore } from '@/store/useStore';
 
@@ -13,54 +11,21 @@ const STATUS_META: Record<SourceHealthEntry['status'], { dot: string; label: str
   unknown: { dot: '○', label: '—', color: 'var(--text-secondary)' },
 };
 
-/**
- * Top-of-view warning banner shown only when one or more scraper sources look
- * silently broken (healthy history, now zero rows for consecutive runs).
- * Derived from persisted scrape logs — dismissible per session.
- */
+/** Source diagnostics remain available as ordinary, user-opened information. */
 export function SourceHealthBanner() {
   const { t } = useI18n();
   const { dead } = useSourceHealth();
   const setView = useStore((s) => s.setView);
-  const [dismissed, setDismissed] = useState(false);
-  if (dead.length === 0 || dismissed) return null;
-
+  if (dead.length === 0) return null;
   const names = dead.map((d) => d.label).join(', ');
   return (
-    <div
-      // Row layout squeezed the message into a ~120px column on a phone (1–2 words
-      // per line). Stack it: message first, actions on their own row.
-      className="mb-4 flex flex-col gap-3 rounded-xl px-4 py-3 text-sm md:mb-5 md:flex-row md:flex-wrap md:items-center"
-      style={{
-        background: 'color-mix(in srgb, var(--accent-red) 12%, transparent)',
-        border: '1px solid color-mix(in srgb, var(--accent-red) 40%, transparent)',
-      }}
-    >
-      <span className="flex min-w-0 flex-1 items-start gap-3">
-        <span className="shrink-0 pt-0.5" style={{ color: 'var(--accent-red)' }}>
-          <AlertIcon size={18} />
-        </span>
-        <span className="min-w-0">
-          <span className="font-bold" style={{ color: 'var(--accent-red)' }}>
-            {t(dead.length === 1 ? 'srcH.brokenOne' : 'srcH.brokenMany', { n: dead.length })}
-          </span>{' '}
-          <span className="text-secondary">{t('srcH.zeroRows', { names })}</span>
-        </span>
-      </span>
-      <div className="flex shrink-0 items-center gap-2">
-        <button className="btn flex-1 md:flex-none" style={{ minHeight: 44 }} onClick={() => setView('settings')}>
-          {t('srcH.viewSources')}
-        </button>
-        <button
-          className="icon-btn shrink-0"
-          onClick={() => setDismissed(true)}
-          aria-label={t('srcH.dismiss')}
-          title={t('srcH.dismissTitle')}
-        >
-          ✕
-        </button>
+    <details className="data-note">
+      <summary>{t('srcH.title')}</summary>
+      <div className="data-note-body">
+        <p>{t(dead.length === 1 ? 'srcH.brokenOne' : 'srcH.brokenMany', { n: dead.length })} {t('srcH.zeroRows', { names })}</p>
+        <button className="btn mt-2" onClick={() => setView('settings')}>{t('srcH.viewSources')}</button>
       </div>
-    </div>
+    </details>
   );
 }
 

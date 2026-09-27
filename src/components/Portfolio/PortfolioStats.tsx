@@ -87,8 +87,8 @@ export function PortfolioStatsPanel({ stats }: { stats: Stats }) {
   const trades = stats.trades;
 
   return (
-    <div className="grid gap-4 lg:grid-cols-5">
-      <GlassCard className="p-4 lg:col-span-3 lg:p-6">
+    <div className="grid gap-4 xl:grid-cols-5">
+      <GlassCard className="p-4 xl:col-span-3 lg:p-6">
         <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-secondary">{t('pf.stats.title')}</h3>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[22rem] text-sm">
@@ -142,7 +142,7 @@ export function PortfolioStatsPanel({ stats }: { stats: Stats }) {
         </div>
       </GlassCard>
 
-      <GlassCard className="p-4 lg:col-span-2 lg:p-6">
+      <GlassCard className="p-4 xl:col-span-2 lg:p-6">
         <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-secondary">{t('pf.trades.title')}</h3>
         <dl className="flex flex-col text-sm">
           <Kv label={t('pf.trades.count')} value={t('pf.trades.closedOpen', { closed: trades.closed, open: trades.open })} />

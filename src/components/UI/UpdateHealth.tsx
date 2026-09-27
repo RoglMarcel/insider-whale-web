@@ -28,9 +28,11 @@ export function UpdateHealth() {
     ? new Date(value).toLocaleString(language === 'de' ? 'de-DE' : 'en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
   const incomplete = health && names.some((name) => ['partial', 'failed'].includes(health.stages[name].status));
   return (
-    <section aria-label={t('updates.title')} className="mb-3 rounded-xl border border-white/10 px-3 py-2 text-xs">
-      {!health ? <p className="text-secondary" role="status">{t('updates.unknown')}</p> : <>
-        {incomplete && <p role="status" className="mb-2 text-amber-400">{t('updates.partial')}</p>}
+    <details className="data-note">
+      <summary>{t('updates.title')}</summary>
+      <div className="data-note-body">
+      {!health ? <p className="text-secondary">{t('updates.unknown')}</p> : <>
+        {incomplete && <p className="mb-2 text-secondary">{t('updates.partial')}</p>}
         {['cloud-scrape', 'desktop-publish-fastpath'].includes(health.stages.signals.source ?? '') && <p className="mb-2 text-secondary">
           {language === 'de' ? 'Datenquelle: ' : 'Data source: '}
           {health.stages.signals.source === 'cloud-scrape' ? 'Cloud' : 'Desktop'}
@@ -61,6 +63,7 @@ export function UpdateHealth() {
           </div>
         </details>
       </>}
-    </section>
+      </div>
+    </details>
   );
 }

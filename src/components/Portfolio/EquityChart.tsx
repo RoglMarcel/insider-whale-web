@@ -22,8 +22,8 @@ import {
  * most common way a chart like this lies.
  */
 
-const BLUE = 'var(--accent-blue)';
-const GREY = 'var(--text-secondary)';
+const BLUE = 'var(--portfolio-overlay, var(--accent-blue))';
+const GREY = 'var(--portfolio-market, var(--text-secondary))';
 const GRID = 'rgba(128,128,128,0.18)';
 const GREEN = 'var(--accent-green)';
 const RED = 'var(--accent-red)';
@@ -93,6 +93,7 @@ export interface EquityChartProps {
   unit: '$' | '%';
   logScale: boolean;
   showIdle: boolean;
+  portfolioColor?: string;
   markers: TradeMarker[];
   /** Backfill → live boundary, drawn as a vertical rule. */
   liveFrom: string | null;
@@ -155,6 +156,7 @@ export function EquityChart({
   unit,
   logScale,
   showIdle,
+  portfolioColor = BLUE,
   markers,
   liveFrom,
   compact,
@@ -239,7 +241,7 @@ export function EquityChart({
                 }}
               >
                 <div className="mb-1 font-semibold">{formatDate(String(label))}</div>
-                <Row color={BLUE} name={labels.portfolio} value={formatValue(point.portfolio)} />
+                <Row color={portfolioColor} name={labels.portfolio} value={formatValue(point.portfolio)} />
                 <Row color={GREY} name={labels.benchmark} value={formatValue(point.benchmark)} />
                 {showIdle && <Row color={BLUE} name={labels.idle} value={formatValue(point.idle)} faded />}
                 <div
@@ -283,7 +285,7 @@ export function EquityChart({
           // fixed by paint order (benchmark underneath), and the legend would
           // otherwise inherit it and lead with the benchmark.
           payload={[
-            { value: labels.portfolio, type: 'line', color: BLUE, id: 'portfolio' },
+            { value: labels.portfolio, type: 'line', color: portfolioColor, id: 'portfolio' },
             { value: labels.benchmark, type: 'line', color: GREY, id: 'benchmark' },
             ...(showIdle ? [{ value: labels.idle, type: 'line' as const, color: BLUE, id: 'idle' }] : []),
           ]}
@@ -347,7 +349,7 @@ export function EquityChart({
           type="monotone"
           dataKey="portfolio"
           name={labels.portfolio}
-          stroke={BLUE}
+          stroke={portfolioColor}
           strokeWidth={2.5}
           dot={false}
           activeDot={{ r: 5 }}

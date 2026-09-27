@@ -455,3 +455,119 @@ tr {
     -webkit-backdrop-filter: none;
   }
 }
+
+/* Portfolio workspace: quiet surfaces, consistent series and compact hierarchy. */
+:root {
+  --portfolio-market: #718096;
+  --portfolio-overlay: #407cbf;
+  --portfolio-insider: #8b71b5;
+}
+[data-theme='dark'] {
+  --portfolio-market: #98a6ba;
+  --portfolio-overlay: #7aa9df;
+  --portfolio-insider: #b29ad6;
+}
+.portfolio-dashboard {
+  --bg-glass: #ffffff;
+  --border-glass: #dfe5ed;
+  --text-secondary: #596779;
+  --accent-blue: #407cbf;
+  --accent-green: #238168;
+  --accent-red: #be555e;
+  display: grid;
+  gap: 14px;
+  max-width: 1560px;
+  margin: 0 auto;
+  font-size: 13px;
+  line-height: 1.5;
+}
+[data-theme='dark'] .portfolio-dashboard {
+  --bg-glass: #111923;
+  --bg-glass-hover: #172231;
+  --border-glass: #263242;
+  --text-primary: #e8edf4;
+  --text-secondary: #a2afbf;
+  --accent-blue: #7aa9df;
+  --accent-green: #77bba4;
+  --accent-red: #e28c94;
+  color: var(--text-primary);
+}
+.portfolio-dashboard > *, .portfolio-dashboard .glass-card { min-width: 0; }
+.portfolio-dashboard .glass-card {
+  padding: 18px;
+  border-radius: 10px;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.portfolio-dashboard h2 { font-size: 17px; letter-spacing: -.025em; }
+.portfolio-dashboard h3 { font-size: 12px; letter-spacing: .055em; }
+.portfolio-dashboard .text-sm { font-size: 13px; }
+.portfolio-dashboard .font-mono-terminal { font-family: 'Inter', sans-serif; font-variant-numeric: tabular-nums; }
+.portfolio-dashboard .text-2xl, .portfolio-dashboard .lg\:text-3xl { font-size: clamp(22px, 2vw, 28px); font-weight: 650; letter-spacing: -.04em; }
+.portfolio-comparison-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; margin-top: 16px; }
+.portfolio-summary { padding: 14px; border: 1px solid var(--border-glass); border-top: 2px solid; border-radius: 7px; background: color-mix(in srgb, var(--bg-glass) 94%, var(--portfolio-overlay)); }
+.portfolio-summary-label { display: flex; align-items: baseline; gap: 7px; font-size: 12px; font-weight: 600; }
+.portfolio-dot { display: inline-block; flex-shrink: 0; width: 6px; height: 6px; border-radius: 50%; }
+.portfolio-summary-value { margin-top: 8px; font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -.04em; }
+.portfolio-summary-return { font-size: 13px; font-variant-numeric: tabular-nums; }
+.portfolio-summary-exposure, .portfolio-summary-drawdown { font-size: 11px; color: var(--text-secondary); }
+.portfolio-summary-exposure { margin-top: 10px; }
+.portfolio-comparison-chart { height: 260px; min-width: 0; margin-top: 20px; }
+.portfolio-switch { display: flex; gap: 6px; padding: 4px; border: 1px solid var(--border-glass); border-radius: 9px; background: var(--bg-glass); width: fit-content; max-width: 100%; }
+.portfolio-switch .btn { border: 1px solid transparent; background: transparent; box-shadow: none; color: var(--text-secondary); min-height: 40px; padding: 8px 14px; font-size: 12px; }
+.portfolio-switch .btn[aria-pressed='true'] { background: color-mix(in srgb, var(--portfolio-overlay) 13%, transparent); border-color: color-mix(in srgb, var(--portfolio-overlay) 35%, transparent); color: var(--text-primary); }
+.portfolio-dashboard[data-portfolio='insider'] .portfolio-switch .btn[aria-pressed='true'] { background: color-mix(in srgb, var(--portfolio-insider) 13%, transparent); border-color: color-mix(in srgb, var(--portfolio-insider) 35%, transparent); }
+.portfolio-metrics { display: grid; flex: 1; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 18px; }
+.portfolio-metrics > div + div { border-left: 1px solid var(--border-glass); padding-left: 18px; }
+.portfolio-metrics .text-xs { font-size: 10px; }
+.portfolio-chart-canvas { height: 300px; }
+.portfolio-dashboard button:focus-visible, .data-note summary:focus-visible { outline: 2px solid var(--portfolio-overlay); outline-offset: 3px; }
+.portfolio-dashboard button { min-height: 36px; }
+.portfolio-dashboard input[type='checkbox'] { accent-color: var(--portfolio-overlay); }
+.portfolio-dashboard table { font-size: 12px; }
+.portfolio-dashboard th, .portfolio-dashboard td { padding: 9px 10px !important; }
+.portfolio-dashboard th { font-size: 10px !important; white-space: nowrap; }
+.portfolio-dashboard td:first-child, .portfolio-dashboard th:first-child { position: sticky; left: 0; background: var(--bg-glass) !important; z-index: 1; }
+.portfolio-dashboard .overflow-x-auto { border: 1px solid var(--border-glass); border-radius: 7px; scrollbar-width: thin; }
+.portfolio-dashboard dd { overflow-wrap: anywhere; }
+.portfolio-description { font-size: 13px; color: var(--text-secondary); line-height: 1.65; margin-bottom: 14px; max-width: 100ch; }
+.data-notes { margin: 12px auto 0; max-width: 1560px; }
+.data-note { padding: 10px 0; border-top: 1px solid var(--border-glass); font-size: 12px; color: var(--text-secondary); }
+.data-note > summary { cursor: pointer; font-size: 11px; font-weight: 500; min-height: 24px; line-height: 24px; }
+.data-note-body { padding: 8px 0; line-height: 1.6; }
+.release-notes { margin: 14px auto 0; max-width: 1560px; }
+@media (min-width: 1280px) {
+  .portfolio-comparison { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.6fr); column-gap: 24px; }
+  .portfolio-comparison > h2, .portfolio-comparison > p { grid-column: 1 / -1; }
+  .portfolio-comparison-grid { grid-column: 1; grid-row: 3; grid-template-columns: 1fr; gap: 8px; }
+  .portfolio-summary { display: grid; grid-template-columns: 1fr auto; column-gap: 10px; padding: 10px 12px; }
+  .portfolio-summary-label { grid-column: 1; }
+  .portfolio-summary-value { grid-column: 2; grid-row: 1 / 3; margin: 0; align-self: center; }
+  .portfolio-summary-return { grid-column: 1; }
+  .portfolio-summary-exposure, .portfolio-summary-drawdown { grid-column: 1 / -1; }
+  .portfolio-summary-exposure { margin-top: 4px; }
+  .portfolio-comparison-chart { grid-column: 2; grid-row: 3; height: 340px; margin-top: 16px; }
+}
+@media (max-width: 767px) {
+  .portfolio-dashboard { gap: 12px; }
+  .portfolio-dashboard .glass-card { padding: 14px; }
+  .portfolio-comparison-grid { grid-template-columns: 1fr; gap: 7px; margin-top: 12px; }
+  .portfolio-summary { display: grid; grid-template-columns: minmax(0,1fr) auto; column-gap: 8px; padding: 10px 12px; }
+  .portfolio-summary-label { grid-column: 1; }
+  .portfolio-summary-value { grid-column: 2; grid-row: 1 / 3; align-self: center; margin: 0; font-size: 23px; }
+  .portfolio-summary-return { grid-column: 1; font-size: 12px; }
+  .portfolio-summary-exposure, .portfolio-summary-drawdown { grid-column: 1 / -1; }
+  .portfolio-summary-exposure { margin-top: 5px; }
+  .portfolio-comparison-chart { height: 240px; margin-top: 14px; }
+  .portfolio-switch { width: 100%; }
+  .portfolio-switch .btn { flex: 1; padding: 6px 8px; min-height: 44px; }
+  .portfolio-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+  .portfolio-metrics > div + div { padding-left: 12px; }
+  .portfolio-metrics > div:last-child { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--border-glass); padding: 10px 0 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; }
+  .portfolio-metrics > div:last-child .text-2xl { font-size: 22px; }
+  .portfolio-chart-canvas { height: 260px; }
+  .portfolio-dashboard button { min-height: 40px; }
+  .portfolio-dashboard label { min-height: 36px; }
+  .portfolio-dashboard dl > .flex { flex-wrap: wrap; gap: 4px 12px; }
+  .portfolio-dashboard dl > .flex dd { margin-left: auto; flex-shrink: 1; }
+}

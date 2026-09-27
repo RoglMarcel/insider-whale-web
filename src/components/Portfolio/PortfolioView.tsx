@@ -32,7 +32,6 @@ const LS = {
   range: 'pf.range',
   unit: 'pf.unit',
   log: 'pf.log',
-  idle: 'pf.idle',
   markers: 'pf.markers',
 };
 
@@ -84,6 +83,7 @@ function Toggle({
       {options.map((o) => (
         <button
           key={o.key}
+          aria-pressed={value === o.key}
           type="button"
           disabled={o.disabled}
           title={o.title}
@@ -115,7 +115,6 @@ export function PortfolioView() {
   const [range, setRange] = useState<RangeKey>(() => readLs<RangeKey>(LS.range, 'max'));
   const [unit, setUnit] = useState<'$' | '%'>(() => readLs<'$' | '%'>(LS.unit, '%'));
   const [logScale, setLogScale] = useState(() => readLsFlag(LS.log, false));
-  const [showIdle, setShowIdle] = useState(() => readLsFlag(LS.idle, false));
   const [showMarkers, setShowMarkers] = useState(() => readLsFlag(LS.markers, true));
   const [compact, setCompact] = useState(() => typeof window !== 'undefined' && window.innerWidth < 640);
 
@@ -257,19 +256,18 @@ export function PortfolioView() {
   if (meta.restatedDays) quality.push(t('pf.quality.restated', { n: meta.restatedDays }));
 
   return (
-    <div className="animate-fade-in flex flex-col gap-4 lg:gap-6">
+    <div className="portfolio-dashboard animate-fade-in" data-portfolio={variant}>
       <Suspense fallback={<div className="text-sm text-secondary">…</div>}>
         <PortfolioComparison portfolio={portfolio} />
       </Suspense>
-      <div className="flex flex-wrap gap-2" role="group" aria-label={t('pf.compare.details')}>
+      <div className="portfolio-switch" role="group" aria-label={t('pf.compare.details')}>
         <button className="btn" aria-pressed={variant === 'overlay'} onClick={() => setVariant('overlay')}>{t('pf.compare.overlay')}</button>
         <button className="btn" disabled={!portfolio.insiderOnly} aria-pressed={variant === 'insider'} onClick={() => setVariant('insider')}>{t('pf.compare.insider')}</button>
       </div>
-      {variant === 'insider' && <p className="text-sm text-secondary">{t('pf.compare.rules')}</p>}
       {/* ── Headline ── */}
-      <GlassCard className="p-4 lg:p-6">
+      <GlassCard className="portfolio-headline">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="grid flex-1 gap-4 sm:grid-cols-3">
+          <div className="portfolio-metrics">
             <div>
               <div className="text-xs font-semibold uppercase tracking-wide text-secondary">{t('pf.headline.value')}</div>
               <div className="font-mono-terminal text-2xl font-extrabold tabular-nums lg:text-3xl">
@@ -328,7 +326,7 @@ export function PortfolioView() {
         </div>
 
         {error && (
-          <div className="mt-3 text-sm" style={{ color: 'var(--accent-red)' }}>
+          <div className="mt-3 text-xs text-secondary">
             {error}
           </div>
         )}
@@ -336,7 +334,7 @@ export function PortfolioView() {
       </GlassCard>
 
       {/* ── Chart ── */}
-      <GlassCard className="p-4 lg:p-6">
+      <GlassCard className="portfolio-chart">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <Toggle
             options={rangeOptions}
@@ -374,7 +372,7 @@ export function PortfolioView() {
           </div>
         </div>
 
-        <div style={{ height: compact ? 260 : 340 }}>
+        <div className="portfolio-chart-canvas">
           {loading ? (
             <div className="flex h-full items-center justify-center text-sm text-secondary">…</div>
           ) : chartData.length < 2 ? (
@@ -395,7 +393,8 @@ export function PortfolioView() {
                 data={chartData}
                 unit={unit}
                 logScale={logScale && unit === '$'}
-                showIdle={variant === 'overlay' && showIdle}
+                showIdle={false}
+                portfolioColor={variant === 'insider' ? 'var(--portfolio-insider)' : 'var(--portfolio-overlay)'}
                 markers={markers}
                 liveFrom={liveInWindow}
                 compact={compact}
@@ -423,17 +422,6 @@ export function PortfolioView() {
         {chartData.length >= 2 && (
         <>
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-          <label hidden={variant === 'insider'} className={variant === 'insider' ? 'hidden' : "flex cursor-pointer items-center gap-1.5 text-xs text-secondary"}>
-            <input
-              type="checkbox"
-              checked={showIdle}
-              onChange={(e) => {
-                setShowIdle(e.target.checked);
-                writeLs(LS.idle, e.target.checked ? '1' : '0');
-              }}
-            />
-            {t('pf.chart.showIdle')}
-          </label>
           <label className="flex cursor-pointer items-center gap-1.5 text-xs text-secondary">
             <input
               type="checkbox"
@@ -457,6 +445,7 @@ export function PortfolioView() {
       <ClosedTradesTable trades={state.closed} />
 
       <RulesCard
+        description={variant === 'insider' ? t('pf.compare.rules') : undefined}
         config={config}
         meta={meta}
         busy={busy === 'config'}

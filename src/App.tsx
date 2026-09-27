@@ -9,7 +9,7 @@ import { HistoryView } from '@/components/History/HistoryView';
 import { SettingsPanel } from '@/components/Settings/SettingsPanel';
 import { NewsView } from '@/components/News/NewsView';
 import { SignalModal } from '@/components/Detail/SignalModal';
-import { WelcomeModal } from '@/components/Welcome/WelcomeModal';
+import { ReleaseNotes, WelcomeModal } from '@/components/Welcome/WelcomeModal';
 import { useI18n } from '@/hooks/useI18n';
 
 export default function App() {
@@ -67,10 +67,10 @@ export default function App() {
         if (ver) setAppVersion(ver);
         const lastSeen = localStorage.getItem('last_seen_version');
         if (!lastSeen) {
-          // Silently remember this visit so the next real deploy can announce itself.
+          // Remember the version silently; release notes are available inline.
           localStorage.setItem('last_seen_version', ver || 'web');
         } else if (ver && lastSeen !== ver) {
-          setShowWelcome(true);
+          localStorage.setItem('last_seen_version', ver);
         }
       }
     };
@@ -125,6 +125,7 @@ export default function App() {
         {view === 'settings' && <SettingsPanel />}
 
         <SignalModal />
+        {isWeb && <ReleaseNotes />}
 
         {showWelcome && (
           <WelcomeModal

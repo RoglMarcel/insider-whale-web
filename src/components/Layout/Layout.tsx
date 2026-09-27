@@ -36,13 +36,15 @@ export function Layout({ children }: { children: ReactNode }) {
             scrollPaddingBottom: 'calc(var(--tabbar-h) + var(--sa-bottom))',
           }}
         >
-          <UpdateHealth />
-          <SourceHealthBanner />
           {children}
+          <footer className="data-notes">
+            <UpdateHealth />
+            <SourceHealthBanner />
+            <UpdateNotification />
+          </footer>
         </main>
       </div>
       <BottomTabBar />
-      <UpdateNotification />
     </div>
   );
 }

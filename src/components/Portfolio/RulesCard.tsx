@@ -32,9 +32,11 @@ function Line({ label, value }: { label: string; value: string }) {
 export function RulesCard({
   config,
   meta,
+  description,
   busy = false,
   onApplyConfig,
 }: {
+  description?: string;
   config: PortfolioConfig;
   meta: PortfolioMeta;
   busy?: boolean;
@@ -69,6 +71,7 @@ export function RulesCard({
 
       {open && (
         <div className="mt-3">
+          {description && <p className="portfolio-description">{description}</p>}
           <dl className="flex flex-col">
             <Line label={t('pf.rules.capital')} value={`$${config.startingCash.toLocaleString('en-US')}`} />
             <Line label={t('pf.rules.entry')} value={t('pf.rules.entryValue', { score: config.entryScore })} />

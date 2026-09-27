@@ -277,3 +277,20 @@ export function WelcomeModal({
     document.body
   );
 }
+
+/** All release information stays available without an automatic update popup. */
+export function ReleaseNotes() {
+  const { language } = useI18n();
+  return <details className="data-note release-notes">
+    <summary>{language === 'de' ? 'Versionshinweise' : 'Release notes'}</summary>
+    <div className="data-note-body grid gap-4">
+      {slides.map((item) => <section key={item.version}>
+        <h3 className="font-semibold">{item.title}</h3>
+        <p>{item.subtitle}</p>
+        <ul className="mt-2 list-disc pl-4 space-y-1">
+          {item.bullets.map((bullet) => <li key={bullet.title}><strong>{bullet.title}</strong> · {bullet.desc}</li>)}
+        </ul>
+      </section>)}
+    </div>
+  </details>;
+}
