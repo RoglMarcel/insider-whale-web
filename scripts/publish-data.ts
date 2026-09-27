@@ -50,6 +50,7 @@ function main(): void {
 
   const meta = {
     generatedAt: new Date().toISOString(),
+    signalAsOf: signals.map(s => s.scrapedAt).sort().at(-1) ?? null,
     version: process.env.APP_VERSION ?? readVersion(),
     durationSec: 0,
     status: latestRun?.status ?? 'success',

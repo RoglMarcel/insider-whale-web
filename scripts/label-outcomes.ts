@@ -1,4 +1,6 @@
 import { tickerIssue } from '../src/lib/ticker-quality';
+import { priceTicker, type PriceIdentity } from '../electron/priceSymbols';
+import { resolvedTicker } from '../src/lib/ticker-quality';
 /**
  * Outcome labeler — turns stored signals into TRAINING DATA (v1.1.13).
  *
@@ -21,7 +23,7 @@ import { tickerIssue } from '../src/lib/ticker-quality';
 import path from 'node:path';
 import { recordUpdate } from './update-report';
 import fs from 'node:fs';
-import { fetchAdjCloseSeries, outcomeCutoff, priceOnOrAfter, PRICE_REQUEST_GAP_MS, sleep } from '../electron/prices';
+import { fetchAdjCloseSeries, outcomeCutoff, outcomePricePair, PRICE_REQUEST_GAP_MS, sleep } from '../electron/prices';
 import {
   initDatabase,
   closeDatabase,
@@ -51,12 +53,14 @@ const MAX_TICKERS_PER_RUN = Number(process.env.LABEL_MAX_TICKERS ?? 250);
 type Series = { date: string; px: number }[];
 const cache = new Map<string, Series | null>();
 
-async function fetchSeries(ticker: string): Promise<Series | null> {
-  if (cache.has(ticker)) return cache.get(ticker)!;
+async function fetchSeries(ticker: string, fromYmd: string, identity?: PriceIdentity): Promise<Series | null> {
+  const today = new Date().toISOString().slice(0, 10);
+  const key = priceTicker(resolvedTicker(ticker, today), today, identity);
+  if (cache.has(key)) return cache.get(key)!;
   await sleep(PRICE_REQUEST_GAP_MS);
-  const points = await fetchAdjCloseSeries(ticker, { range: '1y' });
+  const points = await fetchAdjCloseSeries(ticker, { fromYmd, identity });
   const series = points?.length ? points : null;
-  cache.set(ticker, series);
+  cache.set(key, series);
   return series;
 }
 
@@ -91,7 +95,8 @@ async function main(): Promise<void> {
   const candidates = rawCandidates.filter((c) => !tickerIssue(c.ticker));
   if (quarantined.length) console.log(`[label] quarantined malformed symbols (history retained): ${quarantined.join(', ')}`);
   const labeled = getLabeledKeys();
-  const spy = await fetchSeries('SPY');
+  const fromYmd = candidates.map(c => c.entryDate).sort()[0] ?? new Date().toISOString().slice(0, 10);
+  const spy = await fetchSeries('SPY', fromYmd);
   const cutoff = spy && outcomeCutoff(spy, new Date().toISOString().slice(0, 10));
   if (!spy || !cutoff) {
     closeDatabase();
@@ -124,22 +129,22 @@ async function main(): Promise<void> {
   let done = 0;
   const missing = new Set<string>();
   for (const ticker of tickers) {
-    const series = await fetchSeries(ticker);
     done++;
     if (done % 50 === 0) console.log(`   …${done}/${tickers.length}`);
-    if (!series) { missing.add(ticker); continue; }
     for (const c of todo.filter((x) => x.ticker === ticker)) {
-      const entry = priceOnOrAfter(series, c.entryDate);
-      const spyEntry = priceOnOrAfter(spy, c.entryDate);
-      if (!entry || !spyEntry) { missing.add(ticker); continue; }
+      const series = await fetchSeries(ticker, fromYmd, c);
+      if (!series) { missing.add(ticker); continue; }
+      const entryPair = outcomePricePair(series, spy, c.entryDate);
+      if (!entryPair) { missing.add(ticker); continue; }
+      const { equity: entry, benchmark: spyEntry } = entryPair;
       for (const h of HORIZONS) {
         const key = `${c.ticker}|${c.entryDate}|${h}`;
         if (labeled.has(key)) continue;
         const target = addDays(c.entryDate, h);
         if (target > cutoff) continue;
-        const exit = priceOnOrAfter(series, target);
-        const spyExit = priceOnOrAfter(spy, target);
-        if (!exit || !spyExit) { missing.add(ticker); continue; }
+        const exitPair = outcomePricePair(series, spy, target);
+        if (!exitPair) { missing.add(ticker); continue; }
+        const { equity: exit, benchmark: spyExit } = exitPair;
         const ret = exit.px / entry.px - 1;
         const spyRet = spyExit.px / spyEntry.px - 1;
         out.push({

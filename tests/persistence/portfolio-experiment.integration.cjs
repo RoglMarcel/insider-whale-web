@@ -21,6 +21,10 @@ try {
   assert.equal(reopened.prepare("SELECT reason FROM ticker_quarantine WHERE ticker='NVDAEARNINGS'").get().reason, 'non_symbol_text');
   assert.deepEqual(db.getLatestSignals().map(s => s.ticker), ['HELP']);
   assert.equal(db.getLatestSignals()[0].score, 75);
+  // Imported desktop history receives higher IDs, but may be older than cloud.
+  reopened.exec("INSERT INTO signals(ticker,score,scraped_at) VALUES ('HELP',95,'2026-09-25T09:00:00Z')");
+  assert.equal(db.getLatestSignals()[0].score, 75);
+  assert.equal(db.getOutcomeCandidates().find(c => c.ticker === 'HELP').score, 95);
   assert.deepEqual(JSON.parse(reopened.prepare("SELECT state_json FROM portfolio_revisions WHERE reason='ticker-cleanup-v1'").get().state_json), { equity: [10000], open: ['ORIGINAL'] });
 
   assert.equal(db.getPortfolioExperiment('test-v1').state.equity[0].equity, 10000);
@@ -30,6 +34,25 @@ try {
   assert.deepEqual(db.archiveExperimentCandidates('test-v1', [next]), [candidate, next]);
   assert.deepEqual(db.archiveExperimentCandidates('another-experiment', []), []);
   assert.equal(db.getPortfolioExperiment('missing'), null);
+  db.closeDatabase();
+  // The startup snapshot must see committed WAL rows without copying live
+  // sidecars independently. Keep the writer open to exercise that boundary.
+  const Sqlite = require('better-sqlite3');
+  const walRoot = path.join(root, 'wal-fixture');
+  fs.mkdirSync(walRoot);
+  const walFile = path.join(walRoot, 'wal.db');
+  const writer = new Sqlite(walFile);
+  writer.pragma('journal_mode=WAL');
+  writer.exec("CREATE TABLE retained(value TEXT); INSERT INTO retained VALUES('committed WAL')");
+  db.initDatabase(walFile);
+  const backup = fs.readdirSync(path.join(walRoot, 'backups')).find(f => f.endsWith('-consistent.db'));
+  assert(backup);
+  const saved = new Sqlite(path.join(walRoot, 'backups', backup), { readonly: true });
+  assert.equal(saved.prepare('SELECT value FROM retained').get().value, 'committed WAL');
+  assert.equal(saved.pragma('quick_check', { simple: true }), 'ok');
+  saved.close();
+  db.closeDatabase();
+  writer.close();
   console.log('Experiment snapshot, archived candidates, first-observed scores and isolation survive SQLite reopen.');
 } finally {
   db.closeDatabase();

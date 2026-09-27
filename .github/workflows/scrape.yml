@@ -153,7 +153,6 @@ jobs:
       # Label ripened signals with realized SPY-relative alpha. This is what makes
       # the scoring model measurable over time; it only fills gaps, so it is cheap.
       - name: Label ripened outcomes (training data)
-        if: steps.mode.outputs.desktop != 'true'
         id: outcomes
         continue-on-error: true
         env:

@@ -52,6 +52,15 @@ class UpdateHealthTests(unittest.TestCase):
         self.assertEqual(result['status'], 'success')
         self.assertTrue(all(s['lastSuccessAt'] == 'new' for s in result['stages'].values()))
 
+    def test_publication_does_not_make_older_observations_fresh(self):
+        report = {'status': 'success', 'checkedAt': 'new'}
+        result = health.build({'status': 'partial', 'generatedAt': 'new', 'signalAsOf': 'old', 'source': 'desktop-publish-fastpath'},
+                             {'meta': {'lastRun': 'old'}}, {'portfolio': report, 'outcomes': report},
+                             {'portfolio': 'success', 'outcomes': 'success'}, {})
+        self.assertEqual(result['stages']['signals']['lastUpdatedAt'], 'old')
+        self.assertEqual(result['stages']['signals']['source'], 'desktop-publish-fastpath')
+        self.assertEqual(result['stages']['signals']['status'], 'partial')
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fetchAdjCloseSeries, outcomeCutoff } from '../electron/prices';
+import { fetchAdjCloseSeries, outcomeCutoff, outcomePricePair } from '../electron/prices';
 const payload = { chart: { result: [{ timestamp: [1790294400], indicators: { adjclose: [{ adjclose: [100] }] } }] } };
 const ok = () => ({ ok: true, json: async () => payload });
 const fail = (status: number) => ({ ok: false, status });
@@ -58,6 +58,12 @@ describe('adjusted price request recovery', () => {
 });
 
 describe('outcome trading-calendar cutoff', () => {
+  it('does not compare different sessions when an equity has a historical gap', () => {
+    const spy = [{ date: '2026-09-21', px: 100 }, { date: '2026-09-22', px: 101 }];
+    const equity = [{ date: '2026-09-22', px: 10 }];
+    expect(outcomePricePair(equity, spy, '2026-09-19')).toBeNull();
+    expect(outcomePricePair(equity, spy, '2026-09-22')).toEqual({ equity: equity[0], benchmark: spy[1] });
+  });
   it('keeps Saturday and Sunday outcomes pending until the next benchmark session', () => {
     const prices = [{ date: '2026-09-25', px: 100 }];
     expect(outcomeCutoff(prices, '2026-09-26')).toBe('2026-09-25');

@@ -44,12 +44,16 @@ export interface WebPublishResult {
 let publishInFlight = false;
 
 function git(repo: string, args: string[]): string {
-  return execFileSync('git', args, {
+  try { return execFileSync('git', args, {
     cwd: repo,
     timeout: GIT_TIMEOUT_MS,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  }); } catch {
+    // Git stderr can include credential-bearing remote URLs. Never send it to
+    // the renderer or logs; the operation is enough to diagnose the failure.
+    throw new Error(`Web publication: git ${args[0]} failed. Check repository access and Git credentials.`);
+  }
 }
 
 /**
@@ -155,11 +159,10 @@ export async function publishToWeb(opts: PublishOptions = {}): Promise<WebPublis
   try {
     const resolved = resolveRepoPath(opts.repoPath);
     if ('error' in resolved) return { ok: false, skipped: resolved.error };
-    const repo = resolved.path;
+    const sourceRepo = resolved.path;
 
-    const dbDir = path.join(repo, 'data');
-    fs.mkdirSync(dbDir, { recursive: true });
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'iwt-publish-'));
+    let repo = sourceRepo;
     const repoDbPath = path.join(tmpDir, 'export.db');
 
     // Snapshot the live DB rather than attaching it: publishing runs moments
@@ -174,11 +177,16 @@ export async function publishToWeb(opts: PublishOptions = {}): Promise<WebPublis
       await snapshotDatabase(sourcePath);
     }
 
-    // Start from the remote tip so this appends to the shared history instead of
-    // forking it — otherwise the push below is rejected and the run is wasted.
+    // The configured directory supplies credentials/remote identity only. A
+    // downloaded source ZIP over an old checkout is not a mergeable branch.
+    // Publish from a disposable clone, preserving every local file and index.
     if (opts.push !== false) {
-      git(repo, ['fetch', 'origin', '--quiet']);
-      git(repo, ['pull', '--ff-only', 'origin', 'main', '--quiet']);
+      const remote = git(sourceRepo, ['remote', 'get-url', '--push', 'origin']).trim();
+      repo = path.join(tmpDir, 'delivery');
+      git(sourceRepo, ['clone', '--quiet', '--depth', '1', '--branch', 'main', '--', remote, repo]);
+      for (const key of ['user.name', 'user.email']) {
+        git(repo, ['config', key, git(sourceRepo, ['config', '--get', key]).trim()]);
+      }
     }
 
     target = new Database(repoDbPath);
@@ -219,16 +227,8 @@ export async function publishToWeb(opts: PublishOptions = {}): Promise<WebPublis
 
     const DB_PATHSPEC = DESKTOP_SNAPSHOT_PATH;
     git(repo, ['add', '-f', '--all', '--', DB_PATHSPEC]);
-    try {
-      execFileSync('git', ['diff', '--quiet', 'HEAD', '--', DB_PATHSPEC], {
-        cwd: repo,
-        timeout: GIT_TIMEOUT_MS,
-      });
-      // Retry delivery of a previous local commit whose push failed.
-      git(repo, ['push', 'origin', 'HEAD:main']);
+    if (!git(repo, ['diff', '--cached', '--name-only', '--', DB_PATHSPEC]).trim()) {
       return { ok: true, copied, pushed: true, skipped: 'snapshot unchanged — remote synchronized' };
-    } catch {
-      /* the package differs from HEAD → commit + push below */
     }
     git(repo, ['add', '-f', DB_PATHSPEC]);
     // Pathspec-limited commit. This runs unattended after every scrape, so it

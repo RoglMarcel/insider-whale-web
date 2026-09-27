@@ -3,7 +3,7 @@ import { isWeb } from '@/lib/ipc';
 import { useI18n } from '@/hooks/useI18n';
 import type { TKey } from '@/lib/i18n';
 
-type Stage = { status: 'success' | 'partial' | 'failed' | 'skipped'; reason?: string; affected?: number; quarantinedTickers?: string[]; tickers?: string[]; priceAsOf?: string; checkedAt?: string; lastSuccessAt?: string; lastUpdatedAt?: string };
+type Stage = { status: 'success' | 'partial' | 'failed' | 'skipped'; source?: string; reason?: string; affected?: number; quarantinedTickers?: string[]; tickers?: string[]; priceAsOf?: string; checkedAt?: string; lastSuccessAt?: string; lastUpdatedAt?: string };
 type Health = { stages: Record<'signals' | 'portfolio' | 'outcomes', Stage> };
 const names = ['signals', 'portfolio', 'outcomes'] as const;
 const reasons = new Set(['prices_unavailable', 'work_remaining', 'source_errors', 'update_failed', 'no_work', 'desktop_publish', 'not_ready', 'unavailable']);
@@ -31,6 +31,11 @@ export function UpdateHealth() {
     <section aria-label={t('updates.title')} className="mb-3 rounded-xl border border-white/10 px-3 py-2 text-xs">
       {!health ? <p className="text-secondary" role="status">{t('updates.unknown')}</p> : <>
         {incomplete && <p role="status" className="mb-2 text-amber-400">{t('updates.partial')}</p>}
+        {['cloud-scrape', 'desktop-publish-fastpath'].includes(health.stages.signals.source ?? '') && <p className="mb-2 text-secondary">
+          {language === 'de' ? 'Datenquelle: ' : 'Data source: '}
+          {health.stages.signals.source === 'cloud-scrape' ? 'Cloud' : 'Desktop'}
+          {' · '}{language === 'de' ? 'Abweichende Quellen und Zeitstände können unterschiedliche Signalzahlen ergeben.' : 'Different sources and update times can produce different signal counts.'}
+        </p>}
         <div className="flex flex-wrap gap-x-6 gap-y-2">
           {(['signals', 'portfolio'] as const).map((name) => <p key={name}>
             <span className="font-semibold">{t(`updates.${name}`)}</span>{' · '}

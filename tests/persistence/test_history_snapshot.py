@@ -26,7 +26,7 @@ class PersistenceTests(unittest.TestCase):
         self.remote.mkdir()
         self.exists = False
         self.upload_failure = False
-        with sqlite3.connect(self.db) as db:
+        with closing(sqlite3.connect(self.db)) as db, db:
             db.executescript('''
                 CREATE TABLE signals(id INTEGER PRIMARY KEY, ticker TEXT, scraped_at TEXT);
                 CREATE TABLE scrape_log(id INTEGER PRIMARY KEY, started_at TEXT);
@@ -79,7 +79,7 @@ class PersistenceTests(unittest.TestCase):
 
     def test_large_database_roundtrip(self):
         # Larger than GitHub's raw Git blob limit, including an incompressible row.
-        with sqlite3.connect(self.db) as db:
+        with closing(sqlite3.connect(self.db)) as db, db:
             db.execute('CREATE TABLE payload(data BLOB)')
             db.execute('INSERT INTO payload VALUES(zeroblob(106000000))')
             db.execute('INSERT INTO payload VALUES(?)', (os.urandom(1024 * 1024),))
@@ -96,14 +96,14 @@ class PersistenceTests(unittest.TestCase):
 
     def test_failed_upload_preserves_previous_snapshot(self):
         self.save()
-        with sqlite3.connect(self.db) as db:
+        with closing(sqlite3.connect(self.db)) as db, db:
             db.execute("INSERT INTO signals VALUES(2, 'NEW', '2026-09-22')")
         self.upload_failure = True
         with self.assertRaises(subprocess.CalledProcessError):
             self.save('101')
         self.assertEqual(len(list(self.remote.iterdir())), 1)
         history.restore('owner/repo', self.db)
-        with sqlite3.connect(self.db) as db:
+        with closing(sqlite3.connect(self.db)) as db, db:
             self.assertEqual(db.execute('SELECT count(*) FROM signals').fetchone()[0], 1)
         self.assertTrue(list((self.root / 'output-101').glob('*.gz')))
 
@@ -130,12 +130,12 @@ class PersistenceTests(unittest.TestCase):
 
     def test_desktop_merge_preserves_cloud_state_and_is_idempotent(self):
         self.save()
-        with sqlite3.connect(self.db) as db:
+        with closing(sqlite3.connect(self.db)) as db, db:
             db.execute('DELETE FROM portfolio_equity')
             db.execute("INSERT INTO signals VALUES(2, 'DESKTOP', '2026-09-22')")
         history.restore('owner/repo', self.db, desktop=True)
         history.restore('owner/repo', self.db, desktop=True)
-        with sqlite3.connect(self.db) as db:
+        with closing(sqlite3.connect(self.db)) as db, db:
             self.assertEqual(db.execute('SELECT count(*) FROM signals').fetchone()[0], 2)
             self.assertEqual(db.execute('SELECT value FROM portfolio_equity').fetchone()[0], 12345)
 
@@ -143,7 +143,7 @@ class PersistenceTests(unittest.TestCase):
         self.save()
         incoming = self.root / 'incoming.db'
         shutil.copyfile(self.db, incoming)
-        with sqlite3.connect(incoming) as db:
+        with closing(sqlite3.connect(incoming)) as db, db:
             db.execute("INSERT INTO signals VALUES(2, 'DESKTOP', '2026-09-22')")
         db.close()
         import gzip
@@ -161,7 +161,7 @@ class PersistenceTests(unittest.TestCase):
             'sha256': hashlib.sha256(payload).hexdigest(),
         }))
         history.restore('owner/repo', self.db)  # no desktop flag on a schedule
-        with sqlite3.connect(self.db) as db:
+        with closing(sqlite3.connect(self.db)) as db, db:
             self.assertEqual(db.execute('SELECT count(*) FROM signals').fetchone()[0], 2)
             self.assertEqual(db.execute('SELECT value FROM portfolio_equity').fetchone()[0], 12345)
         db.close()
@@ -172,7 +172,7 @@ class PersistenceTests(unittest.TestCase):
         self.assertEqual(history.digest(self.db), before)
 
     def test_sqlite_backup_includes_live_wal(self):
-        with sqlite3.connect(self.db) as db:
+        with closing(sqlite3.connect(self.db)) as db, db:
             db.execute('PRAGMA journal_mode=WAL')
             db.execute("INSERT INTO signals VALUES(2, 'WAL', '2026-09-22')")
             db.commit()
@@ -180,7 +180,7 @@ class PersistenceTests(unittest.TestCase):
         # sqlite3's context manager commits but does not close.
         db.close()
         history.restore('owner/repo', self.db)
-        with sqlite3.connect(self.db) as restored:
+        with closing(sqlite3.connect(self.db)) as restored, restored:
             self.assertEqual(restored.execute('SELECT count(*) FROM signals').fetchone()[0], 2)
 
 

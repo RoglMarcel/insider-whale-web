@@ -153,6 +153,8 @@ async function main(): Promise<void> {
 
   const meta = {
     generatedAt: new Date().toISOString(),
+    source: 'cloud-scrape',
+    signalAsOf: published.map(s => s.scrapedAt).sort().at(-1) ?? null,
     version,
     durationSec: secs,
     status: result.status,

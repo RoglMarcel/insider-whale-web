@@ -52,24 +52,19 @@ function backupDatabaseBeforeMigration(dbPath: string): void {
     const backupsDir = path.join(dir, 'backups');
     fs.mkdirSync(backupsDir, { recursive: true });
     const day = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const dest = path.join(backupsDir, `insider-tracker-${day}.db`);
+    const dest = path.join(backupsDir, `insider-tracker-${day}-consistent.db`);
     if (!fs.existsSync(dest)) {
-      fs.copyFileSync(dbPath, dest);
-      // Also copy WAL/SHM sidecars when present so the snapshot is consistent.
-      for (const suffix of ['-wal', '-shm']) {
-        const side = dbPath + suffix;
-        if (fs.existsSync(side)) {
-          try {
-            fs.copyFileSync(side, dest + suffix);
-          } catch {
-            /* optional */
-          }
-        }
-      }
+      const source = new Database(dbPath, { readonly: true, fileMustExist: true });
+      const pending = `${dest}.pending`;
+      try {
+        fs.rmSync(pending, { force: true });
+        source.prepare('VACUUM INTO ?').run(pending);
+        fs.renameSync(pending, dest);
+      } finally { source.close(); }
     }
     const files = fs
       .readdirSync(backupsDir)
-      .filter((f) => /^insider-tracker-\d{8}\.db$/.test(f))
+      .filter((f) => /^insider-tracker-\d{8}(?:-consistent)?\.db$/.test(f))
       .sort()
       .reverse();
     for (const f of files.slice(MAX_DB_BACKUPS)) {
@@ -759,8 +754,9 @@ export function getLatestSignals(): Signal[] {
       `
       SELECT s.* FROM signals s
       JOIN (
-        SELECT ticker, MAX(id) AS max_id FROM signals GROUP BY ticker
-      ) latest ON s.id = latest.max_id
+        SELECT id, ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY scraped_at DESC, id DESC) AS rn
+        FROM signals
+      ) latest ON s.id = latest.id AND latest.rn = 1
       WHERE s.scraped_at >= ?
       ORDER BY s.score DESC
     `,
@@ -783,7 +779,7 @@ export function getFilteredSignals(filter: SignalFilter): Signal[] {
 /** Most recent single signal for one ticker. */
 export function getSignalByTicker(ticker: string): Signal | null {
   const row = getDb()
-    .prepare(`SELECT * FROM signals WHERE ticker = ? ORDER BY id DESC LIMIT 1`)
+    .prepare(`SELECT * FROM signals WHERE ticker = ? ORDER BY scraped_at DESC, id DESC LIMIT 1`)
     .get(ticker.toUpperCase()) as SignalRow | undefined;
   return row ? rowToSignal(row) : null;
 }
@@ -887,7 +883,7 @@ export function finishScrapeLog(
 
 export function getScrapeLogs(limit = 50): ScrapeLogEntry[] {
   const rows = getDb()
-    .prepare(`SELECT * FROM scrape_log ORDER BY id DESC LIMIT ?`)
+    .prepare(`SELECT * FROM scrape_log ORDER BY started_at DESC, id DESC LIMIT ?`)
     .all(limit) as {
     id: number;
     started_at: string;
@@ -916,7 +912,7 @@ export function getScrapeLogs(limit = 50): ScrapeLogEntry[] {
 export function getRecentSourceBreakdowns(limit = 20): Record<string, number>[] {
   const rows = getDb()
     .prepare(
-      `SELECT source_breakdown FROM scrape_log WHERE source_breakdown IS NOT NULL ORDER BY id DESC LIMIT ?`,
+      `SELECT source_breakdown FROM scrape_log WHERE source_breakdown IS NOT NULL ORDER BY started_at DESC, id DESC LIMIT ?`,
     )
     .all(limit) as { source_breakdown: string | null }[];
   return rows.map((r) => safeParse<Record<string, number>>(r.source_breakdown, {}));
@@ -924,7 +920,7 @@ export function getRecentSourceBreakdowns(limit = 20): Record<string, number>[] 
 
 export function getLastScrapeTime(): string | null {
   const row = getDb()
-    .prepare(`SELECT finished_at FROM scrape_log WHERE finished_at IS NOT NULL ORDER BY id DESC LIMIT 1`)
+    .prepare(`SELECT finished_at FROM scrape_log WHERE finished_at IS NOT NULL ORDER BY finished_at DESC, id DESC LIMIT 1`)
     .get() as { finished_at: string | null } | undefined;
   return row?.finished_at ?? null;
 }
@@ -1345,6 +1341,10 @@ export interface OutcomeCandidate {
   score: number;
   conviction: string | null;
   breakdown: string | null;
+  companyName?: string | null;
+  sourceUrls?: string[];
+  observedDate?: string;
+  politicianTrades?: PoliticianTrade[];
 }
 
 /**
@@ -1360,9 +1360,16 @@ export function getOutcomeCandidates(): OutcomeCandidate[] {
     .prepare(
       `
       SELECT ticker, trade_date, filing_date, substr(scraped_at, 1, 10) AS seen_date,
-             score, conviction_level AS conviction, score_breakdown AS breakdown
+             score, conviction_level AS conviction, score_breakdown AS breakdown, company_name, source_urls, politician_trades
       FROM signals
-      WHERE id IN (SELECT MIN(id) FROM signals GROUP BY ticker, substr(scraped_at, 1, 10))
+      WHERE id IN (
+        SELECT id FROM (
+          SELECT id, ROW_NUMBER() OVER (
+            PARTITION BY ticker, substr(scraped_at, 1, 10) ORDER BY scraped_at, id
+          ) AS rn FROM signals
+        ) WHERE rn = 1
+      )
+      ORDER BY scraped_at, id
     `,
     )
     .all() as {
@@ -1373,6 +1380,9 @@ export function getOutcomeCandidates(): OutcomeCandidate[] {
     score: number;
     conviction: string | null;
     breakdown: string | null;
+    company_name: string | null;
+    source_urls: string | null;
+    politician_trades: string | null;
   }[];
 
   const ymd = (v: string | null | undefined) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '');
@@ -1389,6 +1399,10 @@ export function getOutcomeCandidates(): OutcomeCandidate[] {
         score: r.score,
         conviction: r.conviction,
         breakdown: r.breakdown,
+        companyName: r.company_name,
+        sourceUrls: r.source_urls ? JSON.parse(r.source_urls) : [],
+        observedDate: r.seen_date,
+        politicianTrades: r.politician_trades ? JSON.parse(r.politician_trades) : [],
       });
     }
   }
@@ -1942,7 +1956,7 @@ export function updateEarnings(
     .prepare(
       `UPDATE signals
        SET earnings_date = ?, earnings_timing = ?, days_to_earnings = ?
-       WHERE id = (SELECT MAX(id) FROM signals WHERE ticker = ?)`,
+       WHERE id = (SELECT id FROM signals WHERE ticker = ? ORDER BY scraped_at DESC, id DESC LIMIT 1)`,
     )
     .run(earningsDate, earningsTiming, daysToEarnings, ticker.toUpperCase());
 }
@@ -2057,7 +2071,10 @@ export function getPortfolioSignalCandidates(minScore: number): PortfolioCandida
     .prepare(
       `SELECT id AS signalId, ticker, score, scraped_at AS seenAt
        FROM signals
-       WHERE id IN (SELECT MIN(id) FROM signals GROUP BY ticker, substr(scraped_at, 1, 10))
+       WHERE id IN (SELECT id FROM (
+         SELECT id, ROW_NUMBER() OVER (PARTITION BY ticker, substr(scraped_at, 1, 10) ORDER BY scraped_at, id) AS rn
+         FROM signals
+       ) WHERE rn = 1)
          AND score >= ?
        ORDER BY scraped_at`,
     )

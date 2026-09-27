@@ -37,7 +37,8 @@ def build(meta, portfolio, reports, outcomes, previous):
         'reason': 'updated' if status == 'success' else 'source_errors',
         'checkedAt': meta.get('generatedAt'),
     }, previous.get('signals'))
-    stages['signals']['lastUpdatedAt'] = meta.get('generatedAt')
+    stages['signals']['lastUpdatedAt'] = meta.get('signalAsOf') or meta.get('generatedAt')
+    stages['signals']['source'] = meta.get('source', 'unknown')
     stages['portfolio']['lastUpdatedAt'] = (portfolio or {}).get('meta', {}).get('lastRun')
     if not portfolio:
         stages['portfolio']['status'] = 'failed'

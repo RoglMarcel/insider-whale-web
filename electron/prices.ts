@@ -1,5 +1,6 @@
 import { tickerIssue, resolvedTicker } from '../src/lib/ticker-quality';
 import { yahooTicker } from './scraper/util';
+import { priceTicker, type PriceIdentity } from './priceSymbols';
 
 /**
  * The one place adjusted closes enter this codebase.
@@ -48,6 +49,7 @@ export interface FetchSeriesOptions {
   /** Yahoo range shorthand (`1y`, `2y`, `max`). Ignored when `fromYmd` is set. */
   range?: string;
   signal?: AbortSignal;
+  identity?: PriceIdentity;
 }
 
 function ymdUtcMs(s: string): number {
@@ -68,7 +70,8 @@ export async function fetchAdjCloseSeries(
     // Yahoo writes share classes with a DASH (BRK-B) while the pipeline stores
     // the canonical dot form. Without this every class share resolves to 404 and
     // vanishes from the portfolio without a trace.
-    const sym = encodeURIComponent(yahooTicker(resolvedTicker(symbol, new Date().toISOString().slice(0, 10))) || symbol);
+    const today = new Date().toISOString().slice(0, 10);
+    const sym = encodeURIComponent(yahooTicker(priceTicker(resolvedTicker(symbol, today), today, opts.identity)) || symbol);
     let window: string;
     if (opts.fromYmd) {
       const period1 = Math.floor((ymdUtcMs(opts.fromYmd) - 10 * 86_400_000) / 1000);
@@ -174,6 +177,15 @@ export function screenSeries(points: readonly PricePoint[], maxMove = PRICE_MAX_
 export function priceOnOrAfter(series: readonly PricePoint[], date: string): PricePoint | null {
   for (const p of series) if (p.date >= date) return p;
   return null;
+}
+
+/** Compare outcomes on the same observed market session. Missing equity prices
+ * must not silently shift one side of an alpha calculation by weeks. */
+export function outcomePricePair(series: readonly PricePoint[], benchmark: readonly PricePoint[], date: string): { equity: PricePoint; benchmark: PricePoint } | null {
+  const session = priceOnOrAfter(benchmark, date);
+  if (!session) return null;
+  const equity = series.find(p => p.date === session.date);
+  return equity ? { equity, benchmark: session } : null;
 }
 
 export const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
