@@ -4,6 +4,8 @@ GitHub Actions opts into Scrapling 0.4.15 for the existing public OpenInsider an
 
 `fundamentals.py` collects public Stockrow annual statements and observable GuruFocus earnings/growth. Exact Macrotrends statement URLs can be provided in the repository variable `MACROTRENDS_URLS`, a JSON map from ticker to HTTPS URL. Macrotrends can deny public requests; a rejected response never becomes a financial fact. TIKR's application requires an account and no documented public financial feed has been verified. There is **no claim that all four providers can be scraped without access**.
 
+The first GitHub runner returned HTTP 403 for both Stockrow and GuruFocus, despite successful prior public fetches in the development environment. `data/valuation-baseline.json` preserves those actual AAPL observations from October 3, 2026 as an initial dated dataset. It is not synthetic test data or a live connection. The publisher keeps this dataset when collection returns no usable data and prefers newer verified provider observations when available. The public panel preserves each original retrieval, statement and price date; no failed refresh is presented as fresh finance data. Other tickers remain unavailable until their inputs can be collected or supplied through an authorized export.
+
 ## Data contract
 
 A provider dataset contains ticker, provider (`stockrow`, `gurufocus`, `tikr`, `macrotrends`), source URL, fetchedAt, currency, statementDate, facts and optional annual histories, industry peers and segments. No providers are silently merged. The panel chooses one provider and attributes all calculations to it.
