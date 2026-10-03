@@ -306,7 +306,7 @@ export function PortfolioView() {
 
           {/* Desktop can run the simulation; the hosted build reads a published
               result and must not offer buttons that cannot do anything. */}
-          {!meta.readOnly && (
+          {!isWeb && !meta.readOnly && (
             <div className="flex shrink-0 flex-wrap gap-2">
               <button className="btn btn-primary" onClick={() => void run('sync')} disabled={busy !== null}>
                 <RefreshIcon size={15} className={busy === 'sync' ? 'animate-spin' : ''} />
@@ -335,7 +335,7 @@ export function PortfolioView() {
 
       {/* ── Chart ── */}
       <GlassCard className="portfolio-chart">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        {chartData.length >= 2 && <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <Toggle
             options={rangeOptions}
             value={effectiveRange}
@@ -370,7 +370,7 @@ export function PortfolioView() {
               }}
             />
           </div>
-        </div>
+        </div>}
 
         <div className="portfolio-chart-canvas">
           {loading ? (
@@ -449,7 +449,7 @@ export function PortfolioView() {
         config={config}
         meta={meta}
         busy={busy === 'config'}
-        onApplyConfig={variant === 'overlay' ? (partial) => void applyConfig(partial) : undefined}
+        onApplyConfig={!isWeb && variant === 'overlay' ? (partial) => void applyConfig(partial) : undefined}
       />
 
       {/* ── Data quality — visible, never swallowed ── */}
@@ -457,7 +457,7 @@ export function PortfolioView() {
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs">
           <span className="font-semibold uppercase tracking-wide text-secondary">{t('pf.quality.title')}</span>
           <span className="text-secondary">
-            {quality.length ? quality.join(' · ') : t('pf.quality.clean')}
+            {meta.available ? (quality.length ? quality.join(' · ') : t('pf.quality.clean')) : t('ui.noPortfolioHint')}
             {meta.untradableTickers.length > 0 && (
               <> · {t('pf.quality.untradable', { tickers: meta.untradableTickers.join(', ') })}</>
             )}

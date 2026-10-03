@@ -36,7 +36,7 @@ export function PoliticianComboBadge({ tier, className = '' }: { tier: Politicia
   return (
     <span
       className={`badge ${tier === 'MEGA_SIGNAL' ? 'mega-signal-banner' : ''} ${className}`}
-      style={{ color: '#fff', background: s.bg, border: 'none' }}
+      style={{ color: s.bg, background: 'var(--bg-glass-hover)', border: `1px solid color-mix(in srgb, ${s.border} 35%, var(--border-glass))` }}
       title={t(s.title)}
     >
       {t(s.label)}
@@ -51,10 +51,10 @@ export function MegaSignalBanner({ className = '' }: { className?: string }) {
     <div
       className={`mega-signal-banner flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2 text-center text-xs font-extrabold uppercase tracking-wide ${className}`}
       style={{
-        color: '#fff',
-        background: 'linear-gradient(135deg, #ff3b30 0%, #c81e14 100%)',
+        color: 'var(--accent-red)',
+        background: 'var(--bg-glass)',
         border: '1px solid color-mix(in srgb, var(--accent-red) 60%, #fff 0%)',
-        boxShadow: '0 0 18px rgba(255, 59, 48, 0.45)',
+        boxShadow: 'none',
       }}
       title={t('badge.megaBannerTitle')}
     >

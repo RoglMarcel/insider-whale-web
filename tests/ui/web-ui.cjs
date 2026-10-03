@@ -44,6 +44,7 @@ const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': mime[path.extname(file)] || 'application/octet-stream' }); fs.createReadStream(file).pipe(res);
 });
 let browser;
+let currentPage;
 const results = [];
 async function checkPage(page, label) {
   const visible = await page.locator('body').innerText();
@@ -65,6 +66,8 @@ async function navigate(page, width, view) {
 async function contextPage(width, mode = 'full') {
   const context = await browser.newContext({ viewport: { width, height: width < 768 ? 844 : 1000 }, locale: 'en-US', reducedMotion: 'reduce' });
   const page = await context.newPage();
+  currentPage = page;
+  const jsErrors = []; page.on('pageerror', e => jsErrors.push(e.message));
   await page.route('**/data/*.json', async route => {
     const name = new URL(route.request().url()).pathname.split('/').pop();
     if (mode === 'error' && ['signals.json', 'meta.json', 'portfolio.json'].includes(name)) return route.fulfill({ status: 503, body: 'Service unavailable' });
@@ -78,15 +81,14 @@ async function contextPage(width, mode = 'full') {
   await page.route('**/s.tradingview.com/**', route => route.fulfill({ body: '<html><body>Chart embed</body></html>', contentType: 'text/html' }));
   await page.goto(`http://127.0.0.1:${server.address().port}`);
   await page.waitForFunction(() => document.querySelector('main') && !document.querySelector('main').innerText.includes('Loading…'));
-  return { context, page };
+  return { context, page, jsErrors };
 }
 (async () => {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   browser = await chromium.launch({ headless: true });
   for (const width of [1440, 820, 390, 320]) {
-    const { page, context } = await contextPage(width);
-    const jsErrors = []; page.on('pageerror', e => jsErrors.push(e.message));
-    await page.getByRole('button', { name: 'NVDA', exact: true }).waitFor();
+    const { page, context, jsErrors } = await contextPage(width);
+    await page.locator('main [role="button"][aria-label="NVDA"]').waitFor();
     await checkPage(page, `${width}-alerts`);
     const search = page.getByPlaceholder('Search ticker, company, insider…');
     await search.fill('NOT_A_RECORDED_TICKER');
@@ -109,13 +111,19 @@ async function contextPage(width, mode = 'full') {
     await page.getByRole('dialog', { name: 'Notifications', exact: true }).waitFor({ state: 'hidden' });
     assert(await bell.evaluate(el => el === document.activeElement), 'Bell focus restored');
     await bell.click();
+    await page.getByRole('dialog', { name: 'Notifications', exact: true }).getByRole('button', { name: 'Close', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Notifications', exact: true }).waitFor({ state: 'hidden' });
+    await bell.click();
+    await page.locator('[role="presentation"]').click({ position: { x: 5, y: 5 } });
+    await page.getByRole('dialog', { name: 'Notifications', exact: true }).waitFor({ state: 'hidden' });
+    await bell.click();
     await page.locator('.notification-list button').first().click();
     await page.locator('[role="dialog"]').waitFor();
     await page.getByRole('button', { name: 'Close', exact: true }).click();
     await page.locator('[role="dialog"]').waitFor({ state: 'hidden' });
-    await page.getByRole('button', { name: 'NVDA', exact: true }).getByRole('button', { name: 'Add to watchlist', exact: true }).click();
+    await page.locator('main [role="button"][aria-label="NVDA"]').getByRole('button', { name: 'Add to watchlist', exact: true }).click();
     await navigate(page, width, 'watchlist');
-    await page.getByRole('button', { name: 'NVDA', exact: true }).waitFor();
+    await page.locator('main [role="button"][aria-label="NVDA"]').waitFor();
     await checkPage(page, `${width}-watchlist`);
     await page.getByRole('button', { name: 'Remove from watchlist', exact: true }).click();
     assert((await page.locator('main').innerText()).includes('Your watchlist is empty'));
@@ -124,6 +132,7 @@ async function contextPage(width, mode = 'full') {
     assert.equal(await page.locator('.portfolio-summary').count(), 3);
     assert.equal(await page.locator('.portfolio-headline').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(23, 23, 28)');
     assert.equal(await page.getByRole('checkbox', { name: /cash.drag/i }).count(), 0);
+    assert((await page.locator('.portfolio-headline').innerText()).includes('$' + portfolio.equity.at(-1).equity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })));
     await checkPage(page, `${width}-portfolio-2`);
     await page.getByRole('button', { name: '3 · Insider-only', exact: true }).click();
     await page.getByRole('button', { name: /Rules.*Assumptions/i }).click();
@@ -173,7 +182,12 @@ async function contextPage(width, mode = 'full') {
     await context.close();
   }
   console.log(JSON.stringify(results, null, 2));
-})().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
+})().catch(async error => { console.error(error); process.exitCode = 1;
+  if (currentPage && !currentPage.isClosed()) {
+    await currentPage.screenshot({ path: path.join(out, 'failure.png') }).catch(() => {});
+    fs.writeFileSync(path.join(out, 'failure.txt'), await currentPage.locator('body').innerText().catch(() => ''));
+  }
+}).finally(async () => {
   fs.writeFileSync(path.join(out, 'results.json'), JSON.stringify(results, null, 2));
   if (browser) await browser.close();
   server.close();
