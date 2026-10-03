@@ -65,7 +65,7 @@ export function WatchlistView() {
         time: formatDateTime(h.scrapedAt, language),
         score: h.score,
       })),
-    [history],
+    [history, language],
   );
 
   if (watchlist.length === 0) {
@@ -129,7 +129,7 @@ export function WatchlistView() {
                   )}
                 </div>
                 {signal && (
-                  <div className="mt-1 text-xs text-secondary">{formatUSD(signal.totalDollarVolume)} insider buys</div>
+                  <div className="mt-1 text-xs text-secondary">{t('stats.insiderBuys', { amount: formatUSD(signal.totalDollarVolume) })}</div>
                 )}
               </div>
               <button className="icon-btn h-9 w-9" onClick={onRemove} aria-label={t('card.removeFromWatchlist')} title={t('card.removeFromWatchlist')}>
@@ -143,7 +143,7 @@ export function WatchlistView() {
       {/* Score Trend Card */}
       <GlassCard className="p-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-sm font-bold uppercase tracking-wide text-secondary">Score Trend</h3>
+          <h3 className="text-sm font-bold uppercase tracking-wide text-secondary">{t('watch.scoreTrend')}</h3>
           <div className="flex flex-wrap gap-1.5">
             {watchlist.map((w) => (
               <button
