@@ -4,10 +4,10 @@ import { useSourceHealth, type SourceHealthEntry } from '@/hooks/useSourceHealth
 import { useStore } from '@/store/useStore';
 
 const STATUS_META: Record<SourceHealthEntry['status'], { dot: string; label: string; color: string }> = {
-  healthy: { dot: '✅', label: 'OK', color: 'var(--accent-green)' },
-  degraded: { dot: '⚠️', label: 'Low', color: 'var(--accent-yellow)' },
-  flapping: { dot: '🟠', label: 'Flaky', color: 'var(--accent-yellow)' },
-  dead: { dot: '🔴', label: 'Dead', color: 'var(--accent-red)' },
+  healthy: { dot: '', label: 'OK', color: 'var(--accent-green)' },
+  degraded: { dot: '', label: 'Low', color: 'var(--accent-yellow)' },
+  flapping: { dot: '', label: 'Flaky', color: 'var(--accent-yellow)' },
+  dead: { dot: '', label: 'Dead', color: 'var(--accent-red)' },
   unknown: { dot: '○', label: '—', color: 'var(--text-secondary)' },
 };
 
@@ -99,7 +99,7 @@ export function SourceHealthPanel() {
                         : meta.label
                   }
                 >
-                  {meta.dot}
+                  {meta.label}
                   {e.status === 'dead' && e.consecutiveZeroRuns > 0 ? ` ${e.consecutiveZeroRuns}` : ''}
                   {e.status === 'flapping' ? ` ${e.zeroRunsInWindow}/${e.runsInWindow}` : ''}
                 </span>

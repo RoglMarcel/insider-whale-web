@@ -2,7 +2,7 @@ import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { GlassCard } from '@/components/UI/GlassCard';
 import { RefreshIcon } from '@/components/UI/icons';
 import { useI18n } from '@/hooks/useI18n';
-import { api } from '@/lib/ipc';
+import { api, isWeb } from '@/lib/ipc';
 import { formatDate, formatDateTime, timeAgo } from '@/lib/format';
 import { addDaysYmd, diffDaysYmd, emptyPortfolioState } from '@/lib/portfolio-rules';
 import type { PortfolioConfig, PortfolioState } from '@/types';
@@ -92,8 +92,8 @@ function Toggle({
           // reads as "the strategy did nothing", which is a different claim.
           className="px-2.5 py-1 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-35"
           style={{
-            background: value === o.key ? 'color-mix(in srgb, var(--accent-blue) 18%, transparent)' : 'transparent',
-            color: value === o.key ? 'var(--accent-blue)' : 'var(--text-secondary)',
+            background: value === o.key ? 'var(--bg-glass-hover)' : 'transparent',
+            color: value === o.key ? 'var(--text-primary)' : 'var(--text-secondary)',
           }}
         >
           {o.label}
@@ -322,15 +322,15 @@ export function PortfolioView() {
         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-secondary">
           {meta.priceAsOf && <span>{t('pf.headline.asOf', { date: formatDate(meta.priceAsOf) })}</span>}
           {meta.lastRun && <span>· {t('pf.meta.lastRun', { when: timeAgo(meta.lastRun, language) })}</span>}
-          {meta.readOnly && <span>· {t('pf.meta.readOnly')}</span>}
+          {!isWeb && meta.readOnly && <span>· {t('pf.meta.readOnly')}</span>}
         </div>
 
         {error && (
           <div className="mt-3 text-xs text-secondary">
-            {error}
+            {isWeb ? t('ui.loadError') : error}
           </div>
         )}
-        {meta.note && <div className="mt-3 text-xs text-secondary">{meta.note}</div>}
+        {!isWeb && meta.note && <div className="mt-3 text-xs text-secondary">{meta.note}</div>}
       </GlassCard>
 
       {/* ── Chart ── */}
@@ -384,7 +384,7 @@ export function PortfolioView() {
                     button to press either. */}
                 {!equity.length && config.inceptionDate
                   ? t('pf.headline.opensOn', { date: formatDate(config.inceptionDate) })
-                  : t('pf.headline.noDataHint')}
+                  : t(isWeb ? 'ui.noPortfolioHint' : 'pf.headline.noDataHint')}
               </div>
             </div>
           ) : (

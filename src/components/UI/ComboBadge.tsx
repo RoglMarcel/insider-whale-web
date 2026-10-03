@@ -9,7 +9,7 @@ export function ComboBadge({ className = '', pulse = true }: { className?: strin
       style={{ color: '#fff', background: 'var(--accent-blue)', border: 'none' }}
       title={t('badge.comboTitle')}
     >
-      ⚡ {t('badge.combo')}
+       {t('badge.combo')}
     </span>
   );
 }

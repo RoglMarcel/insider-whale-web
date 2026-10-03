@@ -134,7 +134,7 @@ export function FilterBar() {
               : 'text-secondary bg-transparent hover:bg-[rgba(255,255,255,0.04)] hover:text-white border-transparent'
           }`}
         >
-          <span style={filter.bigPlayersOnly ? { color: '#fbbf24' } : undefined}>★</span>
+
           {t('filter.bigPlayersOnly')}
         </button>
       </div>

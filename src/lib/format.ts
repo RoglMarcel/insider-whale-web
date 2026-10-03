@@ -131,7 +131,6 @@ export function convictionLabelKey(level: ConvictionLevel): TKey {
 export interface FreshnessMeta {
   level: FreshnessLevel;
   labelKey: TKey;
-  emoji: string;
   color: string;
 }
 
@@ -139,13 +138,13 @@ export function freshnessMeta(ageDays: number | null | undefined): FreshnessMeta
   const level = getFreshnessLevel(ageDays ?? null);
   switch (level) {
     case 'fresh':
-      return { level, labelKey: 'fresh.fresh', emoji: '🟢', color: 'var(--accent-green)' };
+      return { level, labelKey: 'fresh.fresh', color: 'var(--accent-green)' };
     case 'recent':
-      return { level, labelKey: 'fresh.recent', emoji: '🟡', color: 'var(--accent-yellow)' };
+      return { level, labelKey: 'fresh.recent', color: 'var(--accent-yellow)' };
     case 'aging':
-      return { level, labelKey: 'fresh.aging', emoji: '🟠', color: '#ff9f0a' };
+      return { level, labelKey: 'fresh.aging', color: '#ff9f0a' };
     default:
-      return { level, labelKey: 'fresh.stale', emoji: '🔴', color: 'var(--accent-red)' };
+      return { level, labelKey: 'fresh.stale', color: 'var(--accent-red)' };
   }
 }
 

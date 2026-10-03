@@ -113,7 +113,7 @@ export function FilterSheet({ open, onClose }: { open: boolean; onClose: () => v
               border: `1px solid ${filter.bigPlayersOnly ? 'color-mix(in srgb, #f59e0b 35%, transparent)' : 'var(--border-glass)'}`,
             }}
           >
-            <span>★ {t('filter.bigPlayersOnly')}</span>
+            <span> {t('filter.bigPlayersOnly')}</span>
             <span className="text-[13px] text-secondary">{filter.bigPlayersOnly ? t('filter.on') : t('filter.off')}</span>
           </button>
         </div>

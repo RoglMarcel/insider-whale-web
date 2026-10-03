@@ -78,7 +78,7 @@ export function OptionsFlow({ options }: { options: OptionsActivity[] }) {
                     className="rounded-md px-2 py-0.5 text-xs font-bold"
                     style={{ color: 'var(--accent-blue)', background: 'color-mix(in srgb, var(--accent-blue) 16%, transparent)' }}
                   >
-                    SWEEP ⚡
+                    SWEEP
                   </span>
                 )}
                 {o.dte != null && (

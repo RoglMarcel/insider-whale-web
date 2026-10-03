@@ -58,12 +58,12 @@ export function MegaSignalBanner({ className = '' }: { className?: string }) {
       }}
       title={t('badge.megaBannerTitle')}
     >
-      🚨 {t('badge.megaBanner')}
+       {t('badge.megaBanner')}
     </div>
   );
 }
 
-/** "🏛️ N politicians" count badge. */
+/** " N politicians" count badge. */
 export function PoliticianCountBadge({ count, className = '' }: { count: number; className?: string }) {
   const { t } = useI18n();
   if (count <= 0) return null;
@@ -73,7 +73,7 @@ export function PoliticianCountBadge({ count, className = '' }: { count: number;
       style={{ color: 'var(--accent-purple)', background: 'color-mix(in srgb, var(--accent-purple) 16%, transparent)' }}
       title={t(count === 1 ? 'badge.politicianCountTitleOne' : 'badge.politicianCountTitle', { count })}
     >
-      🏛️ {t(count === 1 ? 'badge.politicianOne' : 'badge.politicianMany', { count })}
+       {t(count === 1 ? 'badge.politicianOne' : 'badge.politicianMany', { count })}
     </span>
   );
 }

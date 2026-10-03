@@ -81,7 +81,7 @@ export function StatCards() {
         sub={t('stats.tickersWithFlow')}
       />
       <StatCard
-        icon={<span className="text-xl">⚡</span>}
+        icon={<LayersIcon size={22} />}
         label={t('stats.comboSignals')}
         value={stats.combos}
         accent="var(--accent-blue)"

@@ -1,3 +1,4 @@
+import { displayText } from '@/lib/display-text';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useI18n } from '@/hooks/useI18n';
 import { createPortal } from 'react-dom';
@@ -262,11 +263,14 @@ export function SignalModal() {
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4"
+      className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center sm:p-4"
       style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)' }}
       onClick={closeSignal}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={selectedTicker}
         // Mobile: a bottom sheet that owns the full width and nearly the full
         // height — a centred dialog wasted horizontal space on a 360px screen and
         // squeezed body text into 1–2 word columns (AUDIT B2).
@@ -299,16 +303,16 @@ export function SignalModal() {
               <h2 className="text-xl font-extrabold font-mono-terminal sm:text-2xl">{selectedTicker}</h2>
               {!chartOnly && signal?.bigPlayer && (
                 <span
-                  className="inline-flex select-none items-center gap-0.5 rounded px-2 py-0.5 text-xs font-extrabold uppercase shadow-[0_0_12px_rgba(255,179,0,0.45)]"
+                  className="inline-flex select-none items-center gap-0.5 rounded px-2 py-0.5 text-xs font-extrabold uppercase "
                   style={{
-                    background: 'linear-gradient(135deg, #FFE082 0%, #FFB300 50%, #FFA000 100%)',
-                    color: '#000000',
-                    border: '1px solid #FFC107',
-                    fontWeight: 900,
+                    background: 'var(--bg-glass-hover)',
+                    color: 'var(--accent-yellow)',
+                    border: '1px solid var(--border-glass)',
+                    fontWeight: 650,
                     letterSpacing: '0.02em',
                   }}
                 >
-                  ★ Big Player
+                   Big Player
                 </span>
               )}
               {!chartOnly && signal && <ConvictionBadge level={signal.convictionLevel} />}
@@ -387,7 +391,7 @@ export function SignalModal() {
                     border: '1px solid color-mix(in srgb, var(--accent-purple) 35%, transparent)',
                   }}
                 >
-                  🏛️ + 👔 POLITICIAN + INSIDER — congressional buying alongside insider buying
+                  POLITICIAN + INSIDER — congressional buying alongside insider buying
                 </div>
               )}
               {signal.breakdown?.politicianComboTier === 'POLITICIAN_OPTIONS' && (
@@ -399,7 +403,7 @@ export function SignalModal() {
                     border: '1px solid color-mix(in srgb, var(--accent-blue) 35%, transparent)',
                   }}
                 >
-                  🏛️ + 🐋 POLITICIAN + OPTIONS — congressional buying alongside unusual bullish flow
+                  POLITICIAN + OPTIONS — congressional buying alongside unusual bullish flow
                 </div>
               )}
 
@@ -413,7 +417,7 @@ export function SignalModal() {
                     border: '1px solid color-mix(in srgb, var(--accent-blue) 35%, transparent)',
                   }}
                 >
-                  ⚡ {t('modal.comboDetected')}
+                   {t('modal.comboDetected')}
                 </div>
               )}
 
@@ -427,7 +431,7 @@ export function SignalModal() {
                     border: '1px solid color-mix(in srgb, var(--accent-red) 30%, transparent)',
                   }}
                 >
-                  🐻 {t('modal.netBearish')}
+                   {t('modal.netBearish')}
                 </div>
               )}
 
@@ -438,7 +442,7 @@ export function SignalModal() {
                   <span className="inline-flex items-center gap-1">
                     {formatDate(signal.filingDate)}
                     {signal.lateFiling && (
-                      <span title={t('modal.lateFiling')}>⚠️</span>
+                      <span className="neutral-badge">{t('modal.lateFiling')}</span>
                     )}
                   </span>
                 </InfoCell>
@@ -514,7 +518,7 @@ export function SignalModal() {
                         className="rounded-xl px-4 py-2.5 text-sm hover:opacity-80"
                         style={{ background: 'var(--bg-glass)', border: '1px solid var(--border-glass)' }}
                       >
-                        <div>{n.text}</div>
+                        <div>{displayText(n.text)}</div>
                         <div className="mt-1 text-[11px] text-secondary">{formatDate(n.timestamp)} · @WhaleInsider</div>
                       </a>
                     ))}

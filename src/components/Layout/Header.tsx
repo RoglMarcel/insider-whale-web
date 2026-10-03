@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useStore } from '@/store/useStore';
 import { useSignals } from '@/hooks/useSignals';
+import { Sheet } from '@/components/UI/Sheet';
 import { LanguageToggle } from '@/components/UI/LanguageToggle';
 import { VixIndicator } from '@/components/UI/VixIndicator';
 import { RefreshIcon, BellIcon } from '@/components/UI/icons';
@@ -28,7 +29,7 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
   const running = scrapeStatus.running;
 
   const [bellOpen, setBellOpen] = useState(false);
-  const bellRef = useRef<HTMLDivElement>(null);
+  const closeNotifications = useCallback(() => setBellOpen(false), []);
 
   const highSignals = useMemo(
     () =>
@@ -39,21 +40,6 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
     [signals],
   );
 
-  useEffect(() => {
-    if (!bellOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (bellRef.current && !bellRef.current.contains(e.target as Node)) setBellOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setBellOpen(false);
-    };
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [bellOpen]);
 
   return (
     <header
@@ -83,7 +69,7 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
       </div>
 
       {/* Live scrape phase */}
-      {running && (
+      {!isWeb && running && (
         <div className="hidden items-center gap-2 text-sm text-secondary md:flex">
           <span className="h-2 w-2 animate-pulse rounded-full" style={{ background: 'var(--accent-blue)' }} />
           <span className="max-w-[16rem] truncate">{scrapeStatus.phase}</span>
@@ -104,12 +90,13 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
       {/* Interactive controls */}
       <div className="flex items-center gap-2 lg:gap-4" style={isWeb ? undefined : ({ WebkitAppRegion: 'no-drag' } as any)}>
         {/* Notification bell — HIGH conviction list */}
-        <div className="relative" ref={bellRef}>
+        <div className="relative">
           <button
             type="button"
             className="icon-btn relative"
             title={t('header.highSignalsTitle', { count: highSignals.length })}
             aria-label={t('header.notifications')}
+            aria-haspopup="dialog"
             aria-expanded={bellOpen}
             onClick={() => setBellOpen((o) => !o)}
           >
@@ -123,42 +110,16 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
               </span>
             )}
           </button>
-          {bellOpen && (
-            <div
-              className="absolute right-0 top-full z-50 mt-2 w-72 overflow-hidden rounded-xl shadow-lg"
-              style={{
-                background: 'var(--bg-elevated, var(--bg-card, #1a1a1e))',
-                border: '1px solid var(--border-glass)',
-              }}
-            >
-              <div className="px-3 py-2 text-xs font-bold uppercase tracking-wide text-secondary" style={{ borderBottom: '1px solid var(--border-glass)' }}>
-                {t('header.highConviction')}
-              </div>
-              {highSignals.length === 0 ? (
-                <div className="px-3 py-4 text-sm text-secondary">{t('header.noHighConviction')}</div>
-              ) : (
-                <ul className="max-h-80 overflow-y-auto">
-                  {highSignals.map((s) => (
-                    <li key={s.ticker}>
-                      <button
-                        type="button"
-                        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-white/5"
-                        onClick={() => {
-                          setBellOpen(false);
-                          openSignal(s.ticker);
-                        }}
-                      >
-                        <span className="font-bold tabular-nums">{s.ticker}</span>
-                        <span className="tabular-nums font-semibold" style={{ color: 'var(--accent-green)' }}>
-                          {s.score.toFixed(0)}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
+          <Sheet open={bellOpen} onClose={closeNotifications} title={t('header.notifications')} maxHeight="min(80svh, 620px)">
+            <p className="mb-3 text-xs text-secondary">{t('header.highConviction')}</p>
+            {highSignals.length === 0 ? <div className="empty-state"><BellIcon size={26} aria-hidden="true" /><p>{t('header.noHighConviction')}</p></div> :
+              <ul className="notification-list">{highSignals.map((signal) => <li key={signal.ticker}>
+                <button type="button" onClick={() => { closeNotifications(); openSignal(signal.ticker); }}>
+                  <span><strong>{signal.ticker}</strong><span className="text-xs text-secondary">{signal.companyName}</span></span>
+                  <span className="neutral-badge">{signal.score.toFixed(0)} / 100</span>
+                </button>
+              </li>)}</ul>}
+          </Sheet>
         </div>
 
         <VixIndicator />

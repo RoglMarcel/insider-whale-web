@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ExternalLinkIcon } from '@/components/UI/icons';
 import { useI18n } from '@/hooks/useI18n';
 import { createPortal } from 'react-dom';
 import { type RawInsiderTrade, type InsiderTrackRecord, classifyTransaction, normalizeInsiderName } from '@/types';
@@ -50,7 +51,7 @@ function TrackRecordModal({ record, onClose }: { record: InsiderTrackRecord; onC
         </h3>
 
         {record.error ? (
-          <div className="py-6 text-center text-sm text-secondary">{record.error}</div>
+          <div className="py-6 text-center text-sm text-secondary">{tr('acc.unavailable')}</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[420px] text-xs">
@@ -80,7 +81,7 @@ function TrackRecordModal({ record, onClose }: { record: InsiderTrackRecord; onC
                       {formatPercent(t.return3m)}
                     </td>
                     <td className="py-2.5 px-1 text-right text-secondary tabular-nums">
-                      {t.wasProfitable6m == null ? '—' : t.wasProfitable6m ? '✓' : '✗'}
+                      {t.wasProfitable6m == null ? '—' : t.wasProfitable6m ? tr('common.yes') : tr('common.no')}
                     </td>
                   </tr>
                 ))}
@@ -120,7 +121,7 @@ function TrackRecordCell({
         style={{ color, minHeight: 44 }}
         title={`Beat the S&P 500 on ${record.profitable3m} of ${record.totalTrades} buys (~3-month). Click for history.`}
       >
-        {record.profitable3m}/{record.totalTrades} ✓ ({pct}%)
+        {record.profitable3m}/{record.totalTrades}  ({pct}%)
       </button>
       {open && <TrackRecordModal record={record} onClose={onToggle} />}
     </div>
@@ -211,7 +212,7 @@ export function InsiderTable({
                   className="mt-2 inline-flex items-center text-[13px] font-semibold"
                   style={{ minHeight: 44, color: 'var(--accent-blue)' }}
                 >
-                  View filing ↗
+                  View filing <ExternalLinkIcon size={13} />
                 </a>
               )}
             </div>
@@ -264,7 +265,7 @@ export function InsiderTable({
                           className="inline-block whitespace-nowrap rounded-md px-2 py-0.5 text-xs font-bold not-italic cursor-pointer"
                           style={{ color, background: `color-mix(in srgb, ${color} 14%, transparent)` }}
                         >
-                          {cls.label} ↗
+                          {cls.label} <ExternalLinkIcon size={12} />
                         </span>
                       </a>
                     ) : (

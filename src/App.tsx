@@ -9,11 +9,10 @@ import { HistoryView } from '@/components/History/HistoryView';
 import { SettingsPanel } from '@/components/Settings/SettingsPanel';
 import { NewsView } from '@/components/News/NewsView';
 import { SignalModal } from '@/components/Detail/SignalModal';
-import { ReleaseNotes, WelcomeModal } from '@/components/Welcome/WelcomeModal';
+import { WelcomeModal } from '@/components/Welcome/WelcomeModal';
 import { useI18n } from '@/hooks/useI18n';
 
 export default function App() {
-  const dataError = useStore(s => s.scrapeStatus.error);
   const init = useStore((s) => s.init);
   const view = useStore((s) => s.view);
   const { t } = useI18n();
@@ -104,7 +103,6 @@ export default function App() {
       )}
 
       <Layout>
-        {isWeb && dataError && <div role="alert" className="m-3 rounded border border-amber-500 p-3 text-sm">{dataError}</div>}
         {!isElectron && !isWeb && (
           <div
             className="mb-4 rounded-xl px-4 py-2 text-sm"
@@ -127,7 +125,6 @@ export default function App() {
         {view === 'settings' && <SettingsPanel />}
 
         <SignalModal />
-        {isWeb && <ReleaseNotes />}
 
         {showWelcome && (
           <WelcomeModal

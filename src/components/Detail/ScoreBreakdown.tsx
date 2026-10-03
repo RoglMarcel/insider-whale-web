@@ -1,3 +1,4 @@
+import { displayText } from '@/lib/display-text';
 import {
   type ScoreBreakdown as Breakdown,
   type InsiderFlowSummary,
@@ -70,7 +71,7 @@ function PoliticianRow({ t }: { t: PoliticianTrade }) {
           title={t.daysToDisclose == null ? undefined : tr('bd.disclosedAfter', { n: t.daysToDisclose })}
         >
           {t.daysToDisclose == null ? '—' : lateDisclose
-            ? `⚠ ${tr('bd.disclosedLate', { n: t.daysToDisclose })}`
+            ? tr('bd.disclosedLate', { n: t.daysToDisclose })
             : tr('bd.disclosedIn', { n: t.daysToDisclose })}
         </span>
       </div>
@@ -306,7 +307,7 @@ export function ScoreBreakdown({
       {politicianTrades && politicianTrades.length > 0 && (
         <div className="mt-3 rounded-xl px-4 py-3" style={{ background: 'var(--bg-glass)', border: '1px solid var(--border-glass)' }}>
           <div className="mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-secondary">
-            🏛️ {t('bd.politicianActivity')}
+             {t('bd.politicianActivity')}
           </div>
           <div className="divide-y" style={{ borderColor: 'var(--border-glass)' }}>
             {politicianTrades.slice(0, 8).map((t, i) => (
@@ -315,7 +316,7 @@ export function ScoreBreakdown({
           </div>
           {politicianTrades.some((t) => t.transactionType === 'sell') && (
             <div className="mt-2 text-xs" style={{ color: 'var(--accent-red)' }}>
-              ⚠ {t('bd.contraSignal')}
+               {t('bd.contraSignal')}
             </div>
           )}
           <div className="mt-3 flex flex-col gap-1.5 border-t pt-2.5" style={{ borderColor: 'var(--border-glass)' }}>
@@ -356,7 +357,7 @@ export function ScoreBreakdown({
                 color: 'var(--accent-blue)',
               }}
             >
-              {note}
+              {displayText(note)}
             </span>
           ))}
         </div>
@@ -375,9 +376,9 @@ export function ScoreBreakdown({
               key={d.factor}
               className="rounded-full px-2.5 py-1 text-xs text-secondary"
               style={{ border: '1px dashed var(--border-glass)' }}
-              title={d.reason}
+              title={displayText(d.reason)}
             >
-              {d.factor} — {d.reason}
+              {d.factor} — {displayText(d.reason)}
             </span>
           ))}
         </div>

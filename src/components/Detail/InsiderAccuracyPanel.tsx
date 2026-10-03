@@ -92,7 +92,7 @@ export function InsiderAccuracyPanel({
                       title={t('acc.calendarClustered')}
                       style={{ background: 'var(--bg-glass)', color: 'var(--text-secondary)' }}
                     >
-                      🔁 routine buyer
+                       routine buyer
                     </span>
                   )}
                   {rec?.pattern === 'opportunistic' && (
@@ -104,7 +104,7 @@ export function InsiderAccuracyPanel({
                         background: 'color-mix(in srgb, var(--accent-green) 12%, transparent)',
                       }}
                     >
-                      🎯 first buy
+                       first buy
                     </span>
                   )}
                 </div>
@@ -113,7 +113,7 @@ export function InsiderAccuracyPanel({
               {!rec ? (
                 <span className="ml-auto text-sm text-secondary">{t('common.loading')}</span>
               ) : rec.totalTrades === 0 ? (
-                <span className="ml-auto text-sm text-secondary">{rec.error || t('acc.unavailable')}</span>
+                <span className="ml-auto text-sm text-secondary">{t('acc.unavailable')}</span>
               ) : (
                 <>
                   <div className="ml-auto text-right">

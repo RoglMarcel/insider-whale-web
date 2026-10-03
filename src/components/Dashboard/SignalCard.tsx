@@ -116,7 +116,7 @@ export function SignalCard({ signal }: { signal: Signal }) {
   };
 
   const cardBorderStyle = isMega
-    ? { border: '1px solid color-mix(in srgb, var(--accent-red) 60%, transparent)', boxShadow: '0 0 16px rgba(255, 59, 48, 0.18)' }
+    ? { border: '1px solid color-mix(in srgb, var(--accent-red) 60%, transparent)' }
     : tier === 'POLITICIAN_INSIDER'
       ? { border: '1px solid color-mix(in srgb, var(--accent-purple) 55%, transparent)' }
       : tier === 'POLITICIAN_OPTIONS'
@@ -124,7 +124,7 @@ export function SignalCard({ signal }: { signal: Signal }) {
         : signal.comboSignal
           ? { border: '1px solid color-mix(in srgb, var(--accent-blue) 50%, transparent)' }
           : signal.bigPlayer
-            ? { border: '1px solid #ffcc00', boxShadow: '0 0 16px rgba(255, 204, 0, 0.15)' }
+            ? { border: '1px solid color-mix(in srgb, var(--accent-yellow) 40%, var(--border-glass))' }
             : undefined;
 
   return (
@@ -135,6 +135,10 @@ export function SignalCard({ signal }: { signal: Signal }) {
       <GlassCard
         hover
         onClick={() => openSignal(signal.ticker)}
+        role="button"
+        tabIndex={0}
+        aria-label={signal.ticker}
+        onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openSignal(signal.ticker); } }}
         className="relative flex w-full min-w-0 flex-col gap-3 p-4 lg:gap-4 lg:p-5"
         style={cardBorderStyle}
       >
@@ -151,16 +155,16 @@ export function SignalCard({ signal }: { signal: Signal }) {
             <div className="text-xl font-extrabold leading-tight font-mono-terminal">{signal.ticker}</div>
             {signal.bigPlayer && (
               <span
-                className="inline-flex select-none items-center gap-0.5 rounded px-2 py-0.5 text-xs font-extrabold uppercase shadow-[0_0_12px_rgba(255,179,0,0.45)]"
+                className="inline-flex select-none items-center gap-0.5 rounded px-2 py-0.5 text-xs font-extrabold uppercase "
                 style={{
-                  background: 'linear-gradient(135deg, #FFE082 0%, #FFB300 50%, #FFA000 100%)',
-                  color: '#000000',
-                  border: '1px solid #FFC107',
-                  fontWeight: 900,
+                  background: 'var(--bg-glass-hover)',
+                  color: 'var(--accent-yellow)',
+                  border: '1px solid var(--border-glass)',
+                  fontWeight: 650,
                   letterSpacing: '0.02em',
                 }}
               >
-                ★ {t('card.bigPlayer')}
+                 {t('card.bigPlayer')}
               </span>
             )}
           </div>
@@ -228,10 +232,10 @@ export function SignalCard({ signal }: { signal: Signal }) {
             />
           )}
           {shortPct != null && shortPct >= 20 && (
-            <Pill color="#ff9f0a" text={`⚡ SI ${shortPct.toFixed(0)}%`} title={t('card.shortInterestTitle', { pct: shortPct.toFixed(1) })} />
+            <Pill color="#ff9f0a" text={` SI ${shortPct.toFixed(0)}%`} title={t('card.shortInterestTitle', { pct: shortPct.toFixed(1) })} />
           )}
           {adv != null && adv < 500_000 && (
-            <Pill color="var(--accent-red)" text={`⚠ ${t('card.lowLiquidity')}`} title={t('card.lowLiquidityTitle', { amount: formatUSD(adv) })} />
+            <Pill color="var(--accent-red)" text={` ${t('card.lowLiquidity')}`} title={t('card.lowLiquidityTitle', { amount: formatUSD(adv) })} />
           )}
         </div>
       )}
