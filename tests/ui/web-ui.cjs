@@ -154,7 +154,7 @@ async function contextPage(width, mode = 'full') {
     assert.deepEqual(listed, summarizeAlertSources(sampleSignals).map(s => s.name));
     await checkPage(page, `${width}-settings`);
     await page.getByRole('combobox', { name: 'Language', exact: true }).selectOption('de');
-    assert((await page.locator('main').innerText()).includes('Quellen der vorhandenen Alerts'));
+    await page.getByText('Quellen der vorhandenen Alerts', { exact: true }).waitFor();
     await checkPage(page, `${width}-settings-de`);
     assert.equal(jsErrors.length, 0, jsErrors.join('\n'));
     results.push({ width, result: 'passed' });

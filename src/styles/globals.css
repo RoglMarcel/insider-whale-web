@@ -655,3 +655,4 @@ tr {
   .source-list > li { gap: 8px; }
 }
 @media (prefers-reduced-motion: reduce) { .app-shell main { scroll-behavior: auto; } }
+.workspace-view .divide-y > :not([hidden]) ~ :not([hidden]) { border-color: var(--border-glass); }
