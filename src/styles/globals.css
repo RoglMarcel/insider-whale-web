@@ -658,3 +658,24 @@ tr {
 .workspace-view .divide-y > :not([hidden]) ~ :not([hidden]) { border-color: var(--border-glass); }
 
 .app-shell, .glass-card, [role='dialog'] { color: var(--text-primary); }
+
+.signal-card { min-height: 304px; }
+.signal-context { min-height: 54px; align-content: flex-start; }
+.signal-grid { grid-auto-rows: 1fr; }
+
+.valuation-panel { min-width: 0; padding: 16px; border: 1px solid var(--border-glass); border-radius: 12px; background: var(--bg-glass); }
+.valuation-assumptions summary { cursor: pointer; font-size: 13px; font-weight: 600; }
+.valuation-controls { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; margin-top: 12px; }
+.valuation-controls label { display: grid; gap: 5px; font-size: 11px; color: var(--text-secondary); }
+.valuation-models details { border-top: 1px solid var(--border-glass); }
+.valuation-models summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; cursor: pointer; font-size: 12px; }
+.valuation-models summary::after { content: '+'; order: 3; color: var(--text-secondary); }
+.valuation-models details[open] summary::after { content: '−'; }
+.valuation-value { margin-left: auto; text-align: right; font-variant-numeric: tabular-nums; }
+.valuation-value small { display: block; color: var(--text-secondary); }
+.valuation-model-detail { font-size: 11px; color: var(--text-secondary); padding-bottom: 12px; overflow-wrap: anywhere; }
+.valuation-formula { font-family: monospace; margin-bottom: 8px; }
+.valuation-model-detail dl { display: grid; gap: 4px; margin-top: 8px; }
+.valuation-model-detail dl > div { display: flex; justify-content: space-between; gap: 12px; }
+.valuation-model-detail dd { text-align: right; font-variant-numeric: tabular-nums; }
+@media(max-width: 600px) { .valuation-controls { grid-template-columns: repeat(2,minmax(0,1fr)); } .valuation-panel { padding: 12px; } }

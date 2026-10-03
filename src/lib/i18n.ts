@@ -5,12 +5,7 @@
  * `Record<TKey, string>`, so a missing or misspelled German key is a COMPILE
  * error rather than a string that silently falls back to English at runtime.
  *
- * Scope note: analyst notes on a signal (`breakdown.notes`) are NOT translated.
- * They are generated in the main process at scrape time and stored as data in
- * the database, so a row written in one language would keep that language
- * forever and switching would only affect rows scraped afterwards. Translating
- * them properly means emitting structured codes instead of prose — a scoring
- * change, not a UI one.
+ * Persisted score notes are translated by the presentation-only signal-language adapter.
  */
 
 export type Lang = 'de' | 'en';
@@ -21,6 +16,21 @@ export const LANGUAGES: { key: Lang; label: string; flag: string }[] = [
 ];
 
 const en = {
+  'opt.bullish': 'Bullish',
+  'opt.bearish': 'Bearish',
+  'opt.neutral': 'Neutral',
+  'table.sourceTitle': 'View source: {source}',
+
+  'card.calls': 'calls',
+  'card.puts': 'puts',
+  'bd.floatPercent': '{n}% of float',
+  'bd.valuationFactor': 'Valuation',
+  'bd.vixFactor': 'Volatility context',
+  'bd.comboFactor': 'Combined signal',
+  'bd.noFairValue': 'No fair-value input in this recorded score',
+  'bd.noVix': 'No volatility reading for this recorded score',
+  'bd.gateMissing': 'Base score below the activation threshold',
+
   "ui.noPortfolioHint": "Portfolio results are not available yet.",
   "common.yes": "Yes",
   "common.no": "No",
@@ -624,6 +634,21 @@ const en = {
 export type TKey = keyof typeof en;
 
 const de: Record<TKey, string> = {
+  'opt.bullish': 'Positiv',
+  'opt.bearish': 'Negativ',
+  'opt.neutral': 'Neutral',
+  'table.sourceTitle': 'Quelle ansehen: {source}',
+
+  'card.calls': 'Call-Optionen',
+  'card.puts': 'Put-Optionen',
+  'bd.floatPercent': '{n}% des Streubesitzes',
+  'bd.valuationFactor': 'Bewertung',
+  'bd.vixFactor': 'Volatilitätsumfeld',
+  'bd.comboFactor': 'Kombiniertes Signal',
+  'bd.noFairValue': 'Keine Fair-Value-Eingabe in diesem gespeicherten Score',
+  'bd.noVix': 'Kein Volatilitätswert für diesen gespeicherten Score',
+  'bd.gateMissing': 'Basisscore unter der Aktivierungsschwelle',
+
   "ui.noPortfolioHint": "Noch keine Depot-Ergebnisse verfügbar.",
   "common.yes": "Ja",
   "common.no": "Nein",
@@ -701,7 +726,7 @@ const de: Record<TKey, string> = {
 
   // ── View titles / subtitles ──
   'view.dashboard.title': 'Alerts',
-  'view.dashboard.subtitle': 'Insider- und Whale-Signale, nach Conviction gerankt',
+  'view.dashboard.subtitle': 'Insider- und Großinvestoren-Signale nach Überzeugungsgrad',
   'view.news.title': 'Live-News',
   'view.news.subtitle': 'Aktuelle Meldungen und Analysen von @WhaleInsider',
   'view.watchlist.title': 'Merkliste',
@@ -757,16 +782,16 @@ const de: Record<TKey, string> = {
   "filter.openMarket": "Offener Markt",
   "filter.options": "Optionen",
   "filter.combo": "Combo",
-  "filter.high": 'High',
-  "filter.watch": 'Watch',
+  "filter.high": 'Hoch',
+  "filter.watch": 'Beobachten',
   "filter.score": "Score",
   "filter.confidence": "Konfidenz",
   "filter.timeRange": "Zeitraum",
   "filter.type": "Typ",
-  "filter.conviction": 'Conviction',
+  "filter.conviction": 'Überzeugung',
   "filter.sort": "Sortierung",
   "filter.sortBy": "Sortieren nach",
-  "filter.bigPlayersOnly": "Nur Big Player",
+  "filter.bigPlayersOnly": "Nur Großinvestoren",
   "filter.bigPlayersChip": "Big Player",
   "filter.removeFilter": "Filter {label} entfernen",
   "filter.highlight": "Hervorhebung",
@@ -811,7 +836,7 @@ const de: Record<TKey, string> = {
   "badge.politicianCountTitle": "{count} Kongressmitglieder haben diesen Ticker gehandelt",
 
   // ── Signal card ──
-  "card.bigPlayer": "Big Player",
+  "card.bigPlayer": "Großinvestor",
   "card.confidenceTitle": "Datenkonfidenz {pct} %: Vollständigkeit der Felder + Bestätigung durch mehrere Quellen + belastbare Herkunft. Kein Urteil über das Signal selbst.",
   "card.removeFromWatchlist": "Von der Merkliste entfernen",
   "card.addToWatchlist": "Zur Merkliste hinzufügen",
@@ -1011,7 +1036,7 @@ const de: Record<TKey, string> = {
 
   // ── Conviction / source health / news ──
   "conviction.high": 'Hohe Überzeugung',
-  "conviction.watch": 'Watch',
+  "conviction.watch": 'Beobachten',
   "conviction.low": "Schwaches Signal",
   "srcH.title": "Quellen-Status",
   "srcH.legend": "letzte · Median · unbrauchbar · Status",

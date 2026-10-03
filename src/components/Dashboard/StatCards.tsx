@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { GlassCard } from '@/components/UI/GlassCard';
 import { useStore } from '@/store/useStore';
 import { useSignals } from '@/hooks/useSignals';
-import { LayersIcon, TrendingUpIcon, ActivityIcon } from '@/components/UI/icons';
+import { LayersIcon, CombineIcon, TrendingUpIcon, ActivityIcon } from '@/components/UI/icons';
 import { formatUSD } from '@/lib/format';
 import { useI18n } from '@/hooks/useI18n';
 
@@ -61,7 +61,7 @@ export function StatCards() {
     // snapping row (DESIGN.md §7) and rejected it after comparing both: the row
     // is 72px tall but hides two of the four numbers behind a scroll gesture,
     // while the 2×2 grid shows all four in ~136px and needs no discovery.
-    <div className="grid grid-cols-2 gap-2 lg:grid-cols-2 lg:gap-4 xl:grid-cols-4">
+    <div data-testid="summary-stats" className="grid grid-cols-2 gap-2 lg:grid-cols-2 lg:gap-4 xl:grid-cols-4">
       <StatCard
         icon={<LayersIcon size={22} />}
         label={t('stats.totalSignals')}
@@ -84,7 +84,7 @@ export function StatCards() {
         sub={available ? t('stats.tickersWithFlow') : undefined}
       />
       <StatCard
-        icon={<LayersIcon size={22} />}
+        icon={<CombineIcon size={22} />}
         label={t('stats.comboSignals')}
         value={available ? stats.combos : '—'}
         accent="var(--accent-blue)"

@@ -127,6 +127,23 @@ jobs:
       - name: Build native SQLite for Node
         run: npm rebuild better-sqlite3 --build-from-source
 
+      - name: Setup Python for Scrapling
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: scripts/scrapling/requirements.txt
+
+      - name: Install pinned public-data fetcher
+        run: python -m pip install -r scripts/scrapling/requirements.txt
+
+      - name: Restore fundamentals cache
+        uses: actions/cache@v4
+        with:
+          path: tmp/fundamentals-cache.json
+          key: fundamentals-v1-${{ github.run_id }}
+          restore-keys: fundamentals-v1-
+
       # Only the scraping path needs a browser; the desktop fast path just reads
       # SQLite and writes JSON, so skip a ~1-minute download it will never use.
       - name: Install Chromium for Playwright
@@ -139,6 +156,7 @@ jobs:
           # Optional: JSON map of login-gated session cookies (see README
           # "Login-gated sources"). Empty if the secret is not set → 🟢 sources only.
           SCRAPE_SESSIONS: ${{ secrets.SCRAPE_SESSIONS }}
+          SCRAPLING_ENABLED: '1'
         run: |
           export APP_VERSION="$(node -p "require('./package.json').version")"
           npm run scrape:web
@@ -149,6 +167,16 @@ jobs:
         run: |
           export APP_VERSION="$(node -p "require('./package.json').version")"
           npm run publish:data
+
+      - name: Collect and validate valuation inputs
+        timeout-minutes: 7
+        continue-on-error: true
+        env:
+          MACROTRENDS_URLS: ${{ vars.MACROTRENDS_URLS }}
+        run: |
+          python scripts/scrapling/fundamentals.py
+          npx esbuild scripts/publish-valuations.ts --bundle --platform=node --format=cjs --outfile=tmp/publish-valuations.cjs
+          node tmp/publish-valuations.cjs
 
       # Label ripened signals with realized SPY-relative alpha. This is what makes
       # the scoring model measurable over time; it only fills gaps, so it is cheap.

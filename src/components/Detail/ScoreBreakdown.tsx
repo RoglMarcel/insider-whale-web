@@ -1,4 +1,4 @@
-import { displayText } from '@/lib/display-text';
+import { localizeScoreNote } from '@/lib/signal-language';
 import {
   type ScoreBreakdown as Breakdown,
   type InsiderFlowSummary,
@@ -280,7 +280,7 @@ export function ScoreBreakdown({
             {stats.shortPctFloat != null && (
               <KV
                 label={t('bd.shortInterest')}
-                value={`${stats.shortPctFloat.toFixed(1)}% of float`}
+                value={t('bd.floatPercent', { n: stats.shortPctFloat.toFixed(1) })}
                 color={stats.shortPctFloat >= 20 ? '#ff9f0a' : undefined}
               />
             )}
@@ -357,7 +357,7 @@ export function ScoreBreakdown({
                 color: 'var(--accent-blue)',
               }}
             >
-              {displayText(note)}
+              {localizeScoreNote(note, language)}
             </span>
           ))}
         </div>
@@ -376,9 +376,9 @@ export function ScoreBreakdown({
               key={d.factor}
               className="rounded-full px-2.5 py-1 text-xs text-secondary"
               style={{ border: '1px dashed var(--border-glass)' }}
-              title={displayText(d.reason)}
+              title={t(d.factor === 'valuationMultiplier' ? 'bd.noFairValue' : d.factor === 'vixMultiplier' ? 'bd.noVix' : 'bd.gateMissing')}
             >
-              {d.factor} — {displayText(d.reason)}
+              {t(d.factor === 'valuationMultiplier' ? 'bd.valuationFactor' : d.factor === 'vixMultiplier' ? 'bd.vixFactor' : 'bd.comboFactor')} — {t(d.factor === 'valuationMultiplier' ? 'bd.noFairValue' : d.factor === 'vixMultiplier' ? 'bd.noVix' : 'bd.gateMissing')}
             </span>
           ))}
         </div>

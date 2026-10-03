@@ -1,3 +1,4 @@
+import { localizeRole } from '@/lib/signal-language';
 import type { MouseEvent } from 'react';
 import { type Signal, daysBetween, classifyTransaction } from '@/types';
 import { GlassCard } from '@/components/UI/GlassCard';
@@ -44,7 +45,7 @@ function Pill({ text, color, title }: { text: string; color: string; title?: str
 export function SignalCard({ signal }: { signal: Signal }) {
   const openSignal = useStore((s) => s.openSignal);
   const { isWatched, toggleWatch } = useWatchlist();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const watched = isWatched(signal.ticker);
 
   // Insider display fields — derive from raw trades so empty topInsiderRole /
@@ -128,9 +129,9 @@ export function SignalCard({ signal }: { signal: Signal }) {
             : undefined;
 
   return (
-    <div className="flex w-full min-w-0 flex-col gap-2">
+    <div className="flex h-full w-full min-w-0 flex-col gap-2">
       {/* MEGA_SIGNAL — full-width pulsing banner above the card, unmissable. */}
-      {isMega && <MegaSignalBanner />}
+
 
       <GlassCard
         hover
@@ -139,9 +140,10 @@ export function SignalCard({ signal }: { signal: Signal }) {
         tabIndex={0}
         aria-label={signal.ticker}
         onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openSignal(signal.ticker); } }}
-        className="relative flex w-full min-w-0 flex-col gap-3 p-4 lg:gap-4 lg:p-5"
+        className="signal-card relative flex h-full w-full min-w-0 flex-1 flex-col gap-3 p-4 lg:gap-4 lg:p-5"
         style={cardBorderStyle}
       >
+        {isMega && <MegaSignalBanner />}
         {/* Combo badge — a politician tier REPLACES the orange COMBO badge. */}
         {tier ? (
           <PoliticianComboBadge tier={tier} className="absolute -right-2 -top-2 shadow-lg" />
@@ -202,7 +204,7 @@ export function SignalCard({ signal }: { signal: Signal }) {
             <EarningsChip days={signal.daysToEarnings} timing={signal.earningsTiming} className="shrink-0 px-2 py-1 text-xs" />
             {hasPolitician && <PoliticianCountBadge count={politicianCount} className="shrink-0" />}
           </div>
-          <DetailRow label={t('card.role')} value={displayRole} />
+          <DetailRow label={t('card.role')} value={localizeRole(displayRole, language)} />
           <DetailRow label={t('card.price')} value={avgPrice ? formatPrice(avgPrice) : '—'} isMono />
           <DetailRow label={t('card.volume')} value={displayVolume > 0 ? formatUSD(displayVolume) : '—'} isMono />
         </div>
@@ -211,7 +213,7 @@ export function SignalCard({ signal }: { signal: Signal }) {
       {/* Context pills — net flow, drawdown, short interest, liquidity. Each only
           renders when the backend has the datum; the row hides entirely if none. */}
       {(netFlow != null || dd != null || (shortPct != null && shortPct >= 20) || (adv != null && adv < 500_000)) && (
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="signal-context flex flex-wrap items-start gap-1.5">
           {netFlow != null && (
             <Pill
               color={netFlowColor}
@@ -240,7 +242,7 @@ export function SignalCard({ signal }: { signal: Signal }) {
         </div>
       )}
 
-      <div className="flex items-center justify-between border-t pt-3" style={{ borderColor: 'var(--border-glass)' }}>
+      <div className="mt-auto flex items-center justify-between gap-2 border-t pt-3" style={{ borderColor: 'var(--border-glass)' }}>
         <span className="inline-flex items-center gap-1.5 text-sm text-secondary">
           <UsersIcon size={15} />
           {t(signal.insiderCount === 1 ? 'card.insiderOne' : 'card.insiderMany', { count: signal.insiderCount })}
@@ -251,7 +253,7 @@ export function SignalCard({ signal }: { signal: Signal }) {
             style={{ color: topOption.sentiment === 'bullish' ? 'var(--accent-green)' : 'var(--accent-red)' }}
           >
             <ActivityIcon size={15} className="shrink-0" />
-            {formatUSD(topOption.notional)} {topOption.type}s
+            {formatUSD(topOption.notional)} {t(topOption.type === 'call' ? 'card.calls' : 'card.puts')}
           </span>
         ) : (
           <span className="text-sm text-secondary">{t('card.noOptionsFlow')}</span>

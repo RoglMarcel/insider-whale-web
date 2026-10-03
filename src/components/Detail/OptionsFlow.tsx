@@ -68,7 +68,7 @@ export function OptionsFlow({ options }: { options: OptionsActivity[] }) {
                   className="rounded-md px-2 py-0.5 text-xs font-bold uppercase"
                   style={{ color, background: `color-mix(in srgb, ${color} 14%, transparent)` }}
                 >
-                  {o.type} · {o.sentiment}
+                  {t(o.type === 'call' ? 'card.calls' : 'card.puts')} · {t(o.sentiment === 'bullish' ? 'opt.bullish' : o.sentiment === 'bearish' ? 'opt.bearish' : 'opt.neutral')}
                 </span>
                 <span className="font-bold" style={{ color }}>
                   {formatUSD(o.premiumTotal ?? o.notional)}

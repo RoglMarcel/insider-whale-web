@@ -36,6 +36,8 @@ const fixtures = {
   'portfolio.json': portfolio,
   'update-health.json': { stages: Object.fromEntries(['signals', 'portfolio', 'outcomes'].map(k => [k, { status: 'partial', source: 'Desktop', reason: 'CEOWatcher scraper returned zero rows', lastUpdatedAt: '2026-10-02T12:00:00Z' }])) },
 };
+// Finance fixtures are explicitly synthetic; live collection is tested separately.
+fixtures['valuations.json'] = { schemaVersion: 1, generatedAt: '2026-10-03T12:00:00Z', stocks: Object.fromEntries(sampleSignals.map(signal => [signal.ticker, [{ ticker: signal.ticker, provider: 'stockrow', url: 'https://stockrow.com/' + signal.ticker, fetchedAt: '2026-10-03T12:00:00Z', currency: 'USD', statementDate: '2026-09-30', price: 50, priceAsOf: '2026-10-02', facts: Object.fromEntries(Object.entries({ shares: 10, operatingCashFlow: 90, capex: 30, netBorrowing: 5, eps: 5, dividendPerShare: 2 }).map(([key,value]) => [key, { value, period: '2026-09-30', unit: key === 'shares' ? 'shares' : ['eps','dividendPerShare'].includes(key) ? 'perShare' : 'currency' }])), annual: { pe: [10,12,14].map((value,i) => ({ value, period: `${2025-i}-09`, unit: 'ratio' })) } }]])) };
 const mime = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json' };
 const server = http.createServer((req, res) => {
   const pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
@@ -59,7 +61,7 @@ async function navigate(page, width, view) {
   const labels = { dashboard: /^Alerts$/, portfolio: /^(Paper|Portfolio)$/, history: /^History$/, settings: /^(Setup|Settings)$/, watchlist: /\b(Watch|Watchlist)\b/ };
   if (width < 768) await page.locator('nav').filter({ has: page.locator('button[aria-current]') }).getByRole('button', { name: labels[view] }).click();
   else {
-    if (width < 1024) await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+    if (width < 1024) await page.getByRole('button', { name: /^(Open menu|Menü öffnen)$/, exact: true }).click();
     await page.locator('aside').getByRole('button', { name: labels[view] }).click();
   }
 }
@@ -91,6 +93,22 @@ async function contextPage(width, mode = 'full') {
     await page.locator('main [role="button"][aria-label="NVDA"]').waitFor();
     assert.equal(await page.locator('main [aria-label="NVDA"] .font-mono-terminal').first().evaluate(el => getComputedStyle(el).color), 'rgb(237, 237, 241)', 'Ticker text contrast');
     await checkPage(page, `${width}-alerts`);
+    const heights = await page.locator('.signal-card').evaluateAll(cards => cards.map(c => c.getBoundingClientRect().height));
+    assert(Math.max(...heights) - Math.min(...heights) < 2, 'Consistent alert card heights');
+    const icons = await page.getByTestId('summary-stats').locator('svg').evaluateAll(icons => icons.map(i => i.innerHTML));
+    assert.notEqual(icons[0], icons[3], 'Combo and total signal icons are distinct');
+    await page.locator('main [role="button"][aria-label="NVDA"]').click();
+    await page.locator('.valuation-models details').last().waitFor();
+    assert.equal(await page.locator('.valuation-models details').count(), 26);
+    await page.locator('[data-model="fcfe"] summary').click();
+    assert((await page.locator('[data-model="fcfe"]').innerText()).includes('$'));
+    await page.locator('.valuation-assumptions summary').click();
+    const growth = page.getByLabel('Forecast growth (%)', {exact:true});
+    const before = await page.locator('[data-model="fcfe"] summary').innerText();
+    await growth.fill('5');
+    assert.notEqual(await page.locator('[data-model="fcfe"] summary').innerText(), before, 'Scenario changes recompute valuation');
+    await checkPage(page, `${width}-valuation`);
+    await page.getByRole('button', {name:'Close',exact:true}).click();
     const search = page.getByPlaceholder('Search ticker, company, insider…');
     await search.fill('NOT_A_RECORDED_TICKER');
     await page.getByText('No signals match your search', { exact: true }).waitFor();
@@ -157,6 +175,14 @@ async function contextPage(width, mode = 'full') {
     await page.getByRole('combobox', { name: 'Language', exact: true }).selectOption('de');
     await page.getByText('Quellen der vorhandenen Alerts', { exact: true }).waitFor();
     await checkPage(page, `${width}-settings-de`);
+    await navigate(page, width, 'dashboard');
+    await page.locator('main [role="button"][aria-label="NVDA"]').click();
+    await page.getByText('Fair Value · 26 Bewertungsmodelle',{exact:true}).waitFor();
+    await page.locator('[data-model="fcfe"] summary').click();
+    const german = await page.locator('[role="dialog"]').innerText();
+    assert(!/insiders buying|of market cap|age decay|Legacy flat-bonus|no fair-value estimate|valuationMultiplier|CONVICTION|forecast years|Bullish|Bearish/.test(german), 'German score explanations and labels');
+    await checkPage(page, `${width}-valuation-de`);
+    await page.getByRole('button', {name:'Schließen',exact:true}).click();
     assert.equal(jsErrors.length, 0, jsErrors.join('\n'));
     results.push({ width, result: 'passed' });
     await context.close();

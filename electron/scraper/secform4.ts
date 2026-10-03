@@ -1,3 +1,4 @@
+import { useScrapling, scraplingTable } from './scrapling';
 import type { BrowserContext } from 'playwright';
 import type { RawInsiderTrade } from '../../src/types';
 import { withPage } from './browser';
@@ -13,6 +14,12 @@ const URL = 'https://www.secform4.com/all-buys';
 const TABLE_SELECTORS = ['table.tablesorter', 'table.insiders', 'table[width]', 'table'];
 
 export async function scrapeSecForm4(context: BrowserContext): Promise<RawInsiderTrade[]> {
+  if (useScrapling()) {
+    const data = await scraplingTable(URL, TABLE_SELECTORS);
+    const trades = mapInsiderTable({headers:data.headers,rows:data.rows.map(r=>r.cells)}, 'secform4', URL);
+    if (!trades.length) throw new Error('SECForm4 purchase table missing or unreadable');
+    return trades;
+  }
   return withPage(
     context,
     URL,

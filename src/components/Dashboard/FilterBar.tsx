@@ -84,7 +84,7 @@ export function ActiveFilterChips() {
     chips.push({ label: m ? t(m.label) : filter.type, clear: () => setFilter({ type: 'all' }) });
   }
   if (filter.conviction !== 'all') {
-    chips.push({ label: filter.conviction, clear: () => setFilter({ conviction: 'all' }) });
+    chips.push({ label: t(filter.conviction === 'HIGH' ? 'filter.high' : 'filter.watch'), clear: () => setFilter({ conviction: 'all' }) });
   }
   if (filter.bigPlayersOnly)
     chips.push({ label: t('filter.bigPlayersChip'), clear: () => setFilter({ bigPlayersOnly: false }) });

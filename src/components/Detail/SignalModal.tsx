@@ -10,6 +10,7 @@ import { ScoreGauge } from '@/components/UI/ScoreGauge';
 import { ConvictionBadge } from '@/components/UI/ConvictionBadge';
 import { ComboBadge } from '@/components/UI/ComboBadge';
 import { PoliticianComboBadge, MegaSignalBanner } from '@/components/UI/PoliticianBadges';
+import { FairValuePanel } from '@/components/Valuation/FairValuePanel';
 import { ScoreBreakdown } from './ScoreBreakdown';
 import { InsiderTable } from './InsiderTable';
 import { InsiderAccuracyPanel, type PanelInsider } from './InsiderAccuracyPanel';
@@ -489,6 +490,8 @@ export function SignalModal() {
                   )}
                 </div>
               )}
+
+              <FairValuePanel ticker={selectedTicker} />
 
               {/* TradingView Chart */}
               <TradingViewChart ticker={selectedTicker} theme={theme} />
