@@ -56,7 +56,7 @@ async function checkPage(page, label) {
   await page.screenshot({ path: path.join(out, `${label}.png`) });
 }
 async function navigate(page, width, view) {
-  const labels = { dashboard: /^Alerts$/, portfolio: /^(Paper|Portfolio)$/, history: /^History$/, settings: /^(Setup|Settings)$/, watchlist: /^(Watch|Watchlist)/ };
+  const labels = { dashboard: /^Alerts$/, portfolio: /^(Paper|Portfolio)$/, history: /^History$/, settings: /^(Setup|Settings)$/, watchlist: /\b(Watch|Watchlist)\b/ };
   if (width < 768) await page.locator('nav').filter({ has: page.locator('button[aria-current]') }).getByRole('button', { name: labels[view] }).click();
   else {
     if (width < 1024) await page.getByRole('button', { name: 'Open menu', exact: true }).click();
