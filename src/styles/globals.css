@@ -656,3 +656,5 @@ tr {
 }
 @media (prefers-reduced-motion: reduce) { .app-shell main { scroll-behavior: auto; } }
 .workspace-view .divide-y > :not([hidden]) ~ :not([hidden]) { border-color: var(--border-glass); }
+
+.app-shell, .glass-card, [role='dialog'] { color: var(--text-primary); }

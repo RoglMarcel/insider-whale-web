@@ -89,6 +89,7 @@ async function contextPage(width, mode = 'full') {
   for (const width of [1440, 820, 390, 320]) {
     const { page, context, jsErrors } = await contextPage(width);
     await page.locator('main [role="button"][aria-label="NVDA"]').waitFor();
+    assert.equal(await page.locator('main [aria-label="NVDA"] .font-mono-terminal').first().evaluate(el => getComputedStyle(el).color), 'rgb(237, 237, 241)', 'Ticker text contrast');
     await checkPage(page, `${width}-alerts`);
     const search = page.getByPlaceholder('Search ticker, company, insider…');
     await search.fill('NOT_A_RECORDED_TICKER');
