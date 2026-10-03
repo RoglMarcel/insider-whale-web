@@ -182,7 +182,7 @@ async function contextPage(width, mode = 'full') {
     await page.getByText('Fair Value · 26 Bewertungsmodelle',{exact:true}).waitFor();
     await page.locator('[data-model="fcfe"] summary').click();
     const german = await page.locator('[role="dialog"]').innerText();
-    assert(!/insiders buying|of market cap|age decay|Legacy flat-bonus|no fair-value estimate|valuationMultiplier|CONVICTION|forecast years|Bullish|Bearish/.test(german), 'German score explanations and labels');
+    assert(!/insiders buying|of market cap|age decay|Legacy flat-bonus|no fair-value estimate|valuationMultiplier|CONVICTION|forecast years|Bullish|Bearish|POLITICIAN_OPTIONS|POLITICIAN_INSIDER|\bpts\b|\bHouse\b|\bSenate\b/.test(german), 'German score explanations and labels');
     await checkPage(page, `${width}-valuation-de`);
     await page.getByRole('button', {name:'Schließen',exact:true}).click();
     assert.equal(jsErrors.length, 0, jsErrors.join('\n'));

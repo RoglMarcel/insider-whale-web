@@ -47,7 +47,8 @@ function PoliticianRow({ t }: { t: PoliticianTrade }) {
   const { t: tr, language } = useI18n();
   const party = partyMeta(t.party);
   const isBuy = t.transactionType === 'buy';
-  const ctx = [t.chamber, t.committee].filter(Boolean).join(' · ');
+  const chamber = language === 'de' ? t.chamber?.replace(/\bHouse\b/g, 'Repräsentantenhaus').replace(/\bSenate\b/g, 'Senat') : t.chamber;
+  const ctx = [chamber, t.committee].filter(Boolean).join(' · ');
   const age = daysBetween(t.tradeDate);
   const lateDisclose = t.daysToDisclose != null && t.daysToDisclose > 30;
   return (
@@ -95,6 +96,7 @@ export function ScoreBreakdown({
   const b = breakdown;
   const { t, language } = useI18n();
   const fresh = freshnessMeta(b.signalAgeDays);
+  const points = language === 'de' ? 'Punkte' : 'pts';
 
   // "No insider data" and "bad insider data" are different facts and must not
   // render the same. With zero scoring-eligible trades the insider leg is
@@ -114,7 +116,7 @@ export function ScoreBreakdown({
     },
     {
       label: t('bd.dollarVolume'),
-      display: hasInsiderLeg ? `${b.dollarVolumePoints} / 20 pts` : NA,
+      display: hasInsiderLeg ? `${b.dollarVolumePoints} / 20 ${points}` : NA,
       fill: hasInsiderLeg ? b.dollarVolumePoints / 20 : 0,
       color: 'var(--accent-blue)',
     },
@@ -138,7 +140,7 @@ export function ScoreBreakdown({
     },
     {
       label: t('bd.optionsFlow'),
-      display: `${b.optionsScore >= 0 ? '+' : ''}${b.optionsScore.toFixed(0)} pts`,
+      display: `${b.optionsScore >= 0 ? '+' : ''}${b.optionsScore.toFixed(0)} ${points}`,
       fill: Math.min(Math.abs(b.optionsScore) / MAX_OPTIONS_SCORE_TOTAL, 1),
       color: b.optionsScore < 0 ? 'var(--accent-red)' : 'var(--accent-green)',
     },
@@ -180,7 +182,7 @@ export function ScoreBreakdown({
   // When a politician tier is set, the tier row shows that bonus; comboBonus
   // already holds the effective total — avoid double-counting in the factor list.
   if (b.comboBonus > 0 && !b.politicianComboTier) {
-    factors.push({ label: t('bd.comboBonus'), display: `+ ${b.comboBonus} pts`, fill: 1, color: 'var(--accent-blue)' });
+    factors.push({ label: t('bd.comboBonus'), display: `+ ${b.comboBonus} ${points}`, fill: 1, color: 'var(--accent-blue)' });
   }
 
   const hasFlow = !!insiderFlow && (insiderFlow.buys > 0 || insiderFlow.sells > 0 || insiderFlow.form144 > 0);
@@ -322,7 +324,7 @@ export function ScoreBreakdown({
           <div className="mt-3 flex flex-col gap-1.5 border-t pt-2.5" style={{ borderColor: 'var(--border-glass)' }}>
             <KV
               label={t('bd.politicianContribution')}
-              value={`+${Math.round(b.politicianScore ?? 0)} pts`}
+              value={`+${Math.round(b.politicianScore ?? 0)} ${points}`}
               color={(b.politicianScore ?? 0) > 0 ? 'var(--accent-purple)' : undefined}
             />
             {b.politicianComboTier && (
@@ -336,7 +338,7 @@ export function ScoreBreakdown({
               <KV
                 label={t('bd.comboTier')}
                 value={
-                  `${b.politicianComboTier}  (× ${POLITICIAN_COMBO_SOFT_MULT[b.politicianComboTier].toFixed(2)}` +
+                  `${t(b.politicianComboTier === 'MEGA_SIGNAL' ? 'badge.mega' : b.politicianComboTier === 'POLITICIAN_INSIDER' ? 'badge.polInsider' : 'badge.polOptions')}  (× ${POLITICIAN_COMBO_SOFT_MULT[b.politicianComboTier].toFixed(2)}` +
                   `${b.comboBonus > 0 ? '' : `, ${t('bd.gated', { gate: CORROBORATION_GATE })}`})`
                 }
                 color={TIER_COLOR[b.politicianComboTier]}
