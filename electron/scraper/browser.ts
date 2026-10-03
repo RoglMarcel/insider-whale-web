@@ -1,4 +1,5 @@
 import { chromium, type Browser, type BrowserContext, type BrowserContextOptions, type Page } from 'playwright';
+import { cancellationSignal, checkCancelled, cancellableDelay } from './cancellation';
 import type { RawInsiderTrade, OptionsActivity } from '../../src/types';
 import { SourceHttpError, retryTransient } from './reliability';
 import { spawn } from 'child_process';
@@ -326,10 +327,11 @@ export const restoreIndexedDBScript = `
 /** Random human-like delay between requests to one domain (requirement #3). */
 export function randomDelay(min = 1500, max = 3000): Promise<void> {
   const ms = Math.floor(Math.random() * (max - min) + min);
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return cancellableDelay(ms);
 }
 
 export interface NavOptions {
+  validateNavigation?: (url: string) => string;
   /** Check HTTP status and retry temporary failures once on a fresh page. */
   reliable?: boolean;
   waitUntil?: 'load' | 'domcontentloaded' | 'networkidle';
@@ -344,8 +346,40 @@ export async function withPage<T>(
   options: NavOptions = {},
 ): Promise<T> {
   const run = async () => {
+    checkCancelled();
+    options.validateNavigation?.(url);
     const page = await context.newPage();
+    const signal = cancellationSignal();
+    const abort = () => { void page.close().catch(() => undefined); };
+    signal?.addEventListener('abort', abort, { once: true });
     try {
+      if (signal?.aborted) { abort(); checkCancelled(); }
+      if (options.validateNavigation) await page.route('**/*', async route => {
+        const request = route.request();
+        if (request.isNavigationRequest() && request.frame() === page.mainFrame()) {
+          try {
+            let target = request.url();
+            for (let hops = 0; hops < 10; hops++) {
+              target = options.validateNavigation!(target);
+              // Playwright route handlers do not see automatic HTTP redirects.
+              // Fetch each hop explicitly so validation precedes every request.
+              const response = await route.fetch({ url: target, maxRedirects: 0 });
+              const location = response.headers()['location'];
+              if ([301, 302, 303, 307, 308].includes(response.status()) && location) {
+                target = new URL(location, target).href;
+                await response.dispose();
+                continue;
+              }
+              await route.fulfill({ response });
+              await response.dispose();
+              return;
+            }
+          } catch { /* Invalid or failed navigation must not reach the browser. */ }
+          await route.abort();
+          return;
+        }
+        await route.continue();
+      });
       const response = await page.goto(url, {
         waitUntil: options.waitUntil ?? 'domcontentloaded',
         timeout: options.timeout ?? 30_000,
@@ -353,8 +387,12 @@ export async function withPage<T>(
       if (options.reliable && response && !response.ok()) {
         throw new SourceHttpError(response.status(), response.headers()['retry-after'] ?? null);
       }
-      return await parse(page);
+      options.validateNavigation?.(page.url());
+      const result = await parse(page);
+      checkCancelled();
+      return result;
     } finally {
+      signal?.removeEventListener('abort', abort);
       await page.close().catch(() => undefined);
     }
   };

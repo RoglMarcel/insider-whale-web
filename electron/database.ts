@@ -1,5 +1,11 @@
+import { utcInstantMs } from '../src/lib/utcDate';
+import { sanitizeTradeAmounts } from './scraper/util';
 import { tickerIssue, resolvedTicker } from '../src/lib/ticker-quality';
 import Database from 'better-sqlite3';
+import { tradeFingerprint, selectTradeRevisions } from './tradeRevisions';
+import { dedupTrades } from './tradeDedup';
+import { admissibleTrade } from '../src/lib/tradeEligibility';
+import { eventDate } from '../src/lib/utcDate';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
@@ -33,6 +39,7 @@ import {
   filterSignals,
   isBigPlayer,
   normalizeInsiderName,
+  classifyTransaction,
 } from '../src/types';
 
 let db: Database.Database | null = null;
@@ -309,6 +316,14 @@ CREATE TABLE IF NOT EXISTS insider_flow (
   PRIMARY KEY (ticker, flow_date, source)
 );
 CREATE INDEX IF NOT EXISTS idx_insider_flow_date ON insider_flow(flow_date);
+CREATE TABLE IF NOT EXISTS insider_flow_snapshots (
+  source TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  from_date TEXT NOT NULL,
+  through_date TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  PRIMARY KEY(source, started_at)
+);
 
 -- Persisted insider trades. Every scraper is a "latest filings" feed with its own
 -- short window (OpenInsider's is 7 days), so before this table a trade existed for
@@ -430,6 +445,7 @@ export function runMigrations(database: Database.Database): void {
     ['insider_track_records', 'error', 'TEXT'],
     // Calendar-pattern classification (routine vs opportunistic)
     ['insider_track_records', 'pattern', 'TEXT'],
+    ['insider_track_records', 'price_method_version', 'INTEGER NOT NULL DEFAULT 0'],
     // Equity stats pack (short interest / float / liquidity)
     ['ticker_meta', 'short_pct_float', 'REAL'],
     ['ticker_meta', 'float_shares', 'REAL'],
@@ -963,20 +979,22 @@ function rowToTrackRecord(row: TrackRecordRow): InsiderTrackRecord {
 
 export function getTrackRecord(name: string): InsiderTrackRecord | null {
   const row = getDb()
-    .prepare(`SELECT * FROM insider_track_records WHERE insider_name = ?`)
+    .prepare(`SELECT * FROM insider_track_records WHERE insider_name = ? AND price_method_version = 1`)
     .get(name) as TrackRecordRow | undefined;
   return row ? rowToTrackRecord(row) : null;
 }
 
 export function upsertTrackRecord(record: InsiderTrackRecord): void {
+  // Transient or partial results must never become scoring inputs.
+  if (record.error && !['No post-trade performance data yet.', 'No history page available for this insider.'].includes(record.error)) return;
   getDb()
     .prepare(
       `INSERT INTO insider_track_records (
         insider_name, insider_role, total_trades, profitable_3m, profitable_6m,
-        accuracy_3m, accuracy_6m, avg_return_3m, recent_trades, last_updated, error, pattern
+        accuracy_3m, accuracy_6m, avg_return_3m, recent_trades, last_updated, error, pattern, price_method_version
       ) VALUES (
         @insider_name, @insider_role, @total_trades, @profitable_3m, @profitable_6m,
-        @accuracy_3m, @accuracy_6m, @avg_return_3m, @recent_trades, @last_updated, @error, @pattern
+        @accuracy_3m, @accuracy_6m, @avg_return_3m, @recent_trades, @last_updated, @error, @pattern, 1
       )
       ON CONFLICT(insider_name) DO UPDATE SET
         insider_role = excluded.insider_role,
@@ -989,7 +1007,8 @@ export function upsertTrackRecord(record: InsiderTrackRecord): void {
         recent_trades = excluded.recent_trades,
         last_updated = excluded.last_updated,
         error = excluded.error,
-        pattern = excluded.pattern`,
+        pattern = excluded.pattern,
+        price_method_version = excluded.price_method_version`,
     )
     .run({
       insider_name: record.insiderName,
@@ -1222,7 +1241,7 @@ interface PoliticianTradeRow {
   amount_midpoint: number;
   trade_date: string;
   disclosure_date: string;
-  days_to_disclose: number;
+  days_to_disclose: number | null;
   scraped_at: string;
 }
 
@@ -1685,6 +1704,7 @@ export function upsertInsiderFlow(rows: InsiderFlowInput[]): void {
   const now = new Date().toISOString();
   const tx = getDb().transaction((items: InsiderFlowInput[]) => {
     for (const r of items) {
+      if (eventDate(r.flowDate).state !== 'valid' || ![r.buyValue,r.sellValue,r.form144Count].every(v => Number.isFinite(v) && v >= 0)) continue;
       stmt.run({
         ticker: r.ticker.toUpperCase(),
         flow_date: r.flowDate,
@@ -1699,10 +1719,44 @@ export function upsertInsiderFlow(rows: InsiderFlowInput[]): void {
   tx(rows);
 }
 
+/** Replace only a fully traversed, stable source snapshot. History stays append-only. */
+export function replaceInsiderSalesSnapshot(snapshot: {
+  rows: InsiderFlowInput[]; complete: boolean; from: string; through: string; startedAt: string;
+}): boolean {
+  if (!snapshot.complete) return false;
+  const source = 'openinsider-sales';
+  const started = utcInstantMs(snapshot.startedAt);
+  if (started === null || !snapshot.startedAt.includes('T') || started > Date.now() ||
+      eventDate(snapshot.from).state !== 'valid' || eventDate(snapshot.through).state !== 'valid' || snapshot.from > snapshot.through) throw new Error('Invalid flow snapshot coverage');
+  const keys = new Set<string>();
+  for (const row of snapshot.rows) {
+    const key = `${row.ticker.toUpperCase()}|${row.flowDate}`;
+    if (keys.has(key) || row.source !== source || eventDate(row.flowDate).state !== 'valid' || row.flowDate < snapshot.from || row.flowDate > snapshot.through ||
+        !row.ticker || !Number.isFinite(row.sellValue) || row.sellValue < 0 || row.buyValue !== 0 || row.form144Count !== 0) throw new Error('Invalid flow snapshot row');
+    keys.add(key);
+  }
+  return getDb().transaction(() => {
+    const previous = getDb().prepare('SELECT MAX(started_at) AS latest FROM insider_flow_snapshots WHERE source=?').get(source) as { latest: string | null };
+    const canonicalTime = new Date(started).toISOString();
+    if (previous.latest && canonicalTime <= previous.latest) return false;
+    getDb().prepare('INSERT INTO insider_flow_snapshots(source,started_at,from_date,through_date,payload) VALUES(?,?,?,?,?)')
+      .run(source,canonicalTime,snapshot.from,snapshot.through,JSON.stringify(snapshot.rows));
+    // Missing rows in a proven complete snapshot mean zero, including an empty snapshot.
+    getDb().prepare('UPDATE insider_flow SET sell_value=0, updated_at=? WHERE source=? AND flow_date>=? AND flow_date<=?')
+      .run(canonicalTime,source,snapshot.from,snapshot.through);
+    const insert = getDb().prepare(`INSERT INTO insider_flow(ticker,flow_date,source,buy_value,sell_value,form144_count,updated_at)
+      VALUES(?,?,?,0,?,0,?) ON CONFLICT(ticker,flow_date,source) DO UPDATE SET sell_value=excluded.sell_value,updated_at=excluded.updated_at`);
+    for (const row of snapshot.rows) insert.run(row.ticker.toUpperCase(),row.flowDate,source,row.sellValue,canonicalTime);
+    return true;
+  })();
+}
+
 export interface InsiderFlowSummary {
   buys: number;
   sells: number;
   form144: number;
+  unresolvedBuys?: number;
+  buyCoverage?: 'dated-records';
 }
 
 /**
@@ -1714,19 +1768,30 @@ export function getNetInsiderFlow(ticker: string, days = 90): InsiderFlowSummary
   const cutoff = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
   const rows = getDb()
     .prepare(
-      `SELECT source, SUM(buy_value) AS b, SUM(sell_value) AS s, SUM(form144_count) AS f
-       FROM insider_flow WHERE ticker = ? AND flow_date >= ? GROUP BY source`,
+      `SELECT source, flow_date, sell_value AS s, form144_count AS f
+       FROM insider_flow WHERE ticker = ? AND flow_date >= ?`,
     )
-    .all(ticker.toUpperCase(), cutoff) as { source: string; b: number | null; s: number | null; f: number | null }[];
+    .all(ticker.toUpperCase(), cutoff) as { source: string; flow_date: string; s: number | null; f: number | null }[];
   let buys = 0;
   let sells = 0;
   let form144 = 0;
-  for (const r of rows) {
-    buys = Math.max(buys, r.b ?? 0);
-    sells = Math.max(sells, r.s ?? 0);
-    form144 = Math.max(form144, r.f ?? 0);
+  const bySource = new Map<string, { sells: number; form144: number }>();
+  for (const row of rows) {
+    if (eventDate(row.flow_date).state !== 'valid') continue;
+    const total = bySource.get(row.source) ?? { sells: 0, form144: 0 };
+    if (row.s !== null && Number.isFinite(row.s) && row.s > 0) total.sells += row.s;
+    if (row.f !== null && Number.isFinite(row.f) && row.f > 0) total.form144 += row.f;
+    bySource.set(row.source, total);
   }
-  return { buys, sells, form144 };
+  for (const total of bySource.values()) {
+    sells = Math.max(sells, total.sells);
+    form144 = Math.max(form144, total.form144);
+  }
+  buys = dedupTrades(getRecentInsiderTrades(days, ticker))
+    .filter(t => admissibleTrade(t) && classifyTransaction(t.transactionType).modifier > 0)
+    .reduce((sum,t) => sum + (sanitizeTradeAmounts(t.shares ?? 0, t.price, t.value ?? 0)?.value ?? 0), 0);
+  const unresolvedBuys = getUnresolvedInsiderTrades(ticker).filter(t => classifyTransaction(t.transactionType).modifier > 0).length;
+  return { buys, sells, form144, unresolvedBuys, buyCoverage: 'dated-records' };
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -1755,68 +1820,60 @@ function tradeSourceRank(source: string): number {
  * aggregator rows lack). Returns how many were new.
  */
 export function upsertInsiderTrades(trades: RawInsiderTrade[]): number {
-  if (!trades.length) return 0;
-  const stmt = getDb().prepare(
-    `INSERT INTO insider_trades
-       (ticker, insider_key, trade_date, value_cents, source, source_rank, payload, first_seen, last_seen)
-     VALUES (@ticker, @insider_key, @trade_date, @value_cents, @source, @source_rank, @payload, @now, @now)
-     ON CONFLICT(ticker, insider_key, trade_date, value_cents) DO UPDATE SET
-       last_seen   = excluded.last_seen,
-       payload     = CASE WHEN excluded.source_rank < source_rank THEN excluded.payload ELSE payload END,
-       source      = CASE WHEN excluded.source_rank < source_rank THEN excluded.source  ELSE source  END,
-       source_rank = MIN(source_rank, excluded.source_rank)`,
-  );
-  const now = new Date().toISOString();
-  const countRows = () =>
-    (getDb().prepare(`SELECT COUNT(*) AS n FROM insider_trades`).get() as { n: number }).n;
-  const before = countRows();
-  const tx = getDb().transaction((items: RawInsiderTrade[]) => {
-    for (const t of items) {
-      const ticker = (t.ticker ?? '').toUpperCase();
-      recordTickerQuality(ticker);
-      const insiderKey = normalizeInsiderName(t.insiderName ?? '');
-      // A trade with no ticker, no identifiable insider or no parseable date has
-      // no stable key — storing it would create an unbounded pile of near-dupes.
-      if (!ticker || !insiderKey || !/^\d{4}-\d{2}-\d{2}$/.test(t.tradeDate ?? '')) continue;
-      if (!Number.isFinite(t.value) || t.value <= 0) continue;
-      stmt.run({
-        ticker,
-        insider_key: insiderKey,
-        trade_date: t.tradeDate,
-        value_cents: Math.round(t.value * 100),
-        source: t.source,
-        source_rank: tradeSourceRank(t.source),
-        payload: JSON.stringify(t),
-        now,
-      });
+  const stmt = getDb().prepare(`INSERT INTO insider_trades
+    (ticker,insider_key,trade_date,value_cents,source,source_rank,payload,first_seen,last_seen)
+    VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(ticker,insider_key,trade_date,value_cents)
+    DO UPDATE SET last_seen=excluded.last_seen`);
+  let inserted = 0;
+  getDb().transaction(() => {
+    for (const t of trades) {
+      if (!t.ticker || !t.insiderName || !Number.isFinite(t.value) || t.value < 0) continue;
+      const now = new Date().toISOString();
+      const dateStatus = t.dateStatus ?? eventDate(t.tradeDate).state;
+      const payload: RawInsiderTrade = { ...t, ticker: t.ticker.toUpperCase(), dateStatus, observedAt: t.observedAt ?? now };
+      recordTickerQuality(payload.ticker);
+      const fingerprint = tradeFingerprint(payload);
+      const key = `version:${fingerprint}`;
+      const exists = getDb().prepare('SELECT 1 FROM insider_trades WHERE ticker=? AND insider_key=? AND trade_date=? AND value_cents=?').get(payload.ticker,key,payload.tradeDate || '',Math.round(payload.value*100));
+      stmt.run(payload.ticker,key,payload.tradeDate || '',Math.round(payload.value*100),payload.source,tradeSourceRank(payload.source),JSON.stringify(payload),now,now);
+      if (!exists) inserted++;
     }
-  });
-  tx(trades);
-  // `changes` reports 1 for the INSERT *and* the DO UPDATE branch, so the only
-  // honest "new" count is the row-count delta.
-  return countRows() - before;
+  })();
+  return inserted;
 }
 
-/**
- * Trades whose TRADE date falls in the trailing window. This is what aggregates
- * are built from — not just the current scrape — so a signal outlives the
- * source page that first reported it.
- */
-export function getRecentInsiderTrades(days = 30): RawInsiderTrade[] {
-  const cutoff = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
-  const rows = getDb()
-    .prepare(`SELECT payload FROM insider_trades WHERE trade_date >= ? ORDER BY trade_date DESC`)
-    .all(cutoff) as { payload: string }[];
-  const out: RawInsiderTrade[] = [];
-  for (const r of rows) {
+function isStoredTrade(value: unknown): value is RawInsiderTrade {
+  if (!value || typeof value !== 'object') return false;
+  const t = value as Record<string, unknown>;
+  if (!['ticker','insiderName','role','tradeDate','transactionType','source'].every(k => typeof t[k] === 'string')) return false;
+  if (typeof t.value !== 'number' || !Number.isFinite(t.value) || t.value < 0 || typeof t.shares !== 'number' || !Number.isFinite(t.shares)) return false;
+  if (t.reportingOwners !== undefined && (!Array.isArray(t.reportingOwners) || !t.reportingOwners.every(o => o && typeof o === 'object' && ['cik','name','role'].every(k => typeof o[k] === 'string')))) return false;
+  if (t.filingRow !== undefined && (typeof t.filingRow !== 'number' || !Number.isInteger(t.filingRow) || t.filingRow < 0)) return false;
+  return ['filingDate','transactionId','revisionOf','revisionAt','observedAt','sourceUrl','insiderUrl','filingAccession','issuerCik','originalSubmissionDate','securityTitle','ownershipNature'].every(k => t[k] === undefined || typeof t[k] === 'string');
+}
+
+function readCanonicalInsiderTrades(ticker?: string): RawInsiderTrade[] {
+  const rows = (ticker ? getDb().prepare('SELECT payload FROM insider_trades WHERE ticker=?').all(ticker.toUpperCase()) :
+    getDb().prepare('SELECT payload FROM insider_trades').all()) as { payload: string }[];
+  const trades: RawInsiderTrade[] = [];
+  for (const row of rows) {
     try {
-      const t = JSON.parse(r.payload) as RawInsiderTrade;
-      if (t && t.ticker) out.push(t);
-    } catch {
-      /* a corrupt payload must not take the whole window down */
-    }
+      const t: unknown = JSON.parse(row.payload);
+      if (isStoredTrade(t)) trades.push(t);
+    } catch { /* Corrupt history is retained, but cannot authorize a live signal. */ }
   }
-  return out;
+  // Suppress source shadows while quarantined/superseded SEC rows are still present.
+  return dedupTrades(selectTradeRevisions(trades));
+}
+
+/** Unknown/invalid/conflicting rows remain inspectable, outside all verified windows. */
+export function getUnresolvedInsiderTrades(ticker?: string): RawInsiderTrade[] {
+  return readCanonicalInsiderTrades(ticker).filter(t => !admissibleTrade(t));
+}
+
+export function getRecentInsiderTrades(days = 30, ticker?: string): RawInsiderTrade[] {
+  // Resolve versions BEFORE window filtering: a correction may move a trade outside it.
+  return readCanonicalInsiderTrades(ticker).filter(t => admissibleTrade(t, days));
 }
 
 /**
@@ -1973,7 +2030,7 @@ export function pruneOldData(retentionDays = 365): void {
     getDb().prepare(`DELETE FROM signals WHERE scraped_at < ?`).run(cutoff);
     getDb().prepare(`DELETE FROM scrape_log WHERE started_at < ?`).run(cutoff);
     getDb().prepare(`DELETE FROM insider_flow WHERE flow_date < ?`).run(flowCutoff);
-    getDb().prepare(`DELETE FROM insider_trades WHERE trade_date < ?`).run(flowCutoff);
+    // Immutable insider revision history is retained; readers apply the requested window.
     getDb().prepare(`DELETE FROM politician_trades WHERE trade_date < ?`).run(flowCutoff);
   });
   tx();

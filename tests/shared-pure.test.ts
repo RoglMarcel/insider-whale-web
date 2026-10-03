@@ -24,14 +24,14 @@ import {
 import { ymd } from './helpers';
 
 describe('daysBetween', () => {
-  it('a date-only string anchors to LOCAL midnight, not UTC', () => {
+  it('a date-only string retains its UTC calendar day', () => {
     // Constructed the same way, the difference must be an exact whole number of
     // days regardless of the machine's timezone.
-    const to = new Date(2026, 5, 15, 0, 0, 0, 0).getTime();
+    const to = Date.UTC(2026, 5, 15);
     expect(daysBetween('2026-06-01', to)).toBe(14);
   });
   it('survives a DST transition (US clocks move on 2026-03-08)', () => {
-    const to = new Date(2026, 2, 15, 0, 0, 0, 0).getTime();
+    const to = Date.UTC(2026, 2, 15);
     expect(daysBetween('2026-03-01', to)).toBe(14);
   });
   it('handles full ISO timestamps', () => {
@@ -191,10 +191,10 @@ describe('sourceStatus', () => {
   it('reports a source with no participating runs as unknown', () => {
     expect(sourceStatus(undefined, [])).toBe('unknown');
   });
-  it('never calls a chronically empty source anything but healthy-by-absence', () => {
+  it('keeps chronically empty sources unknown without evidence of healthy parsing', () => {
     // Median 0 and newest 0: nothing has regressed, the source simply has
     // nothing to report. Alarming here would cry wolf on every run.
-    expect(sourceStatus(undefined, [0, 0, 0, 0])).toBe('healthy');
+    expect(sourceStatus(undefined, [0, 0, 0, 0])).toBe('unknown');
   });
 });
 

@@ -1,3 +1,5 @@
+import { checkCancelled, cancellableDelay } from './cancellation';
+import { scopedFetch } from './cancellation';
 import { XMLParser } from 'fast-xml-parser';
 import type { FilingEvent } from '../../src/types';
 import { cleanText, isValidTicker, canonicalTicker } from './util';
@@ -79,19 +81,26 @@ export function parseActivistAtom(atomText: string, cikMap: ReadonlyMap<number, 
   return out;
 }
 
-export async function fetchActivistFilings(): Promise<FilingEvent[]> {
+export async function fetchActivistFilings(reportIssue: (message: string) => void = console.warn): Promise<FilingEvent[]> {
   const cikMap = await getCikTickerMap();
   if (cikMap.size === 0) return [];
 
   const out: FilingEvent[] = [];
+  let completed = 0;
   for (const feed of FEEDS) {
     try {
-      const res = await fetch(feed, { headers: { 'User-Agent': SEC_UA }, signal: AbortSignal.timeout(15_000) });
-      if (res.ok) out.push(...parseActivistAtom(await res.text(), cikMap));
-    } catch {
-      /* per-feed best-effort — the other feed still runs */
+      const res = await scopedFetch(feed, { headers: { 'User-Agent': SEC_UA }, signal: AbortSignal.timeout(15_000) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const body = await res.text();
+      if (!/<feed[\s>]/.test(body)) throw new Error('Invalid activist Atom feed');
+      out.push(...parseActivistAtom(body, cikMap));
+      completed++;
+    } catch (error) {
+      checkCancelled();
+      reportIssue(`Activist coverage incomplete: ${error instanceof Error ? error.message : String(error)}`);
     }
-    await new Promise((r) => setTimeout(r, 300)); // SEC pacing between feeds
+    await cancellableDelay(300); // SEC pacing between feeds
   }
+  if (!completed) throw new Error('All activist feeds failed');
   return out;
 }

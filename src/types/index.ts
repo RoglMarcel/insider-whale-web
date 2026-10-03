@@ -1,3 +1,4 @@
+import { utcInstantMs } from '../lib/utcDate';
 /**
  * Shared types for both the Electron main process and the React renderer.
  * This file MUST stay dependency-free (pure TypeScript) so it can be imported
@@ -43,7 +44,7 @@ export interface PoliticianTrade {
   amountMidpoint: number;
   tradeDate: string; // YYYY-MM-DD
   disclosureDate: string; // YYYY-MM-DD
-  daysToDisclose: number;
+  daysToDisclose: number | null;
   scrapedAt: string;
 }
 
@@ -73,6 +74,24 @@ export interface RawInsiderTrade {
   lateFiling?: boolean;
   /** Feature 6 — link to the insider's OpenInsider history page, when known. */
   insiderUrl?: string;
+  /** Stable source transaction identity, independent of mutable amounts. */
+  transactionId?: string;
+  /** Explicit link supplied by the source to the original transaction ID. */
+  revisionOf?: string;
+  /** Source publication/revision instant; retrieval time is never version order. */
+  revisionAt?: string;
+  observedAt?: string;
+  dateStatus?: 'valid' | 'unknown' | 'invalid' | 'future';
+  integrityStatus?: 'revision-conflict' | 'unlinked-amendment' | 'ambiguous-overlap';
+  /** A joint filing has one economic transaction, not one copy per reporting owner. */
+  reportingOwners?: { cik: string; name: string; role: string }[];
+  filingAccession?: string;
+  issuerCik?: string;
+  originalSubmissionDate?: string;
+  securityTitle?: string;
+  ownershipNature?: string;
+  filingRow?: number;
+  amendment?: boolean;
 }
 
 /** Normalized unusual-options event emitted by every options scraper. */
@@ -104,6 +123,8 @@ export interface OptionsActivity {
   premiumTotal?: number;
   /** ISO timestamp when first scraped (for temporal merging). */
   scrapedAt?: string;
+  /** Actual event time if reported by the provider; never synthesized from retrieval. */
+  eventAt?: string;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -235,6 +256,8 @@ export interface InsiderFlowSummary {
   buys: number;
   sells: number;
   form144: number;
+  unresolvedBuys?: number;
+  buyCoverage?: 'dated-records';
 }
 
 /** Squeeze context, tradeability, and price context for a ticker. */
@@ -276,7 +299,7 @@ export interface TickerAggregate {
    * dollar totals + Form 144 proposed-sale notices). Display/notes only; not a
    * score input until backtested.
    */
-  insiderFlow?: { buys: number; sells: number; form144: number };
+  insiderFlow?: InsiderFlowSummary;
   /**
    * Equity stats pack — squeeze context, tradeability, and price context
    * (drawdown from the 52-week high, ≤ 0). Display/notes only; not a score
@@ -716,7 +739,7 @@ export function computeSourceHealth(
       // (a) Healthy history then zero — need ≥4 participating runs (stable median).
       // (b) Hard-fail sentinel (−1) twice in a row — flag immediately (not silent empty).
       const recentHardFails = counts.slice(0, consecutiveZeroRuns).filter((c) => c < 0).length;
-      const healthyThenDead = counts.length >= 4 && rollingMedian > 0;
+      const healthyThenDead = counts.length >= 4 && norm.some(c => c > 0);
       const hardFailDead = recentHardFails >= 2;
       if (healthyThenDead || hardFailDead) {
         issues.push({ ...base, kind: 'dead' });
@@ -761,7 +784,8 @@ export function sourceStatus(issue: SourceHealthIssue | undefined, counts: reado
   if (issue?.kind === 'flapping') return 'flapping';
   if (issue) return 'dead';
   if (counts[0] < 0) return 'degraded';
-  if (median > 0 && norm[0] === 0) return 'degraded';
+  if (norm.every(c => c === 0)) return 'unknown';
+  if (norm.some(c => c > 0) && norm[0] === 0) return 'degraded';
   return 'healthy';
 }
 
@@ -949,39 +973,25 @@ export function normalizeInsiderName(name: string): string {
 // ──────────────────────────────────────────────────────────────────────────
 
 export function daysBetween(fromIso?: string | null, toMs: number = Date.now()): number | null {
-  if (!fromIso) return null;
-  // Date-only strings parse as LOCAL midnight — Date.parse would use UTC,
-  // skewing every age by the timezone offset and flipping trades across the
-  // freshness-decay boundaries (and diverging from signalTradeMs below).
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(fromIso.trim());
-  const t = m
-    ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime()
-    : Date.parse(fromIso);
-  if (Number.isNaN(t)) return null;
-  return (toMs - t) / (1000 * 60 * 60 * 24);
+  const t = utcInstantMs(fromIso);
+  return t === null || !Number.isFinite(toMs) ? null : (toMs - t) / 86_400_000;
 }
 
-/** Whole business days between two ISO dates (excludes weekends). Date-only strings use local midnight (same as daysBetween). */
+/** Whole business days between two ISO dates (excludes weekends). Date-only strings retain their UTC calendar day. */
 export function businessDaysBetween(startIso?: string | null, endIso?: string | null): number | null {
   if (!startIso || !endIso) return null;
-  const parseLocal = (iso: string): number => {
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
-    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime();
-    const t = Date.parse(iso);
-    return Number.isNaN(t) ? NaN : t;
-  };
-  const startMs = parseLocal(startIso);
-  const endMs = parseLocal(endIso);
-  if (Number.isNaN(startMs) || Number.isNaN(endMs)) return null;
+  const startMs = utcInstantMs(startIso);
+  const endMs = utcInstantMs(endIso);
+  if (startMs === null || endMs === null) return null;
   if (endMs < startMs) return 0;
   let count = 0;
   const cur = new Date(startMs);
-  cur.setHours(0, 0, 0, 0);
+  cur.setUTCHours(0, 0, 0, 0);
   const end = new Date(endMs);
-  end.setHours(0, 0, 0, 0);
+  end.setUTCHours(0, 0, 0, 0);
   while (cur < end) {
-    cur.setDate(cur.getDate() + 1);
-    const d = cur.getDay();
+    cur.setUTCDate(cur.getUTCDate() + 1);
+    const d = cur.getUTCDay();
     if (d !== 0 && d !== 6) count++;
   }
   return count;
@@ -1078,23 +1088,18 @@ export function getFreshnessLevel(ageDays: number | null): FreshnessLevel {
 
 function startOfDayMs(now = Date.now()): number {
   const d = new Date(now);
-  d.setHours(0, 0, 0, 0);
+  d.setUTCHours(0, 0, 0, 0);
   return d.getTime();
 }
 
 /**
- * Trade date → LOCAL ms. A date-only string ("YYYY-MM-DD") is treated as local
- * midnight; otherwise Date.parse is used. This avoids the bug where a naive date
+ * Trade date → UTC ms. A date-only string ("YYYY-MM-DD") is treated as UTC
+ * midnight; explicit-offset instants retain their exact time. This avoids the bug where a naive date
  * parsed as UTC midnight fell *before* a precise "now − 48h" cutoff, dropping
  * same-day / recent trades. Falls back to scrapedAt when no trade date is set.
  */
 function signalTradeMs(s: Signal): number | null {
-  const date = s.tradeDate || s.scrapedAt;
-  if (!date) return null;
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date.trim());
-  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime();
-  const t = Date.parse(date);
-  return Number.isNaN(t) ? null : t;
+  return utcInstantMs(s.tradeDate || s.scrapedAt);
 }
 
 /**

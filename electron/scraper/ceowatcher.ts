@@ -104,12 +104,10 @@ function buildTrade(input: {
     // Normalized to the SEC-style strings classifyTransaction expects, so a
     // "sold" post is scored as an excluded disposal, not as a purchase.
     transactionType: sold ? 'S - Sale' : 'P - Purchase',
-    // APPROXIMATE. The caption never states the actual transaction date, so the
-    // post date stands in for it. CEOWatcher posts within a day or two of the
-    // filing, so this is close — but it is a proxy, which is exactly why these
-    // rows are reconciled against authoritative ones by ticker+insider over a
-    // date window instead of by an exact-date dedup key.
-    tradeDate: input.postDate,
+    // Publication date is not evidence of the execution day.
+    tradeDate: '',
+    dateStatus: 'unknown',
+    transactionId: `${input.postUrl}:${ticker}:${cleanText(input.insiderName)}`,
     shares: sane.shares,
     price: sane.price,
     value: sane.value,

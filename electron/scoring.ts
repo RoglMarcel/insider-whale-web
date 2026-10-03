@@ -27,6 +27,8 @@ import {
   DEFAULT_SCORING_CONFIG,
   type ScoringConfig,
 } from '../src/types';
+import { admissibleTrade } from '../src/lib/tradeEligibility';
+import { eventDate, utcInstantMs, utcDateMs } from '../src/lib/utcDate';
 import { MAX_SANE_TRADE_VALUE, MAX_SANE_SHARE_PRICE, sanitizeTradeAmounts } from './scraper/util';
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -141,8 +143,9 @@ export function isBuyTrade(t: RawInsiderTrade): boolean {
 }
 
 /** A trade contributes to the score only if its type modifier is > 0 (Feature 2). */
-export function isScoringEligible(t: RawInsiderTrade): boolean {
-  return classifyTransaction(t.transactionType).modifier > 0;
+export function isScoringEligible(t: RawInsiderTrade, asOf = Date.now()): boolean {
+  return classifyTransaction(t.transactionType).modifier > 0 &&
+    admissibleTrade(t, undefined, asOf);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -346,6 +349,7 @@ function optionPremium(o: OptionsActivity): number {
  * below $2M is unchanged.
  */
 function baseOptionPoints(premium: number): number {
+  if (!Number.isFinite(premium) || premium <= 0) return 0;
   // All rungs use `>=`. The top three used `>` while the bottom two used `>=`,
   // so a print of exactly $2,000,000 scored 14 and $2,000,001 scored 18 — an
   // inconsistency, not a decision. (No live print sits exactly on a threshold,
@@ -359,15 +363,35 @@ function baseOptionPoints(premium: number): number {
 }
 
 /** Points for one option entry (always positive magnitude). */
-export function scoreOneOption(o: OptionsActivity): number {
+export function optionTiming(o: OptionsActivity, asOf = Date.now()): { eligible: boolean; dte?: number; age: number | null } {
+  const observed = utcInstantMs(o.scrapedAt);
+  const event = utcInstantMs(o.eventAt);
+  if ((o.scrapedAt && observed === null) || (o.eventAt && event === null) ||
+      (observed !== null && observed > asOf) || (event !== null && event > asOf))
+    return { eligible: false, age: null };
+  if (!o.expiry && o.dte !== undefined && o.dte < 0) return { eligible: false, age: null };
+  const expiry = o.expiry ? utcDateMs(o.expiry) : null;
+  const today = Math.floor(asOf / 86_400_000) * 86_400_000;
+  if (o.expiry && (expiry === null || expiry < today)) return { eligible: false, age: null };
+  const clock = event ?? observed;
+  // An unanchored cached DTE cannot safely earn a timing bonus.
+  const dte = expiry !== null ? (expiry - today) / 86_400_000 :
+    o.dte !== undefined && clock !== null ? o.dte - Math.floor((asOf - clock) / 86_400_000) : undefined;
+  return { eligible: dte === undefined || dte >= 0, dte, age: clock === null ? null : (asOf - clock) / 86_400_000 };
+}
+
+export function scoreOneOption(o: OptionsActivity, asOf = Date.now()): number {
+  const timing = optionTiming(o, asOf);
+  if (!timing.eligible) return 0;
+  const dte = timing.dte;
   let pts = baseOptionPoints(optionPremium(o));
   if (o.isSweep) pts *= 1.6;
   // Guard against expired contracts (negative DTE can leak in via the 72h temporal
   // merge) so they don't collect the short-dated "near-term gamma" boost.
-  if (o.dte != null && Number.isFinite(o.dte) && o.dte >= 0) {
-    if (o.dte < 21) pts *= 1.5;
-    else if (o.dte <= 60) pts *= 1.2;
-    else if (o.dte > 180) pts *= 0.8;
+  if (dte != null && Number.isFinite(dte) && dte >= 0) {
+    if (dte < 21) pts *= 1.5;
+    else if (dte <= 60) pts *= 1.2;
+    else if (dte > 180) pts *= 0.8;
   }
   // Signed: positive = out-of-the-money. Only OTM strikes signal speculative
   // conviction; a deep-ITM print is a conservative stock substitute, not a bet.
@@ -388,12 +412,12 @@ export function scoreOneOption(o: OptionsActivity): number {
  * the persistence the 72h merge exists to capture — counts beyond the first
  * print without letting many small prints swamp one huge one.
  */
-export function scoreOptionsDetailed(options: readonly OptionsActivity[]): { score: number; notes: string[] } {
+export function scoreOptionsDetailed(options: readonly OptionsActivity[], asOf = Date.now()): { score: number; notes: string[] } {
   const notes: string[] = [];
   const bulls: number[] = [];
   const bears: number[] = []; // stored as positive magnitudes
   for (const o of options) {
-    const pts = scoreOneOption(o);
+    const pts = scoreOneOption(o, asOf);
     // Direction comes from the scraper-normalized sentiment (already accounts for
     // sold puts = bullish, sold calls = bearish), so treat bull/bear symmetrically.
     if (o.sentiment === 'bearish') bears.push(pts);
@@ -492,18 +516,18 @@ export interface ScoredTicker {
 }
 
 /** Feature 4 — combo when a recent scoring-eligible insider buy + big bullish options coincide. */
-export function detectCombo(trades: RawInsiderTrade[], options: OptionsActivity[]): boolean {
+export function detectCombo(trades: RawInsiderTrade[], options: OptionsActivity[], asOf = Date.now()): boolean {
   const insiderHit = trades.some((t) => {
-    if (classifyTransaction(t.transactionType).modifier <= 0) return false;
-    const age = daysBetween(t.tradeDate);
+    if (!isScoringEligible(t, asOf)) return false;
+    const age = daysBetween(t.tradeDate, asOf);
     // Missing/invalid trade dates must NOT count as "fresh".
-    return age != null && age <= 14;
+    return age != null && age >= 0 && age <= 14;
   });
   if (!insiderHit) return false;
   // Options are scraped live (and only merged forward up to 72h), so any present
   // print is already "current" — a single big BULLISH one confirms the options
   // leg. Bearish flow contradicts the insider buy and must not mint a combo.
-  const optionsHit = options.some((o) => o.sentiment === 'bullish' && optionPremium(o) > 250_000);
+  const optionsHit = options.some((o) => o.sentiment === 'bullish' && optionTiming(o, asOf).eligible && optionPremium(o) > 250_000);
   return insiderHit && optionsHit;
 }
 
@@ -551,9 +575,11 @@ export type PoliticianScoreMode = 'live' | 'legacy';
  */
 export function getPoliticianScore(
   trades: PoliticianTrade[],
-  opts?: { mode?: PoliticianScoreMode; insiderTrades?: RawInsiderTrade[] },
+  opts?: { mode?: PoliticianScoreMode; insiderTrades?: RawInsiderTrade[]; asOf?: number },
 ): { score: number; notes: string[] } {
+  const asOf = opts?.asOf ?? Date.now();
   const mode = opts?.mode ?? 'live';
+  trades = trades.filter(t => eventDate(t.tradeDate, asOf).state === 'valid' && eventDate(t.disclosureDate, asOf).state === 'valid' && (!t.scrapedAt || (utcInstantMs(t.scrapedAt) ?? Infinity) <= asOf));
   const notes: string[] = [];
   if (!trades.length) return { score: 0, notes };
 
@@ -561,15 +587,15 @@ export function getPoliticianScore(
   const recentBuyers = new Set<string>();
   for (const t of trades) {
     if (t.transactionType !== 'buy') continue;
-    const age = daysBetween(t.tradeDate);
-    if (age != null && age <= 30) recentBuyers.add(normalizeInsiderName(t.politician) || t.politician.toLowerCase());
+    const age = daysBetween(t.tradeDate, asOf);
+    if (age != null && age >= 0 && age <= 30) recentBuyers.add(normalizeInsiderName(t.politician) || t.politician.toLowerCase());
   }
   const clusterMult = recentBuyers.size >= 3 ? 2.5 : recentBuyers.size === 2 ? 1.8 : 1.0;
 
   const hasInsiderAlignment = (opts?.insiderTrades ?? []).some((t) => {
-    if (classifyTransaction(t.transactionType).modifier <= 0) return false;
-    const age = daysBetween(t.tradeDate);
-    return age != null && age <= 14;
+    if (!isScoringEligible(t, asOf)) return false;
+    const age = daysBetween(t.tradeDate, asOf);
+    return age != null && age >= 0 && age <= 14;
   });
 
   // Live mode: lone politician activity does not move the score (badge/notes only).
@@ -582,7 +608,7 @@ export function getPoliticianScore(
   for (const t of trades) {
     const base = politicianAmountPoints(t.amountMidpoint);
     const committee = committeeMultiplier(t.committee);
-    const fresh = getFreshnessMultiplier(daysBetween(t.tradeDate));
+    const fresh = getFreshnessMultiplier(daysBetween(t.tradeDate, asOf));
     let s = base * committee * fresh;
     if (t.transactionType === 'sell') {
       s = s * -0.5; // contra-signal — not amplified by the buy cluster
@@ -592,7 +618,7 @@ export function getPoliticianScore(
       buys.push({ name: t.politician, amt: t.amountMidpoint });
     }
     // Late disclosure: legacy ×0.8; live ×0.5 (less actionable).
-    if (t.daysToDisclose > 30) s = s * (mode === 'live' ? 0.5 : 0.8);
+    if (t.daysToDisclose != null && t.daysToDisclose > 30) s = s * (mode === 'live' ? 0.5 : 0.8);
     total += s;
   }
 
@@ -640,21 +666,22 @@ export function detectPoliticianCombo(
   politicianTrades: PoliticianTrade[],
   insiderTrades: RawInsiderTrade[],
   options: OptionsActivity[],
+  asOf = Date.now(),
 ): PoliticianComboTier | null {
   const hasPoliticianBuy = politicianTrades.some((t) => {
-    if (t.transactionType !== 'buy') return false;
-    const age = daysBetween(t.tradeDate);
-    return age != null && age <= 30;
+    if (t.transactionType !== 'buy' || eventDate(t.disclosureDate, asOf).state !== 'valid' || (t.scrapedAt && (utcInstantMs(t.scrapedAt) ?? Infinity) > asOf)) return false;
+    const age = daysBetween(t.tradeDate, asOf);
+    return age != null && age >= 0 && age <= 30;
   });
   if (!hasPoliticianBuy) return null;
 
   // Same insider eligibility as detectCombo (modifier > 0 + known age ≤14).
   const hasInsiderBuy = insiderTrades.some((t) => {
-    if (classifyTransaction(t.transactionType).modifier <= 0) return false;
-    const age = daysBetween(t.tradeDate);
-    return age != null && age <= 14;
+    if (!isScoringEligible(t, asOf)) return false;
+    const age = daysBetween(t.tradeDate, asOf);
+    return age != null && age >= 0 && age <= 14;
   });
-  const hasBullishOptions = options.some((o) => o.sentiment === 'bullish' && optionPremium(o) > 250_000);
+  const hasBullishOptions = options.some((o) => o.sentiment === 'bullish' && optionTiming(o, asOf).eligible && optionPremium(o) > 250_000);
 
   if (hasInsiderBuy && hasBullishOptions) return 'MEGA_SIGNAL';
   if (hasInsiderBuy) return 'POLITICIAN_INSIDER';
@@ -718,7 +745,7 @@ export function normalizeAggregateTrades(agg: TickerAggregate): void {
  * PURE: the aggregate is never modified, and two calls with the same input
  * always produce the same output.
  */
-export function scoreTicker(agg: TickerAggregate, config: ScoringConfig = DEFAULT_SCORING_CONFIG): ScoredTicker {
+export function scoreTicker(agg: TickerAggregate, config: ScoringConfig = DEFAULT_SCORING_CONFIG, asOf = Date.now()): ScoredTicker {
   // Drop/repair impossible share×price×value combos so one glitched scrape
   // cannot mint $quadrillion volumes (e.g. FINS Insider-Monitor unit error).
   // Repaired COPIES — scoring must not mutate its input. Writing the sanitized
@@ -730,7 +757,7 @@ export function scoreTicker(agg: TickerAggregate, config: ScoringConfig = DEFAUL
   // WANTS the persisted rows repaired for display.
   const eligible: RawInsiderTrade[] = [];
   for (const t of agg.trades) {
-    if (!isScoringEligible(t)) continue;
+    if (!isScoringEligible(t, asOf)) continue;
     const sane = sanitizeTradeAmounts(t.shares ?? 0, t.price, t.value ?? 0);
     if (!sane) continue;
     eligible.push({ ...t, shares: sane.shares, price: sane.price, value: sane.value });
@@ -790,7 +817,7 @@ export function scoreTicker(agg: TickerAggregate, config: ScoringConfig = DEFAUL
   let lateFiling = false;
   for (const t of eligible) {
     const key = normalizeInsiderName(t.insiderName);
-    const age = daysBetween(t.tradeDate);
+    const age = daysBetween(t.tradeDate, asOf);
     // A future-dated trade is a parsing error, never a real filing — it must not
     // count as the freshest signal (see getFreshnessMultiplier).
     const usableAge = age != null && Number.isFinite(age) && age >= 0 ? age : null;
@@ -817,13 +844,9 @@ export function scoreTicker(agg: TickerAggregate, config: ScoringConfig = DEFAUL
   // Freshest options scrape age (options are scraped live; used both to date an
   // options-only signal and to decay the options component on its own clock).
   let optionsAge: number | null = null;
-  if (agg.options.length) {
-    let newestOptionMs: number | null = null;
-    for (const o of agg.options) {
-      const ms = o.scrapedAt ? Date.parse(o.scrapedAt) : NaN;
-      if (!Number.isNaN(ms) && (newestOptionMs == null || ms > newestOptionMs)) newestOptionMs = ms;
-    }
-    if (newestOptionMs != null) optionsAge = Math.max(0, (Date.now() - newestOptionMs) / 86_400_000);
+  for (const o of agg.options) {
+    const timing = optionTiming(o, asOf);
+    if (timing.eligible && timing.age !== null && (optionsAge === null || timing.age < optionsAge)) optionsAge = timing.age;
   }
   // Options-only ("whale") signal: no insider trade to date it → use the options age
   // for the freshness badge instead of defaulting to "stale / unknown age".
@@ -858,7 +881,7 @@ export function scoreTicker(agg: TickerAggregate, config: ScoringConfig = DEFAUL
   const optionsTimingMultiplier = getOptionsTimingMultiplier(agg.daysToEarnings);
 
   // Step 5 — detailed options.
-  const opts = scoreOptionsDetailed(agg.options);
+  const opts = scoreOptionsDetailed(agg.options, asOf);
 
   // Context multipliers (knobs threaded from the active ScoringConfig so the
   // shadow framework can score the same aggregate under candidate weights).
@@ -873,11 +896,11 @@ export function scoreTicker(agg: TickerAggregate, config: ScoringConfig = DEFAUL
 
   // Congressional leg — live (cluster/alignment-gated) vs legacy (all buys count).
   const politicianResult = getPoliticianScore(agg.politicianTrades ?? [], {
-    mode: 'live',
+    mode: 'live', asOf,
     insiderTrades: eligible,
   });
-  const politicianLegacy = getPoliticianScore(agg.politicianTrades ?? [], { mode: 'legacy' });
-  const politicianComboTier = detectPoliticianCombo(agg.politicianTrades ?? [], eligible, agg.options);
+  const politicianLegacy = getPoliticianScore(agg.politicianTrades ?? [], { mode: 'legacy', asOf });
+  const politicianComboTier = detectPoliticianCombo(agg.politicianTrades ?? [], eligible, agg.options, asOf);
 
   // Composite legs (shared).
   const insiderRaw =
@@ -907,7 +930,7 @@ export function scoreTicker(agg: TickerAggregate, config: ScoringConfig = DEFAUL
   const normLive = (satLive / (satLive + config.scoreHalfSaturation)) * 100;
   const normLegacy = (satLegacy / (satLegacy + config.scoreHalfSaturation)) * 100;
 
-  const classicCombo = detectCombo(eligible, agg.options);
+  const classicCombo = detectCombo(eligible, agg.options, asOf);
   // MEGA already implies insider+options alignment — treat as combo for flags/notifications.
   const comboSignal = classicCombo || politicianComboTier === 'MEGA_SIGNAL';
 
@@ -951,6 +974,8 @@ export function scoreTicker(agg: TickerAggregate, config: ScoringConfig = DEFAUL
   // scoring multiplier waits for backtest evidence via the shadow framework).
   if (agg.insiderFlow) {
     const { buys, sells, form144 } = agg.insiderFlow;
+    if (agg.insiderFlow.buyCoverage) notes.push('90d buys use dated observed records; source coverage may be incomplete. The insider score uses a 30d pipeline window.');
+    if (agg.insiderFlow.unresolvedBuys) notes.push(`${agg.insiderFlow.unresolvedBuys} undated or unresolved purchase record(s) excluded from score and 90d buys.`);
     const fmt = (v: number) => (v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M` : `$${Math.round(v / 1_000)}k`);
     if (sells > 250_000 && sells > 3 * Math.max(buys, 1)) {
       notes.push(`⚠ Heavy insider SELLING here: ${fmt(sells)} sold vs ${fmt(buys)} bought (90d)`);

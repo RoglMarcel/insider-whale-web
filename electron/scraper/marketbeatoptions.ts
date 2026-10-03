@@ -68,7 +68,7 @@ export async function scrapeMarketBeatOptions(context: BrowserContext): Promise<
         return out;
       },
       { waitUntil: 'domcontentloaded' },
-    ).catch(() => [] as OptionsActivity[]);
+    );
     all.push(...rows);
     await randomDelay();
   }

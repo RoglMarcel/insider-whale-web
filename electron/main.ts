@@ -1,3 +1,5 @@
+import { pathToFileURL } from 'node:url';
+import { externalWebUrl, trustedRenderer, requirePlatform } from './securityBoundary';
 import { app, BrowserWindow, ipcMain, shell, Menu, Notification, dialog, globalShortcut } from 'electron';
 import type { Browser } from 'playwright';
 import path from 'node:path';
@@ -77,7 +79,8 @@ import {
 
 const TRACK_RECORD_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-const isDev = !!process.env.VITE_DEV_SERVER_URL;
+const isDev = !app.isPackaged && !!process.env.VITE_DEV_SERVER_URL;
+const rendererEntry = isDev ? new URL(process.env.VITE_DEV_SERVER_URL!).href : pathToFileURL(path.join(__dirname, '../dist/index.html')).href;
 let mainWindow: BrowserWindow | null = null;
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -96,7 +99,7 @@ function createWindow(): void {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   });
 
@@ -107,12 +110,18 @@ function createWindow(): void {
 
   // Open external links in the user's browser, never in-app.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('http')) shell.openExternal(url);
+    const allowed = externalWebUrl(url);
+    if (allowed) void shell.openExternal(allowed).catch(() => undefined);
     return { action: 'deny' };
   });
 
-  if (process.env.VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (url.split('#')[0] !== rendererEntry.split('#')[0]) event.preventDefault();
+  });
+  mainWindow.webContents.on('will-attach-webview', event => event.preventDefault());
+
+  if (isDev) {
+    mainWindow.loadURL(rendererEntry);
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
@@ -547,27 +556,32 @@ function cleanupTestTask(): void {
 // ──────────────────────────────────────────────────────────────────────────
 
 function registerIpc(): void {
-  ipcMain.handle(IPC.scraperStart, () => triggerScrape());
-  ipcMain.handle(IPC.scraperStatus, () => getScrapeStatus());
+  const handle: typeof ipcMain.handle = (channel, listener) => ipcMain.handle(channel, (event, ...args: unknown[]) => {
+    if (!trustedRenderer(event, mainWindow?.webContents ?? null, rendererEntry)) throw new Error('Untrusted IPC sender');
+    if ([IPC.authStartLogin,IPC.authSaveLogin,IPC.authCancelLogin,IPC.authLogout].includes(channel as typeof IPC.authStartLogin)) requirePlatform(args[0]);
+    return listener(event, ...args);
+  });
+  handle(IPC.scraperStart, () => triggerScrape());
+  handle(IPC.scraperStatus, () => getScrapeStatus());
 
-  ipcMain.handle(IPC.signalsGetAll, () => getLatestSignals());
-  ipcMain.handle(IPC.signalsGetByTicker, (_e, ticker: string) => getSignalByTicker(ticker));
-  ipcMain.handle(IPC.signalsGetHistory, (_e, ticker: string) => getSignalHistory(ticker));
-  ipcMain.handle(IPC.signalsGetFiltered, (_e, filter: SignalFilter) => getFilteredSignals(filter));
-  ipcMain.handle(IPC.signalsGetPerformance, (_e, ticker: string) => getSignalPerformance(ticker));
-  ipcMain.handle(IPC.signalsExportCsv, () => exportSignalsCsv());
+  handle(IPC.signalsGetAll, () => getLatestSignals());
+  handle(IPC.signalsGetByTicker, (_e, ticker: string) => getSignalByTicker(ticker));
+  handle(IPC.signalsGetHistory, (_e, ticker: string) => getSignalHistory(ticker));
+  handle(IPC.signalsGetFiltered, (_e, filter: SignalFilter) => getFilteredSignals(filter));
+  handle(IPC.signalsGetPerformance, (_e, ticker: string) => getSignalPerformance(ticker));
+  handle(IPC.signalsExportCsv, () => exportSignalsCsv());
 
-  ipcMain.handle(IPC.vixGetCurrent, () => getCachedVix());
-  ipcMain.handle(IPC.insiderGetTrackRecord, (_e, name: string, role?: string, url?: string) =>
+  handle(IPC.vixGetCurrent, () => getCachedVix());
+  handle(IPC.insiderGetTrackRecord, (_e, name: string, role?: string, url?: string) =>
     fetchTrackRecord(name, role, url),
   );
 
-  ipcMain.handle(IPC.watchlistGetAll, () => getWatchlist());
-  ipcMain.handle(IPC.watchlistAdd, (_e, ticker: string, notes?: string) => addToWatchlist(ticker, notes));
-  ipcMain.handle(IPC.watchlistRemove, (_e, ticker: string) => removeFromWatchlist(ticker));
+  handle(IPC.watchlistGetAll, () => getWatchlist());
+  handle(IPC.watchlistAdd, (_e, ticker: string, notes?: string) => addToWatchlist(ticker, notes));
+  handle(IPC.watchlistRemove, (_e, ticker: string) => removeFromWatchlist(ticker));
 
-  ipcMain.handle(IPC.settingsGet, () => getSettings());
-  ipcMain.handle(IPC.settingsSet, (_e, partial: Partial<AppSettings>) => {
+  handle(IPC.settingsGet, () => getSettings());
+  handle(IPC.settingsSet, (_e, partial: Partial<AppSettings>) => {
     const merged = setSettings(partial);
     // Re-arm the scheduler whenever schedule-related settings change.
     configureScheduler(
@@ -578,74 +592,74 @@ function registerIpc(): void {
     return merged;
   });
 
-  ipcMain.handle(IPC.earningsFetch, (_e, ticker: string) => fetchEarningsForTicker(ticker));
+  handle(IPC.earningsFetch, (_e, ticker: string) => fetchEarningsForTicker(ticker));
 
   // Platform logins (authenticated scraping)
-  ipcMain.handle(IPC.authStatus, () => authStatus());
-  ipcMain.handle(IPC.authStartLogin, (_e, platform: string) => startLogin(platform));
-  ipcMain.handle(IPC.authSaveLogin, (_e, platform: string) => saveLogin(platform));
-  ipcMain.handle(IPC.authCancelLogin, (_e, platform: string) => cancelLogin(platform));
-  ipcMain.handle(IPC.authLogout, (_e, platform: string) => logout(platform));
+  handle(IPC.authStatus, () => authStatus());
+  handle(IPC.authStartLogin, (_e, platform: string) => startLogin(platform));
+  handle(IPC.authSaveLogin, (_e, platform: string) => saveLogin(platform));
+  handle(IPC.authCancelLogin, (_e, platform: string) => cancelLogin(platform));
+  handle(IPC.authLogout, (_e, platform: string) => logout(platform));
 
-  ipcMain.handle(IPC.historyGetScrapeLogs, () => getScrapeLogs());
-  ipcMain.handle(IPC.performanceGetLatest, () => getLatestBacktestRun());
-  ipcMain.handle(IPC.shadowGetConfig, () => getShadowScoringConfig());
-  ipcMain.handle(IPC.shadowSetConfig, (_e, config: Partial<ScoringConfig> | null) =>
+  handle(IPC.historyGetScrapeLogs, () => getScrapeLogs());
+  handle(IPC.performanceGetLatest, () => getLatestBacktestRun());
+  handle(IPC.shadowGetConfig, () => getShadowScoringConfig());
+  handle(IPC.shadowSetConfig, (_e, config: Partial<ScoringConfig> | null) =>
     setShadowScoringConfig(config),
   );
-  ipcMain.handle(IPC.performanceRecompute, async () => {
+  handle(IPC.performanceRecompute, async () => {
     const report = await computePerformanceReport();
     insertBacktestRun(report);
     return report;
   });
   // Testing portfolio. Sync/rebuild talk to Yahoo, so they are async; getState
   // is a pure read and stays cheap enough to call on every tab switch.
-  ipcMain.handle(IPC.portfolioGetState, () => getPortfolioState());
-  ipcMain.handle(IPC.portfolioSync, async () => {
+  handle(IPC.portfolioGetState, () => getPortfolioState());
+  handle(IPC.portfolioSync, async () => {
     await syncPortfolio();
     return getPortfolioState();
   });
-  ipcMain.handle(IPC.portfolioRebuild, async () => {
+  handle(IPC.portfolioRebuild, async () => {
     await rebuildPortfolio();
     return getPortfolioState();
   });
-  ipcMain.handle(IPC.portfolioSetConfig, async (_e, config: Partial<PortfolioConfig>) => {
+  handle(IPC.portfolioSetConfig, async (_e, config: Partial<PortfolioConfig>) => {
     await updatePortfolioConfig(config);
     return getPortfolioState();
   });
 
-  ipcMain.handle(IPC.alertsGetRules, () => getAlertRules());
-  ipcMain.handle(IPC.alertsAddRule, (_e, rule: AlertRule) => {
+  handle(IPC.alertsGetRules, () => getAlertRules());
+  handle(IPC.alertsAddRule, (_e, rule: AlertRule) => {
     addAlertRule(rule);
     return getAlertRules();
   });
-  ipcMain.handle(IPC.alertsRemoveRule, (_e, id: number) => {
+  handle(IPC.alertsRemoveRule, (_e, id: number) => {
     deleteAlertRule(id);
     return getAlertRules();
   });
-  ipcMain.handle(IPC.alertsToggleRule, (_e, id: number, enabled: boolean) => {
+  handle(IPC.alertsToggleRule, (_e, id: number, enabled: boolean) => {
     setAlertRuleEnabled(id, enabled);
     return getAlertRules();
   });
-  ipcMain.handle(IPC.appGetLastScrape, () => getLastScrapeTime());
-  ipcMain.handle(IPC.appGetVersion, () => app.getVersion());
-  ipcMain.handle(IPC.newsGetAll, () => getNewsItems());
-  ipcMain.handle(IPC.newsGetForTicker, (_e, ticker: string) => getNewsForTicker(ticker));
-  ipcMain.handle(IPC.newsScrapeNow, () => triggerNewsScrape());
-  ipcMain.handle(IPC.appSetAutoStart, (_e, enabled: boolean) => setAutoStart(enabled));
-  ipcMain.handle(IPC.appGetAutoStart, () => getAutoStart());
-  ipcMain.handle(IPC.updateQuitAndInstall, () => {
+  handle(IPC.appGetLastScrape, () => getLastScrapeTime());
+  handle(IPC.appGetVersion, () => app.getVersion());
+  handle(IPC.newsGetAll, () => getNewsItems());
+  handle(IPC.newsGetForTicker, (_e, ticker: string) => getNewsForTicker(ticker));
+  handle(IPC.newsScrapeNow, () => triggerNewsScrape());
+  handle(IPC.appSetAutoStart, (_e, enabled: boolean) => setAutoStart(enabled));
+  handle(IPC.appGetAutoStart, () => getAutoStart());
+  handle(IPC.updateQuitAndInstall, () => {
     console.log('[updater] Quitting and installing update...');
     autoUpdater.quitAndInstall();
   });
-  ipcMain.handle(IPC.updateGetStatus, () => ({ status: updateStatus, version: updateVersion }));
+  handle(IPC.updateGetStatus, () => ({ status: updateStatus, version: updateVersion }));
 
-  ipcMain.handle(IPC.dbClear, () => {
+  handle(IPC.dbClear, () => {
     clearDatabase();
     broadcast(IPC.appSignalsUpdated, getLatestSignals());
   });
 
-  ipcMain.handle(IPC.appTestSchedule, async () => {
+  handle(IPC.appTestSchedule, async () => {
     const appPath = app.getPath('exe');
     const now = new Date();
     // Add 1 minute, or if seconds >= 45, add 2 minutes to be safe.
@@ -690,7 +704,7 @@ function registerIpc(): void {
     });
   });
 
-  ipcMain.handle(IPC.appSetTheme, (_e, theme: string) => {
+  handle(IPC.appSetTheme, (_e, theme: string) => {
     if (mainWindow) {
       const color = theme === 'dark' ? '#050507' : '#f5f5f7';
       mainWindow.setBackgroundColor(color);
@@ -709,7 +723,7 @@ if (!singleInstance) {
   app.on('second-instance', (event, commandLine) => {
     if (commandLine.includes('--scheduled-scrape')) {
       console.log('[scheduler] Received scheduled background scrape request from second instance.');
-      void triggerScrape();
+      void triggerScrape().then(() => syncTaskScheduler(getSettings())).catch(console.error);
       return;
     }
 
@@ -757,9 +771,7 @@ if (!singleInstance) {
       fetchVix()
         .catch(() => undefined)
         .then(() => triggerScrape())
-        // Re-register the schtasks triggers: they store LOCAL times computed at
-        // registration, so a DST flip misaligns them until re-synced — doing it
-        // on every scheduled run self-heals within a day without the app opening.
+        // Replenish the rolling UTC trigger horizon; each date already includes its own NY DST offset.
         .then(() => syncTaskScheduler(getSettings()).catch(() => undefined))
         .then(() => {
           console.log('[scheduler] Scheduled background scrape completed.');

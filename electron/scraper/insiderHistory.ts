@@ -1,3 +1,6 @@
+import { requireHistoryUrl } from '../securityBoundary';
+import { checkCancelled } from './cancellation';
+import { scopedFetch } from './cancellation';
 import type { BrowserContext } from 'playwright';
 import type { InsiderTrackRecord, InsiderHistoricalTrade } from '../../src/types';
 import { classifyTransaction, classifyInsiderPattern } from '../../src/types';
@@ -24,14 +27,14 @@ function pctChange(later: number | undefined, basis: number | undefined): number
   return ((later - basis) / basis) * 100;
 }
 
-/** Build a date→adjClose map from a Yahoo chart result (falls back to raw close). */
-function buildAdjCloseMap(result: any): Record<string, number> {
+/** Only adjusted prices are comparable across corporate actions. */
+export function buildAdjCloseMap(result: any): Record<string, number> {
   const map: Record<string, number> = {};
   const timestamps = result?.timestamp || [];
-  const adj = result?.indicators?.adjclose?.[0]?.adjclose || result?.indicators?.quote?.[0]?.close || [];
+  const adj = result?.indicators?.adjclose?.[0]?.adjclose || [];
   timestamps.forEach((ts: number, i: number) => {
     const v = adj[i];
-    if (v != null && Number.isFinite(v)) map[new Date(ts * 1000).toISOString().slice(0, 10)] = v;
+    if (Number.isFinite(ts) && ts > 0 && ts * 1000 <= Date.now() && v != null && Number.isFinite(v) && v > 0) map[new Date(ts * 1000).toISOString().slice(0, 10)] = v;
   });
   return map;
 }
@@ -46,11 +49,11 @@ const TICKER_HISTORY_CACHE_MAX = 300;
 // Benchmark (S&P 500 via SPY total-return) cached briefly so pre-warming many
 // insiders in one scrape reuses a single fetch.
 let benchmarkCache: { at: number; map: Record<string, number> } | null = null;
-async function getBenchmarkMap(): Promise<Record<string, number>> {
+export async function getBenchmarkMap(): Promise<Record<string, number>> {
   if (benchmarkCache && Date.now() - benchmarkCache.at < 6 * 60 * 60 * 1000) return benchmarkCache.map;
   let map: Record<string, number> = {};
   try {
-    const res = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/SPY?interval=1d&range=10y', {
+    const res = await scopedFetch('https://query1.finance.yahoo.com/v8/finance/chart/SPY?interval=1d&range=10y', {
       headers: { 'User-Agent': YF_UA },
       signal: AbortSignal.timeout(10_000),
     });
@@ -58,6 +61,8 @@ async function getBenchmarkMap(): Promise<Record<string, number>> {
   } catch (e) {
     console.error('Failed to fetch S&P 500 benchmark history:', e);
   }
+  checkCancelled();
+  if (!Object.keys(map).length) throw new Error('Adjusted benchmark prices unavailable; retry later.');
   benchmarkCache = { at: Date.now(), map };
   return map;
 }
@@ -91,12 +96,12 @@ export async function fetchInsiderTrackRecord(
   try {
     const table = await withPage(
       context,
-      insiderUrl,
+      requireHistoryUrl(insiderUrl),
       async (page) => {
         await page.waitForSelector('table.tinytable', { timeout: 12_000 }).catch(() => undefined);
         return extractTable(page, 'table.tinytable');
       },
-      { waitUntil: 'domcontentloaded', timeout: 25_000 },
+      { waitUntil: 'domcontentloaded', timeout: 25_000, validateNavigation: requireHistoryUrl },
     );
 
     const { headers, rows } = table;
@@ -119,6 +124,7 @@ export async function fetchInsiderTrackRecord(
     }
 
     const tickerPriceMaps: Record<string, Record<string, number>> = {};
+    let missingPriceCoverage = false;
     const benchmarkMap = await getBenchmarkMap();
 
     for (const ticker of uniqueTickers) {
@@ -129,13 +135,17 @@ export async function fetchInsiderTrackRecord(
       }
       try {
         const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooTicker(ticker) || ticker)}?interval=1d&range=10y`;
-        const res = await fetch(url, { headers: { 'User-Agent': YF_UA }, signal: AbortSignal.timeout(10_000) });
+        const res = await scopedFetch(url, { headers: { 'User-Agent': YF_UA }, signal: AbortSignal.timeout(10_000) });
+        if (!res.ok) throw new Error(`Adjusted ticker prices HTTP ${res.status}`);
         if (res.ok) {
           const result = (await res.json() as any)?.chart?.result?.[0];
+          if (!result) throw new Error('Adjusted ticker prices missing');
           // Split/dividend-adjusted series so corporate actions don't masquerade as returns.
           if (result) {
             const map = buildAdjCloseMap(result);
+            if (!Object.keys(map).length) throw new Error('Adjusted ticker prices unavailable');
             tickerPriceMaps[ticker] = map;
+            checkCancelled();
             tickerHistoryCache.set(ticker, { at: Date.now(), map });
             // Evict oldest entries (Map preserves insertion order) to bound memory.
             while (tickerHistoryCache.size > TICKER_HISTORY_CACHE_MAX) {
@@ -146,6 +156,8 @@ export async function fetchInsiderTrackRecord(
           }
         }
       } catch (e) {
+        missingPriceCoverage = true;
+        checkCancelled();
         console.error(`Failed to fetch Yahoo history for ${ticker}:`, e);
       }
     }
@@ -241,11 +253,11 @@ export async function fetchInsiderTrackRecord(
     const avgReturn3m =
       totalTrades > 0 ? with3m.reduce((s, h) => s + (h.return3m ?? 0), 0) / totalTrades : 0;
 
-    if (totalTrades === 0) {
+    if (totalTrades === 0 || missingPriceCoverage) {
       return {
         ...emptyRecord(name, role),
         pattern: classifyInsiderPattern(allPurchaseDates),
-        error: 'No post-trade performance data yet.',
+        error: missingPriceCoverage ? 'Adjusted price coverage incomplete; retry later.' : 'No post-trade performance data yet.',
       };
     }
 

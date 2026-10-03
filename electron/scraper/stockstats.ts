@@ -1,3 +1,4 @@
+import { scopedFetch } from './cancellation';
 import { parseMoney } from './util';
 
 /**
@@ -53,7 +54,7 @@ export function parseStatsHtml(html: string): EquityStats {
 export async function fetchStockAnalysisStats(ticker: string): Promise<EquityStats | null> {
   try {
     const url = `https://stockanalysis.com/stocks/${ticker.toLowerCase()}/statistics/`;
-    const resp = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(10_000) });
+    const resp = await scopedFetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(10_000) });
     if (!resp.ok) return null;
     const stats = parseStatsHtml(await resp.text());
     return stats.shortPctFloat != null || stats.floatShares != null || stats.avgVolume != null ? stats : null;
@@ -70,7 +71,7 @@ export async function fetchStockAnalysisStats(ticker: string): Promise<EquitySta
 export async function fetchDrawdown52w(ticker: string, asOfYmd?: string): Promise<number | undefined> {
   try {
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1y`;
-    const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(10_000) });
+    const res = await scopedFetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(10_000) });
     if (!res.ok) return undefined;
     const json = (await res.json()) as {
       chart?: {

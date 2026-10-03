@@ -38,7 +38,7 @@ it('SECForm4 does not swallow an access denial or retry it', async () => {
 it('SECForm4 rejects a successful HTTP response with no readable trade table', async () => {
   const empty = page(200);
   const context = { newPage: vi.fn().mockResolvedValue(empty) };
-  await expect(scrapeSecForm4(context as unknown as BrowserContext)).rejects.toThrow('purchase table missing or unreadable');
+  await expect(scrapeSecForm4(context as unknown as BrowserContext)).rejects.toThrow('table missing or unreadable');
   expect(context.newPage).toHaveBeenCalledOnce();
   expect(empty.close).toHaveBeenCalledOnce();
 });

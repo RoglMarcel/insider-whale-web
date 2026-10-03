@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto';
+import { requirePlatform } from './securityBoundary';
+import { encodeSession, decodeSession } from './sessionCodec';
 import { app, safeStorage } from 'electron';
 import { chromium, type Browser, type BrowserContext } from 'playwright';
 import fs from 'node:fs';
@@ -22,34 +25,16 @@ function sessionsDir(): string {
 }
 
 function sessionFile(key: string): string {
+  requirePlatform(key);
   return path.join(sessionsDir(), `${key}.session`);
 }
 
-function encodeState(state: StorageState): Buffer {
-  const json = JSON.stringify(state);
+function saveEncrypted(file: string, bytes: Buffer): void {
+  const temporary = `${file}.${randomUUID()}.tmp`;
   try {
-    if (safeStorage.isEncryptionAvailable()) {
-      return Buffer.concat([Buffer.from('ENC:'), safeStorage.encryptString(json)]);
-    }
-  } catch {
-    /* fall through to plaintext */
-  }
-  console.warn(
-    '[auth] OS encryption (safeStorage) unavailable — storing this session in PLAINTEXT. ' +
-      'Session cookies are password-equivalent; prefer an environment with an OS keychain.',
-  );
-  return Buffer.concat([Buffer.from('RAW:'), Buffer.from(json, 'utf8')]);
-}
-
-function decodeState(buf: Buffer): StorageState | null {
-  try {
-    const marker = buf.subarray(0, 4).toString('utf8');
-    if (marker === 'ENC:') return JSON.parse(safeStorage.decryptString(buf.subarray(4)));
-    if (marker === 'RAW:') return JSON.parse(buf.subarray(4).toString('utf8'));
-    return JSON.parse(buf.toString('utf8')); // legacy / plain
-  } catch {
-    return null;
-  }
+    fs.writeFileSync(temporary, bytes, { flag: 'wx', mode: 0o600 });
+    fs.renameSync(temporary, file);
+  } finally { fs.rmSync(temporary, { force: true }); }
 }
 
 // Cache decrypted session state keyed by file mtime so the per-source / per-scrape
@@ -69,7 +54,9 @@ function loadState(key: string): StorageState | undefined {
     const cached = stateCache.get(key);
     if (cached && cached.mtimeMs === mtimeMs) return cached.state;
 
-    const state = decodeState(fs.readFileSync(f)) ?? undefined;
+    const decoded = decodeSession(fs.readFileSync(f), safeStorage);
+    if (decoded.migration) saveEncrypted(f, decoded.migration);
+    const state = decoded.state;
     if (state && state.cookies) {
       state.cookies = state.cookies.map(c => {
         const copy: any = { ...c };
@@ -173,6 +160,7 @@ export async function startLogin(key: string): Promise<{ ok: boolean; message?: 
 }
 
 export async function saveLogin(key: string): Promise<{ ok: boolean; message?: string }> {
+  requirePlatform(key);
   const active = activeLogins.get(key);
   if (!active) return { ok: false, message: 'No login window is open. Click "Log in" first, sign in, then Save.' };
   try {
@@ -190,17 +178,18 @@ export async function saveLogin(key: string): Promise<{ ok: boolean; message?: s
     if (!state.cookies?.length) {
       return { ok: false, message: 'No session cookies found - make sure you completed the login first.' };
     }
-    fs.writeFileSync(sessionFile(key), encodeState(state));
+    saveEncrypted(sessionFile(key), encodeSession(state, safeStorage));
+    stateCache.delete(key);
+    await active.browser.close().catch(() => undefined);
+    activeLogins.delete(key);
     return { ok: true };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : String(e) };
-  } finally {
-    await active.browser.close().catch(() => undefined);
-    activeLogins.delete(key);
   }
 }
 
 export async function cancelLogin(key: string): Promise<void> {
+  requirePlatform(key);
   const active = activeLogins.get(key);
   if (active) {
     await active.browser.close().catch(() => undefined);
@@ -209,12 +198,14 @@ export async function cancelLogin(key: string): Promise<void> {
 }
 
 export async function logout(key: string): Promise<AuthStatus> {
+  requirePlatform(key);
   await cancelLogin(key);
   try {
     fs.rmSync(sessionFile(key), { force: true });
   } catch {
     /* ignore */
   }
+  stateCache.delete(key);
   return authStatus();
 }
 

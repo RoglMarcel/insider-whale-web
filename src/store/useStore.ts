@@ -169,7 +169,7 @@ export const useStore = create<StoreState>((set, get) => ({
       watchlist,
       lastScrapeAt,
       scrapeLogs,
-      scrapeStatus,
+      scrapeStatus: await api.scraper.getStatus(),
       theme,
       initialized: true,
     });

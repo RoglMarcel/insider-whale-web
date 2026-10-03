@@ -1,3 +1,5 @@
+import { checkCancelled } from './cancellation';
+import { scopedFetch } from './cancellation';
 import type { BrowserContext } from 'playwright';
 import { XMLParser } from 'fast-xml-parser';
 import { withPage } from './browser';
@@ -25,22 +27,60 @@ export interface InsiderFlowRow {
   source: string;
 }
 
-// Screener first (500 rows, 90-day window to match getNetInsiderFlow), fixed
-// sales page as fallback — first URL that yields rows wins.
-const SALES_URLS = [
-  'http://openinsider.com/screener?s=&o=&pl=&ph=&ll=&lh=&fd=90&fdr=&td=0&tdr=&daysago=&xp=0&xs=1&vl=25&vh=&ocl=&och=&sic1=-1&sicl=100&sich=9999&grp=0&nfl=&nfh=&nil=&nih=&nol=&noh=&v2l=&v2h=&oc2l=&oc2h=&sortcol=1&cnt=500&page=1',
-  'http://openinsider.com/latest-insider-sales-100k',
-];
-
-export async function scrapeOpenInsiderSales(context: BrowserContext): Promise<InsiderFlowRow[]> {
-  for (const url of SALES_URLS) {
-    const rows = await scrapeSalesPage(context, url);
-    if (rows.length) return rows;
-  }
-  return [];
+export interface SalesSnapshot {
+  rows: InsiderFlowRow[];
+  complete: boolean;
+  from: string;
+  through: string;
+  startedAt: string;
 }
 
-async function scrapeSalesPage(context: BrowserContext, url: string): Promise<InsiderFlowRow[]> {
+/** A bounded feed is not a replacement snapshot. Require two matching complete traversals. */
+export async function scrapeOpenInsiderSales(context: BrowserContext, reportIssue: (message: string) => void = console.warn): Promise<SalesSnapshot> {
+  const startedAt = new Date().toISOString();
+  const through = startedAt.slice(0,10);
+  const from = new Date(Date.now()-89*86_400_000).toISOString().slice(0,10);
+  const base = 'http://openinsider.com/screener?s=&o=&pl=&ph=&ll=&lh=&fd=0&fdr=&td=90&tdr=&daysago=&xp=0&xs=1&vl=0&vh=&ocl=&och=&sic1=-1&sicl=100&sich=9999&grp=0&nfl=&nfh=&nil=&nih=&nol=&noh=&v2l=&v2h=&oc2l=&oc2h=&sortcol=1&cnt=500';
+  const scan = async () => {
+    const rows: InsiderFlowRow[] = [];
+    const pages = new Set<string>();
+    const seenRows = new Set<string>();
+    for (let page = 1; page <= 10; page++) {
+      const result = await scrapeSalesPage(context, `${base}&page=${page}`);
+      if (pages.has(result.signature)) throw new Error('Sales pagination repeated a page');
+      pages.add(result.signature);
+      for (const row of result.rawRows) {
+        const key = JSON.stringify(row);
+        if (seenRows.has(key)) throw new Error('Sales pagination contains overlapping rows');
+        seenRows.add(key);
+      }
+      rows.push(...result.rows);
+      if (result.count === 0) return { rows, signature: [...seenRows].sort().join('\n') };
+    }
+    throw new Error('Sales pagination reached its 10-page limit without a confirmed end');
+  };
+  const sum = (rows: InsiderFlowRow[]) => {
+    const totals = new Map<string, InsiderFlowRow>();
+    for (const row of rows) {
+      if (row.flowDate < from || row.flowDate > through) continue;
+      const key = `${row.ticker}|${row.flowDate}`;
+      const previous = totals.get(key);
+      totals.set(key, { ...row, sellValue: row.sellValue + (previous?.sellValue ?? 0) });
+    }
+    return [...totals.values()].sort((a,b) => `${a.ticker}|${a.flowDate}`.localeCompare(`${b.ticker}|${b.flowDate}`));
+  };
+  try {
+    const first = await scan();
+    const second = await scan();
+    if (first.signature !== second.signature) throw new Error('Sales snapshot changed during pagination');
+    return { rows: sum(second.rows), complete: true, from, through, startedAt };
+  } catch (error) {
+    reportIssue(`Sales coverage incomplete; keeping previous verified totals: ${error instanceof Error ? error.message : String(error)}`);
+    return { rows: [], complete: false, from, through, startedAt };
+  }
+}
+
+async function scrapeSalesPage(context: BrowserContext, url: string): Promise<{ rows: InsiderFlowRow[]; count: number; signature: string; rawRows: string[][] }> {
   return withPage(
     context,
     url,
@@ -53,19 +93,20 @@ async function scrapeSalesPage(context: BrowserContext, url: string): Promise<In
         date: colIndex(table.headers, ['trade date']),
         value: colIndex(table.headers, ['value']),
       };
+      if (Object.values(idx).some(i => i < 0)) throw new Error('Sales columns missing');
       // Aggregate to one row per ticker per trade day.
       const byKey = new Map<string, number>();
       for (const row of table.rows) {
         const rawTicker = cell(row, idx.ticker);
-        if (!isValidTicker(rawTicker)) continue;
+        if (!isValidTicker(rawTicker)) throw new Error('Sales row has invalid ticker');
         const ticker = canonicalTicker(rawTicker);
         // The screener is asked for sales only, but guard anyway.
         const type = cleanText(cell(row, idx.type)).toLowerCase();
-        if (type && !type.includes('sale') && !type.startsWith('s')) continue;
+        if (!type || (!type.includes('sale') && !type.startsWith('s'))) throw new Error('Sales row has unrecognized transaction type');
         const flowDate = parseDate(cell(row, idx.date));
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(flowDate)) continue;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(flowDate)) throw new Error('Sales row has no valid trade date');
         const value = Math.abs(parseMoney(cell(row, idx.value)));
-        if (!value) continue;
+        if (!Number.isFinite(value) || !(value > 0)) throw new Error('Sales row has no positive value');
         const key = `${ticker}|${flowDate}`;
         byKey.set(key, (byKey.get(key) ?? 0) + value);
       }
@@ -74,10 +115,10 @@ async function scrapeSalesPage(context: BrowserContext, url: string): Promise<In
         const [ticker, flowDate] = key.split('|');
         out.push({ ticker, flowDate, buyValue: 0, sellValue, form144Count: 0, source: 'openinsider-sales' });
       }
-      return out;
+      return { rows: out, count: table.rows.length, signature: JSON.stringify(table.rows), rawRows: table.rows };
     },
-    { waitUntil: 'domcontentloaded' },
-  ).catch(() => [] as InsiderFlowRow[]);
+    { waitUntil: 'domcontentloaded', reliable: true },
+  );
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -103,7 +144,7 @@ async function loadSecTickerFile(): Promise<{ map: Map<number, string>; names: M
   const map = new Map<number, string>();
   const names = new Map<string, string>();
   try {
-    const res = await fetch(TICKER_MAP_URL, {
+    const res = await scopedFetch(TICKER_MAP_URL, {
       headers: { 'User-Agent': SEC_UA },
       signal: AbortSignal.timeout(20_000),
     });
@@ -127,8 +168,10 @@ async function loadSecTickerFile(): Promise<{ map: Map<number, string>; names: M
       }
     }
   } catch {
-    /* best-effort — an empty map just yields zero 144 rows this run */
+    throw new Error('SEC ticker map unavailable');
   }
+  if (!map.size) throw new Error('SEC ticker map empty or invalid');
+  checkCancelled();
   if (map.size > 0) cikTickerCache = { at: Date.now(), map, names };
   return { map, names };
 }
@@ -159,16 +202,18 @@ function asArray<T>(v: T | T[] | undefined | null): T[] {
   return Array.isArray(v) ? v : [v];
 }
 
-export async function fetchEdgarForm144(): Promise<InsiderFlowRow[]> {
+export async function fetchEdgarForm144(reportIssue: (message: string) => void = console.warn): Promise<InsiderFlowRow[]> {
   try {
     const cikMap = await getCikTickerMap();
-    if (cikMap.size === 0) return [];
-    const res = await fetch(FORM144_ATOM, {
+    if (cikMap.size === 0) throw new Error('SEC issuer map unavailable');
+    const res = await scopedFetch(FORM144_ATOM, {
       headers: { 'User-Agent': SEC_UA },
       signal: AbortSignal.timeout(15_000),
     });
-    if (!res.ok) return [];
+    if (!res.ok) throw new Error(`SEC Form 144 HTTP ${res.status}`);
     const doc = xml.parse(await res.text());
+    if (!doc?.feed) throw new Error('SEC Form 144 invalid feed');
+    reportIssue('Form 144 is a bounded recent-feed observation, not complete 90-day coverage');
     const entries = asArray<Record<string, unknown>>(doc?.feed?.entry);
 
     // One filing appears once per associated party — dedupe by accession, and
@@ -201,7 +246,7 @@ export async function fetchEdgarForm144(): Promise<InsiderFlowRow[]> {
       out.push({ ticker, flowDate, buyValue: 0, sellValue: 0, form144Count: count, source: 'edgar144' });
     }
     return out;
-  } catch {
-    return [];
+  } catch (error) {
+    throw error;
   }
 }

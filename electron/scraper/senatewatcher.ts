@@ -1,3 +1,5 @@
+import { cancellableDelay, checkCancelled } from './cancellation';
+import { scopedFetch } from './cancellation';
 import type { PoliticianTrade } from '../../src/types';
 import {
   amountToMidpoint,
@@ -33,7 +35,7 @@ const HOUSE_URLS = [
   'https://house-stock-watcher-data.s3-us-west-2.amazonaws.com/data/all_transactions.json',
 ];
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+const sleep = cancellableDelay;
 
 interface WatcherTxn {
   transaction_date?: string;
@@ -48,10 +50,10 @@ interface WatcherTxn {
   owner?: string;
 }
 
-function daysBetweenYmd(from: string, to: string): number {
+function daysBetweenYmd(from: string, to: string): number | null {
   const a = Date.parse(from);
   const b = Date.parse(to);
-  if (Number.isNaN(a) || Number.isNaN(b)) return 0;
+  if (Number.isNaN(a) || Number.isNaN(b) || b < a) return null;
   return Math.max(0, Math.round((b - a) / 86_400_000));
 }
 
@@ -60,7 +62,7 @@ async function fetchJsonArray(urls: string[]): Promise<WatcherTxn[]> {
   for (const url of urls) {
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
-        const res = await fetch(url, {
+        const res = await scopedFetch(url, {
           headers: { 'User-Agent': UA, Accept: 'application/json' },
           signal: AbortSignal.timeout(45_000),
         });
@@ -97,8 +99,8 @@ function mapWatcherRows(
     const txType = normalizeTxType(r.type);
     if (!txType) continue;
     const tradeDate = toYmd(r.transaction_date);
-    if (!tradeDate || tradeDate < cutoff) continue;
-    const disclosureDate = toYmd(r.disclosure_date) || tradeDate;
+    if (tradeDate && tradeDate < cutoff) continue;
+    const disclosureDate = toYmd(r.disclosure_date);
     const amountMidpoint =
       typeof r.amount_mid === 'number' && r.amount_mid > 0
         ? r.amount_mid
@@ -132,7 +134,7 @@ function mapWatcherRows(
  * Layer 3 — House + Senate public dumps. Throws if both chambers yield nothing.
  * Prefer GitHub/jsDelivr mirrors; S3 is tried last (often 403).
  */
-export async function scrapeCongressWatchers(): Promise<PoliticianTrade[]> {
+export async function scrapeCongressWatchers(reportIssue: (message: string) => void = console.warn): Promise<PoliticianTrade[]> {
   const scrapedAt = new Date().toISOString();
   const cutoff = new Date(Date.now() - RECENT_DAYS * 86_400_000).toISOString().slice(0, 10);
   const errors: string[] = [];
@@ -152,6 +154,8 @@ export async function scrapeCongressWatchers(): Promise<PoliticianTrade[]> {
     errors.push(e instanceof Error ? e.message : String(e));
   }
 
+  checkCancelled();
+  for (const error of errors) reportIssue(`Congress chamber coverage incomplete: ${error}`);
   if (out.length === 0) {
     throw new Error(`Congress watcher dumps produced 0 trades (${errors.join(' | ') || 'unknown'})`);
   }

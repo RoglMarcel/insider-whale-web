@@ -76,7 +76,7 @@ check('options none', getOptionsTimingMultiplier(undefined), 1.0);
 console.log('\n— Feature 3: options scoring —');
 const maxedOption: OptionsActivity = {
   ticker: 'X', type: 'call', sentiment: 'bullish', notional: 2_500_000, premiumTotal: 2_500_000,
-  isSweep: true, dte: 14, otmPercent: 20, volOiRatio: 12, source: 'barchart',
+  isSweep: true, scrapedAt: new Date().toISOString(), dte: 14, otmPercent: 20, volOiRatio: 12, source: 'barchart',
 };
 approx('maxed single option = 78.6', scoreOneOption(maxedOption), 78.624, 0.1);
 approx('detailed net (bullish)', scoreOptionsDetailed([maxedOption]).score, 78.624, 0.1);
@@ -84,8 +84,8 @@ const bearPut: OptionsActivity = { ticker: 'X', type: 'put', sentiment: 'bearish
 check('bearish put subtracts', scoreOptionsDetailed([bearPut]).score < 0, true);
 
 console.log('\n— Expired options do not earn the short-dated boost —');
-const expiredOpt: OptionsActivity = { ticker: 'X', type: 'call', sentiment: 'bullish', notional: 600_000, dte: -2, source: 'barchart' };
-check('negative DTE → no near-term ×1.5', scoreOneOption(expiredOpt), 9);
+const expiredOpt: OptionsActivity = { ticker: 'X', type: 'call', sentiment: 'bullish', notional: 600_000, scrapedAt: new Date().toISOString(), dte: -2, source: 'barchart' };
+check('negative DTE → no near-term ×1.5', scoreOneOption(expiredOpt), 0);
 check('DTE 10 → near-term ×1.5', scoreOneOption({ ...expiredOpt, dte: 10 }), 13.5);
 
 console.log('\n— Track-record shrinkage (anti-fluke) —');
@@ -345,7 +345,7 @@ const baseTrades: RawInsiderTrade[] = [
 ];
 
 console.log('\n— Feature 4: combo detection —');
-const bigOption: OptionsActivity = { ticker: 'TEST', type: 'call', sentiment: 'bullish', notional: 2_500_000, premiumTotal: 2_500_000, isSweep: true, dte: 14, otmPercent: 20, volOiRatio: 12, source: 'barchart' };
+const bigOption: OptionsActivity = { ticker: 'TEST', type: 'call', sentiment: 'bullish', notional: 2_500_000, premiumTotal: 2_500_000, isSweep: true, scrapedAt: new Date().toISOString(), dte: 14, otmPercent: 20, volOiRatio: 12, source: 'barchart' };
 check('combo when insider + $250k+ options', detectCombo(baseTrades, [bigOption]), true);
 check('no combo without options', detectCombo(baseTrades, []), false);
 
@@ -382,7 +382,8 @@ check('freshness 1.0 (today)', scored.breakdown.freshnessMultiplier, 1);
 check('comboSignal true', scored.comboSignal, true);
 check('legacyScore ≥ live score (flat bonus was larger)', (scored.legacyScore ?? 0) >= scored.score - 0.1, true);
 // Soft mult ×1.2 on high base still clamps near 100 → HIGH
-approx('final score high with soft mult', scored.score, 90, 6);
+// Explicitly fresh options clock: raw 454.248, saturation 105, classic soft factor 1.2.
+approx('final score high with fresh observed options', scored.score, 100 * 454.248 / (454.248 + 105) * 1.2, 0.1);
 check('conviction HIGH', scored.convictionLevel, 'HIGH');
 check('legacy flat score near 100', (scored.legacyScore ?? 0) >= 95, true);
 

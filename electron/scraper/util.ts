@@ -1,3 +1,4 @@
+import { utcDateMs } from '../../src/lib/utcDate';
 import type { Page } from 'playwright';
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -220,7 +221,8 @@ export function parseDate(raw?: string | null): string {
     const y = matchIso[1];
     const m = matchIso[2].padStart(2, '0');
     const d = matchIso[3].padStart(2, '0');
-    return `${y}-${m}-${d}`;
+    const iso = `${y}-${m}-${d}`;
+    return utcDateMs(iso) === null ? '' : iso;
   }
 
   // 2. Try US slash pattern: MM/DD/YYYY or MM/DD/YY
@@ -232,7 +234,8 @@ export function parseDate(raw?: string | null): string {
     if (y.length === 2) {
       y = '20' + y;
     }
-    return `${y}-${m}-${d}`;
+    const iso = `${y}-${m}-${d}`;
+    return utcDateMs(iso) === null ? '' : iso;
   }
 
   // 3. Month-name + day with NO year (e.g. Finviz "Jul 01"): Date.parse would
@@ -244,6 +247,7 @@ export function parseDate(raw?: string | null): string {
     const year = new Date().getFullYear();
     const candidate = new Date(`${matchMonthDay[1]} ${matchMonthDay[2]}, ${year}`);
     if (!Number.isNaN(candidate.getTime())) {
+      if (candidate.getDate() !== Number(matchMonthDay[2])) return '';
       if (candidate.getTime() > Date.now() + 86_400_000) candidate.setFullYear(year - 1);
       const y = candidate.getFullYear();
       const m = String(candidate.getMonth() + 1).padStart(2, '0');
@@ -256,6 +260,8 @@ export function parseDate(raw?: string | null): string {
   const t = Date.parse(cleaned);
   if (!Number.isNaN(t)) {
     const dateObj = new Date(t);
+    const namedDay = /^(?:[A-Za-z]{3,9})\s+(\d{1,2})/.exec(cleaned) ?? /^(\d{1,2})\s+[A-Za-z]{3,9}/.exec(cleaned);
+    if (namedDay && dateObj.getDate() !== Number(namedDay[1])) return '';
     const y = dateObj.getFullYear();
     const m = String(dateObj.getMonth() + 1).padStart(2, '0');
     const day = String(dateObj.getDate()).padStart(2, '0');
@@ -404,15 +410,18 @@ export async function extractTable(page: Page, selector: string): Promise<Extrac
 
 /** Try each selector in order; return the first table that yields rows. */
 export async function extractFirstTable(page: Page, selectors: string[]): Promise<ExtractedTable> {
+  let empty: ExtractedTable | undefined;
   for (const sel of selectors) {
     try {
       const t = await extractTable(page, sel);
       if (t.rows.length) return { ...t, selector: sel };
+      if (t.headers.length) empty = { ...t, selector: sel };
     } catch {
       /* try next selector */
     }
   }
-  return { headers: [], rows: [] };
+  if (empty) return empty;
+  throw new Error('Source table missing or unreadable; empty result is not confirmed');
 }
 
 /**

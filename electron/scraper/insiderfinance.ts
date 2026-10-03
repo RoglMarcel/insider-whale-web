@@ -100,6 +100,6 @@ export async function scrapeInsiderFinance(context: BrowserContext): Promise<Opt
       return mapOptionsTable(table, 'insiderfinance', URL);
     },
     { waitUntil: 'domcontentloaded' },
-  ).catch(() => [] as OptionsActivity[]);
+  );
 }
 

@@ -30,3 +30,7 @@ NUL
 
 # generated backtest reports (deleted from the repo on purpose)
 backtest-*-report.md
+
+# Python test caches
+__pycache__/
+*.py[cod]

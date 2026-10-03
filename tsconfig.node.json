@@ -18,7 +18,9 @@
     "noUnusedParameters": false,
     "forceConsistentCasingInFileNames": true,
 
-    "types": ["node"]
+    "baseUrl": ".",
+    "paths": { "@/*": ["src/*"] },
+    "types": ["node", "vite/client"]
   },
   /*
    * `scripts` and `tests` were NOT covered before: the typecheck claimed to

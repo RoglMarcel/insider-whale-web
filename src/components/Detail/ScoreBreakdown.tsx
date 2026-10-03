@@ -48,7 +48,7 @@ function PoliticianRow({ t }: { t: PoliticianTrade }) {
   const isBuy = t.transactionType === 'buy';
   const ctx = [t.chamber, t.committee].filter(Boolean).join(' · ');
   const age = daysBetween(t.tradeDate);
-  const lateDisclose = t.daysToDisclose > 30;
+  const lateDisclose = t.daysToDisclose != null && t.daysToDisclose > 30;
   return (
     <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-1.5 text-sm">
       <div className="min-w-0">
@@ -67,9 +67,9 @@ function PoliticianRow({ t }: { t: PoliticianTrade }) {
         <span
           className="text-xs"
           style={{ color: lateDisclose ? 'var(--accent-yellow)' : 'var(--text-secondary)' }}
-          title={tr('bd.disclosedAfter', { n: t.daysToDisclose })}
+          title={t.daysToDisclose == null ? undefined : tr('bd.disclosedAfter', { n: t.daysToDisclose })}
         >
-          {lateDisclose
+          {t.daysToDisclose == null ? '—' : lateDisclose
             ? `⚠ ${tr('bd.disclosedLate', { n: t.daysToDisclose })}`
             : tr('bd.disclosedIn', { n: t.daysToDisclose })}
         </span>

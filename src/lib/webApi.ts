@@ -4,6 +4,7 @@ import {
   type PortfolioState,
   type ScrapeLogEntry,
   type Signal,
+  type ScrapeStatus,
   type VixQuote,
   type WatchlistItem,
 } from '@/types';
@@ -33,13 +34,27 @@ interface Meta {
 let signalsCache: { at: number; data: Signal[] } | null = null;
 const SIGNALS_TTL_MS = 60_000;
 
-async function loadJson<T>(file: string, fallback: T): Promise<T> {
+const readErrors = new Map<string, string>();
+const statusListeners = new Set<(status: ScrapeStatus) => void>();
+function readStatus(): ScrapeStatus {
+  const error = [...readErrors.values()].join(' | ') || undefined;
+  return { running: false, phase: error ? 'Data fetch failed' : 'idle', completedSources: [], totalSources: 0, signalsFound: signalsCache?.data.length ?? 0, error };
+}
+function publishReadStatus(): void { for (const listener of statusListeners) listener(readStatus()); }
+async function loadJson<T>(file: string, fallback: T, optional = false): Promise<T> {
   try {
     const res = await fetch(`${DATA_BASE}${file}`, { cache: 'no-store' });
-    if (!res.ok) return fallback;
-    return (await res.json()) as T;
-  } catch {
-    return fallback;
+    if (optional && res.status === 404) { readErrors.delete(file); publishReadStatus(); return fallback; }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data: unknown = await res.json();
+    if (Array.isArray(fallback) ? !Array.isArray(data) : !data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid data shape');
+    if (file === 'signals.json' && !(data as unknown[]).every(row => row && typeof row === 'object' && typeof (row as Signal).ticker === 'string' && Number.isFinite((row as Signal).score))) throw new Error('Invalid signal data');
+    readErrors.delete(file); publishReadStatus();
+    return data as T;
+  } catch (error) {
+    readErrors.set(file, `${file}: ${error instanceof Error ? error.message : 'Fetch failed'}. Last available data may be outdated.`);
+    publishReadStatus();
+    throw error;
   }
 }
 
@@ -47,19 +62,22 @@ async function loadSignals(force = false): Promise<Signal[]> {
   if (!force && signalsCache && Date.now() - signalsCache.at < SIGNALS_TTL_MS) {
     return signalsCache.data;
   }
-  const data = await loadJson<Signal[]>('signals.json', []);
-  signalsCache = { at: Date.now(), data };
-  return data;
+  try {
+    const data = await loadJson<Signal[]>('signals.json', []);
+    signalsCache = { at: Date.now(), data };
+    return data;
+  } catch { return signalsCache?.data ?? []; } // Never refresh the cache timestamp on failure.
 }
 
-const loadMeta = () => loadJson<Meta>('meta.json', {});
+const loadMeta = () => loadJson<Meta>('meta.json', {}).catch(() => ({} as Meta));
 
 /** Published portfolio state; an absent file means "not built yet", not an error. */
 const loadPortfolio = (): Promise<PortfolioState> =>
   loadJson<PortfolioState>(
     'portfolio.json',
     emptyPortfolioState('The testing portfolio has not been published yet — it is built by the scheduled run.'),
-  ).then((s) => ({ ...s, meta: { ...s.meta, readOnly: true } }));
+    true,
+  ).catch(() => emptyPortfolioState('Portfolio data could not be loaded. Please retry.')).then((s) => ({ ...s, meta: { ...s.meta, readOnly: true } }));
 
 // ── Per-device watchlist (localStorage) ──
 const WL_KEY = 'iwt.watchlist';
@@ -92,6 +110,11 @@ async function watchlistJoined(): Promise<WatchlistItem[]> {
 
 export const webApi: InsiderTrackerAPI = {
   ...mockApi,
+  scraper: {
+    ...mockApi.scraper,
+    getStatus: async () => readStatus(),
+    onStatus: callback => { statusListeners.add(callback); callback(readStatus()); return () => { statusListeners.delete(callback); }; },
+  },
   signals: {
     ...mockApi.signals,
     getAll: () => loadSignals(),

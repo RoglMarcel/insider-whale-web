@@ -22,5 +22,5 @@ export async function scrapeOptionStrat(context: BrowserContext): Promise<Option
       return mapOptionsTable(table, 'optionstrat', URL);
     },
     { waitUntil: 'domcontentloaded' },
-  ).catch(() => [] as OptionsActivity[]);
+  );
 }

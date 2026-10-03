@@ -27,5 +27,5 @@ export async function scrapeMarketBeat(context: BrowserContext): Promise<RawInsi
       return mapInsiderTable(table, 'marketbeat', URL);
     },
     { waitUntil: 'domcontentloaded' },
-  ).catch(() => [] as RawInsiderTrade[]);
+  );
 }

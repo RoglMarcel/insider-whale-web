@@ -1,3 +1,7 @@
+import { cancellableDelay, checkCancelled } from './cancellation';
+import { scopedFetch } from './cancellation';
+import { utcDateMs } from '../../src/lib/utcDate';
+import { parseQuiverData } from './quiverData';
 import type { BrowserContext } from 'playwright';
 import type { PoliticianTrade } from '../../src/types';
 import { withPage } from './browser';
@@ -21,7 +25,7 @@ const MAX_PAGES = 10;
 const REQUEST_GAP_MS = 2000;
 const MAX_RETRIES = 3;
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+const sleep = cancellableDelay;
 
 // ── Amount range → midpoint ──
 
@@ -80,18 +84,14 @@ export function normalizeTxType(raw: unknown): 'buy' | 'sell' | null {
 }
 
 export function toYmd(raw: unknown): string {
-  const s = String(raw ?? '').trim();
-  if (!s) return '';
-  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
-  const us = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/.exec(s);
-  if (us) {
-    const yr = us[3].length === 2 ? `20${us[3]}` : us[3];
-    return `${yr}-${us[1].padStart(2, '0')}-${us[2].padStart(2, '0')}`;
-  }
-  const t = Date.parse(s);
-  if (!Number.isNaN(t)) return new Date(t).toISOString().slice(0, 10);
-  return '';
+  const text = String(raw ?? '').trim();
+  const iso = /^(\d{4}-\d{2}-\d{2})(?:$|T)/.exec(text);
+  if (iso) return utcDateMs(iso[1]) !== null ? iso[1] : '';
+  const us = /^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/.exec(text);
+  if (!us) return '';
+  const year = us[3].length === 2 ? `20${us[3]}` : us[3];
+  const date = `${year}-${us[1].padStart(2,'0')}-${us[2].padStart(2,'0')}`;
+  return utcDateMs(date) !== null ? date : '';
 }
 
 /**
@@ -105,10 +105,10 @@ export function cleanTicker(raw: unknown): string {
   return isValidTicker(base) ? canonicalTicker(base) : '';
 }
 
-function daysBetweenYmd(from: string, to: string): number {
+function daysBetweenYmd(from: string, to: string): number | null {
   const a = Date.parse(from);
   const b = Date.parse(to);
-  if (Number.isNaN(a) || Number.isNaN(b)) return 0;
+  if (Number.isNaN(a) || Number.isNaN(b) || b < a) return null;
   return Math.max(0, Math.round((b - a) / 86_400_000));
 }
 
@@ -166,8 +166,8 @@ export function mapBffTrade(t: BffTrade, scrapedAt: string): PoliticianTrade | n
   if (!txType) return null;
 
   const tradeDate = toYmd(t.txDate ?? t.tradeDate);
-  const disclosureDate = toYmd(t.pubDate ?? t.filingDate) || tradeDate;
-  if (!tradeDate) return null;
+  const disclosureDate = toYmd(t.pubDate ?? t.filingDate);
+
 
   const amountMidpoint = amountToMidpoint(t.sizeRangeLow, t.sizeRangeHigh, t.size ?? (t.value ? String(t.value) : ''));
   if (!(amountMidpoint > 0)) return null;
@@ -211,7 +211,7 @@ async function fetchPage(page: number, lookbackDays: number): Promise<BffRespons
   const url = `${BFF_URL}?txDate=${lookbackDays}d&pageSize=${PAGE_SIZE}&page=${page}&sortBy=-txDate`;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const res = await fetch(url, {
+      const res = await scopedFetch(url, {
         headers: {
           'User-Agent': UA,
           Accept: 'application/json, text/plain, */*',
@@ -236,7 +236,7 @@ async function fetchPage(page: number, lookbackDays: number): Promise<BffRespons
  * Layer 1 — Capitol Trades BFF JSON API.
  * Throws if the first page cannot be fetched at all (hard failure for the layer).
  */
-export async function scrapeCapitolTradesApi(lookbackDays = 90): Promise<PoliticianTrade[]> {
+export async function scrapeCapitolTradesApi(lookbackDays = 90, reportIssue: (message: string) => void = console.warn): Promise<PoliticianTrade[]> {
   const scrapedAt = new Date().toISOString();
   const out: PoliticianTrade[] = [];
   const seen = new Set<string>();
@@ -244,7 +244,7 @@ export async function scrapeCapitolTradesApi(lookbackDays = 90): Promise<Politic
 
   // Warm the origin (some edges require a prior HTML hit before BFF answers).
   try {
-    await fetch(PAGE_URL, {
+    await scopedFetch(PAGE_URL, {
       headers: { 'User-Agent': UA, Accept: 'text/html', 'Accept-Language': 'en-US,en;q=0.9' },
       signal: AbortSignal.timeout(15_000),
     });
@@ -254,12 +254,15 @@ export async function scrapeCapitolTradesApi(lookbackDays = 90): Promise<Politic
   await sleep(500);
 
   for (let page = 1; page <= MAX_PAGES; page++) {
+    checkCancelled();
     const json = await fetchPage(page, lookbackDays);
     if (!json) {
       if (page === 1) throw new Error('Capitol Trades BFF unavailable (no page-1 response after retries)');
+      reportIssue(`Capitol Trades incomplete: page ${page} unavailable`);
       break;
     }
-    const rows = Array.isArray(json.data) ? json.data : [];
+    if (!Array.isArray(json.data)) throw new Error('Capitol Trades response has no trade array');
+    const rows = json.data;
     if (rows.length === 0) break;
 
     let anyInWindow = false;
@@ -267,7 +270,7 @@ export async function scrapeCapitolTradesApi(lookbackDays = 90): Promise<Politic
     for (const raw of rows) {
       const trade = mapBffTrade(raw, scrapedAt);
       if (!trade) continue;
-      if (trade.tradeDate >= cutoff) {
+      if (!trade.tradeDate || trade.tradeDate >= cutoff) {
         allOlderThanCutoff = false;
         anyInWindow = true;
         const key = `${trade.politician}|${trade.ticker}|${trade.tradeDate}|${trade.transactionType}`;
@@ -279,6 +282,7 @@ export async function scrapeCapitolTradesApi(lookbackDays = 90): Promise<Politic
 
     const totalPages = json.meta?.paging?.totalPages ?? MAX_PAGES;
     if (page >= totalPages) break;
+    if (page === MAX_PAGES && !allOlderThanCutoff) reportIssue(`Capitol Trades truncated at ${MAX_PAGES}/${totalPages} pages`);
     if (allOlderThanCutoff && !anyInWindow) break;
     await sleep(REQUEST_GAP_MS);
   }
@@ -360,8 +364,8 @@ export async function scrapeCapitolTradesPlaywright(
             const amt = amountToMidpoint(undefined, undefined, joined.match(/\$[\d,]+(?:\s*[-–]\s*\$[\d,]+)?/)?.[0]);
             if (!(amt > 0)) continue;
             const dateCell = cells.find((c) => /\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{2,4}/.test(c));
-            const tradeDate = toYmd(dateCell);
-            if (!tradeDate || tradeDate < cutoff) continue;
+            const tradeDate = ''; // Unlabelled DOM dates cannot establish execution time.
+
             const name = cells.find((c) => /[A-Za-z]{2,}\s+[A-Za-z]{2,}/.test(c) && !c.includes('$')) ?? 'Unknown';
             const chamber = normalizeChamber(joined) ?? 'House';
             collected.push({
@@ -372,8 +376,8 @@ export async function scrapeCapitolTradesPlaywright(
               transactionType: txType,
               amountMidpoint: amt,
               tradeDate,
-              disclosureDate: tradeDate,
-              daysToDisclose: 0,
+              disclosureDate: '',
+              daysToDisclose: null,
               scrapedAt,
             });
           }
@@ -401,7 +405,7 @@ export async function scrapeCapitolTradesPlaywright(
  * array in the HTML (current House+Senate). Pure fetch — no Playwright.
  */
 export async function scrapeQuiverCongressEmbed(lookbackDays = 90): Promise<PoliticianTrade[]> {
-  const res = await fetch('https://www.quiverquant.com/congresstrading/', {
+  const res = await scopedFetch('https://www.quiverquant.com/congresstrading/', {
     headers: {
       'User-Agent': UA,
       Accept: 'text/html,application/xhtml+xml',
@@ -411,21 +415,7 @@ export async function scrapeQuiverCongressEmbed(lookbackDays = 90): Promise<Poli
   });
   if (!res.ok) throw new Error(`Quiver congress page HTTP ${res.status}`);
   const html = await res.text();
-  const m = /let\s+recentTradesData\s*=\s*(\[[\s\S]*?\]);/.exec(html);
-  if (!m) throw new Error('Quiver congress page: recentTradesData not found in HTML');
-
-  let rows: unknown[];
-  try {
-    rows = JSON.parse(m[1].replace(/'/g, '"').replace(/,\s*]/g, ']')) as unknown[];
-  } catch {
-    // Array uses single quotes; eval-safe parse via Function after sanitizing
-    try {
-      // eslint-disable-next-line no-new-func
-      rows = new Function(`return (${m[1]})`)() as unknown[];
-    } catch (e) {
-      throw new Error(`Quiver congress page: failed to parse recentTradesData (${e instanceof Error ? e.message : e})`);
-    }
-  }
+  const rows = parseQuiverData(html);
   if (!Array.isArray(rows) || rows.length === 0) {
     throw new Error('Quiver congress page: empty recentTradesData');
   }
@@ -449,8 +439,8 @@ export async function scrapeQuiverCongressEmbed(lookbackDays = 90): Promise<Poli
     const chamber = normalizeChamber(row[6]);
     if (!chamber) continue;
     const disclosureDate = toYmd(row[8]);
-    const tradeDate = toYmd(row[9]) || disclosureDate;
-    if (!tradeDate || tradeDate < cutoff) continue;
+    const tradeDate = toYmd(row[9]);
+    if (tradeDate && tradeDate < cutoff) continue;
 
     out.push({
       politician,
@@ -460,8 +450,8 @@ export async function scrapeQuiverCongressEmbed(lookbackDays = 90): Promise<Poli
       transactionType: txType,
       amountMidpoint,
       tradeDate,
-      disclosureDate: disclosureDate || tradeDate,
-      daysToDisclose: disclosureDate ? daysBetweenYmd(tradeDate, disclosureDate) : 0,
+      disclosureDate,
+      daysToDisclose: daysBetweenYmd(tradeDate, disclosureDate),
       scrapedAt,
     });
   }

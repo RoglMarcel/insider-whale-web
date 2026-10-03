@@ -190,5 +190,5 @@ export async function scrapeBarchart(context: BrowserContext): Promise<OptionsAc
       return mapOptionsTable(table, 'barchart', URL);
     },
     { waitUntil: 'domcontentloaded', timeout: 40_000 },
-  ).catch(() => [] as OptionsActivity[]);
+  );
 }

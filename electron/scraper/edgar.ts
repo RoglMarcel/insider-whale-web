@@ -1,4 +1,6 @@
+import { scopedFetch } from './cancellation';
 import type { BrowserContext } from 'playwright';
+import { utcInstantMs } from '../../src/lib/utcDate';
 import { XMLParser } from 'fast-xml-parser';
 import type { RawInsiderTrade } from '../../src/types';
 import { createRequestPacer, retryTransient, SourceHttpError } from './reliability';
@@ -33,7 +35,7 @@ function createSecReader(deadline: number): ReadSec {
     if (blocked) throw blocked;
     const remaining = deadline - Date.now();
     if (remaining <= 0) throw new Error('EDGAR request budget exhausted');
-    const res = await fetch(url, {
+    const res = await scopedFetch(url, {
       headers: { 'User-Agent': SEC_UA, 'Accept-Encoding': 'gzip, deflate' },
       signal: AbortSignal.timeout(Math.min(FETCH_TIMEOUT_MS, remaining)),
     });
@@ -76,6 +78,7 @@ interface FilingRef {
   accession: string; // with dashes
   indexUrl: string;
   filingDate?: string;
+  revisionAt?: string;
 }
 
 /** Parse the getcurrent Atom feed into unique filing references. */
@@ -109,6 +112,7 @@ export function parseAtomFilings(atomText: string): FilingRef[] {
       accession,
       indexUrl: href.startsWith('http') ? href : `https://www.sec.gov${href}`,
       filingDate: /^\d{4}-\d{2}-\d{2}/.test(updated) ? updated.slice(0, 10) : undefined,
+      revisionAt: updated.includes('T') && utcInstantMs(updated) !== null ? updated : undefined,
     });
   }
   if (eligible && !out.length) throw new Error('EDGAR feed contains no readable filing references');
@@ -126,58 +130,55 @@ export function mapOwnershipDocument(doc: any, ref: FilingRef): RawInsiderTrade[
   const ticker = canonicalTicker(rawTicker);
   const companyName = cleanText(strVal(issuer?.issuerName)) || undefined;
 
-  const owner = asArray(od.reportingOwner)[0];
-  const insiderName = cleanText(strVal(owner?.reportingOwnerId?.rptOwnerName)) || 'Unknown';
-  const rel = owner?.reportingOwnerRelationship ?? {};
-  // Structured flags — no title-string guessing. Abbreviations match the
-  // vocabulary getRankWeight already understands ("Dir", "10%").
-  const roleParts: string[] = [];
-  const officerTitle = cleanText(strVal(rel.officerTitle));
-  if (officerTitle) roleParts.push(officerTitle);
-  else if (isTrue(rel.isOfficer)) roleParts.push('Officer');
-  if (isTrue(rel.isDirector)) roleParts.push('Dir');
-  if (isTrue(rel.isTenPercentOwner)) roleParts.push('10%');
-  const role = roleParts.join(', ') || 'Other';
-
-  // The 10b5-1 checkbox (pre-scheduled plan) is an explicit field on the form.
-  const planned = isTrue(od.aff10b5One);
-
-  // Aggregate the filing's open-market purchases (code P, acquired) into one
-  // per-filing trade, mirroring how OpenInsider reports a filing.
-  let totalShares = 0;
-  let totalValue = 0;
-  let tradeDate = '';
-  for (const tx of asArray(od.nonDerivativeTable?.nonDerivativeTransaction)) {
+  const reportingOwners = asArray(od.reportingOwner).map(owner => {
+    const rel = owner?.reportingOwnerRelationship ?? {};
+    const parts: string[] = [];
+    const title = cleanText(strVal(rel.officerTitle));
+    if (title) parts.push(title);
+    else if (isTrue(rel.isOfficer)) parts.push('Officer');
+    if (isTrue(rel.isDirector)) parts.push('Dir');
+    if (isTrue(rel.isTenPercentOwner)) parts.push('10%');
+    return { cik: strVal(owner?.reportingOwnerId?.rptOwnerCik).replace(/^0+/, ''),
+      name: cleanText(strVal(owner?.reportingOwnerId?.rptOwnerName)) || 'Unknown',
+      role: parts.join(', ') || 'Other' };
+  });
+  const accession = ref.accession.replace(/-/g, '');
+  const amendment = strVal(od.documentType).toUpperCase() === '4/A';
+  const trades: RawInsiderTrade[] = [];
+  // XML rows belong to the joint report; owner attribution is not encoded per row.
+  // Keep all owners as provenance, but never multiply the transaction by owner count.
+  for (const [filingRow, tx] of asArray(od.nonDerivativeTable?.nonDerivativeTransaction).entries()) {
     const code = strVal(tx?.transactionCoding?.transactionCode).toUpperCase();
-    if (code !== 'P') continue;
+    if (code !== 'P' && !amendment) continue;
     const acquired = strVal(tx?.transactionAmounts?.transactionAcquiredDisposedCode).toUpperCase();
-    if (acquired && acquired !== 'A') continue;
+    if (code === 'P' && acquired && acquired !== 'A') continue;
     const shares = numVal(tx?.transactionAmounts?.transactionShares) ?? 0;
-    const price = numVal(tx?.transactionAmounts?.transactionPricePerShare) ?? 0;
-    if (shares <= 0) continue;
-    totalShares += shares;
-    totalValue += shares * price;
-    const d = strVal(tx?.transactionDate);
-    if (/^\d{4}-\d{2}-\d{2}/.test(d) && (!tradeDate || d < tradeDate)) tradeDate = d.slice(0, 10);
+    const price = numVal(tx?.transactionAmounts?.transactionPricePerShare);
+    if (!(shares > 0) || !Number.isFinite(shares)) continue;
+    trades.push({ ticker, companyName,
+      insiderName: reportingOwners.map(o => o.name).sort().join(' / ') || 'Unknown',
+      role: [...new Set(reportingOwners.map(o => o.role))].join(', ') || 'Other',
+      reportingOwners, issuerCik: strVal(issuer?.issuerCik).replace(/^0+/, ''),
+      transactionType: code === 'P' ? (isTrue(od.aff10b5One) ? '10b5-1 Purchase' : 'P - Purchase') : code,
+      tradeDate: strVal(tx?.transactionDate), filingDate: ref.filingDate, revisionAt: ref.revisionAt,
+      shares, price, value: price == null ? 0 : shares * price,
+      source: 'edgar', sourceUrl: ref.indexUrl, filingAccession: accession, filingRow,
+      transactionId: `filing:${accession}:row:${filingRow}`,
+      originalSubmissionDate: strVal(od.dateOfOriginalSubmission) || undefined,
+      securityTitle: strVal(tx?.securityTitle),
+      ownershipNature: [strVal(tx?.ownershipNature?.directOrIndirectOwnership), strVal(tx?.ownershipNature?.natureOfOwnership)].join('|'),
+      amendment, integrityStatus: amendment ? 'unlinked-amendment' : undefined,
+    });
   }
-  if (totalShares <= 0 || !tradeDate) return [];
-
-  return [
-    {
-      ticker,
-      companyName,
-      insiderName,
-      role,
-      transactionType: planned ? '10b5-1 Purchase' : 'P - Purchase',
-      tradeDate,
-      filingDate: ref.filingDate,
-      shares: totalShares,
-      price: totalValue > 0 ? totalValue / totalShares : undefined,
-      value: totalValue,
-      source: 'edgar',
-      sourceUrl: ref.indexUrl,
-    },
-  ];
+  if (amendment && !trades.length) trades.push({
+    ticker, companyName, insiderName: reportingOwners.map(o => o.name).sort().join(' / ') || 'Unknown',
+    role: reportingOwners.map(o => o.role).join(', ') || 'Other', reportingOwners,
+    issuerCik: strVal(issuer?.issuerCik).replace(/^0+/, ''), originalSubmissionDate: strVal(od.dateOfOriginalSubmission) || undefined,
+    tradeDate: '', filingDate: ref.filingDate, revisionAt: ref.revisionAt,
+    transactionType: 'Unknown', shares: 0, value: 0, source: 'edgar', sourceUrl: ref.indexUrl,
+    filingAccession: accession, transactionId: `filing:${accession}:metadata`, amendment: true, integrityStatus: 'unlinked-amendment',
+  });
+  return trades;
 }
 
 /** Locate + fetch a filing's primary Form 4 XML, then map it. */
@@ -199,7 +200,10 @@ export async function scrapeEdgar(
 ): Promise<RawInsiderTrade[]> {
   const deadline = Date.now() + TOTAL_BUDGET_MS;
   const read = createSecReader(deadline);
-  const filings = parseAtomFilings(await read(ATOM_URL)).slice(0, FILING_LIMIT);
+  const discovered = parseAtomFilings(await read(ATOM_URL));
+  const filings = discovered.slice(0, FILING_LIMIT);
+  if (discovered.length > filings.length) reportIssue(`EDGAR discovery truncated: ${filings.length}/${discovered.length} filings scheduled`);
+  reportIssue('EDGAR current-feed coverage is bounded to the latest 100 feed entries; no complete-window claim');
   if (!filings.length) return [];
 
   const out: RawInsiderTrade[] = [];

@@ -64,10 +64,10 @@
   },
   {
     "name": "undateable buy (date failed to parse)",
-    "score": 16.7,
+    "score": 0,
     "tier": "LOW",
-    "raw": 21,
-    "confidence": 20
+    "raw": 0,
+    "confidence": 5
   },
   {
     "name": "award-only aggregate (nothing eligible)",

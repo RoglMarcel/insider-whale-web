@@ -1,3 +1,7 @@
+import { withTimeout, checkCancelled } from './cancellation';
+import { scopedFetch } from './cancellation';
+import { dedupTrades } from '../tradeDedup';
+export { dedupTrades } from '../tradeDedup';
 import { tickerIssue, resolvedTicker } from '../../src/lib/ticker-quality';
 import type { Browser, BrowserContext } from 'playwright';
 import {
@@ -42,6 +46,7 @@ import {
   getTickerMeta,
   upsertTickerMeta,
   upsertInsiderFlow,
+  replaceInsiderSalesSnapshot,
   getNetInsiderFlow,
   upsertInsiderTrades,
   getRecentInsiderTrades,
@@ -91,11 +96,12 @@ const SIDE_KEYS = SIDE_PIPELINE_SOURCES.map((s) => s.key);
  */
 async function scrapeCongressChain(
   context: BrowserContext,
+  reportIssue: (message: string) => void,
 ): Promise<{ trades: PoliticianTrade[]; layer: string }> {
   const layerErrors: string[] = [];
 
   try {
-    const trades = await scrapeCapitolTradesApi(90);
+    const trades = await scrapeCapitolTradesApi(90, reportIssue);
     if (trades.length) return { trades, layer: 'capitol-api' };
     layerErrors.push('capitol-api: 0 rows');
   } catch (e) {
@@ -119,7 +125,7 @@ async function scrapeCongressChain(
   }
 
   try {
-    const trades = await scrapeCongressWatchers();
+    const trades = await scrapeCongressWatchers(reportIssue);
     if (trades.length) return { trades, layer: 'house-senate-watchers' };
     layerErrors.push('house-senate-watchers: 0 rows');
   } catch (e) {
@@ -215,17 +221,6 @@ export function getScrapeStatus(): ScrapeStatus {
   return currentStatus;
 }
 
-function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
-  // Clear the timer once the real promise settles — otherwise every call that
-  // finishes early leaves a live timeout keeping the headless process warm.
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  return Promise.race([
-    p.finally(() => clearTimeout(timer)),
-    new Promise<T>((resolve) => {
-      timer = setTimeout(() => resolve(fallback), ms);
-    }),
-  ]);
-}
 
 function mergeOptionsActivity(
   current: OptionsActivity[],
@@ -284,128 +279,12 @@ async function mapLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<v
   let next = 0;
   const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
     while (next < items.length) {
+      checkCancelled();
       const idx = next++;
       await fn(items[idx]);
     }
   });
   await Promise.all(workers);
-}
-
-/** Sources whose rows are per-filing exact (in preference order, best first). */
-const AUTHORITATIVE_TRADE_SOURCES: readonly string[] = ['edgar', 'openinsider'];
-/** Estimate-based aggregators — never supply $ volume when an authoritative row exists. */
-const ESTIMATE_TRADE_SOURCES: ReadonlySet<string> = new Set(['quiverquant', 'ceowatcher']);
-/**
- * Sources that report a trade WITHOUT its real transaction date — a publish
- * date stands in (CEOWatcher captions state the amount but never the date).
- * Such a row can never collide on the exact ticker|insider|tradeDate dedup key,
- * so it needs the date-fuzzy reconciliation pass in dedupTrades below.
- */
-const UNDATED_TRADE_SOURCES: ReadonlySet<string> = new Set(['ceowatcher']);
-/** How far an undated row may sit from an authoritative one and still be the same event. */
-const UNDATED_MATCH_WINDOW_DAYS = 10;
-
-/** Absolute day distance between two YYYY-MM-DD strings (both read as UTC, so no TZ skew). */
-function dayDistance(a: string, b: string): number {
-  const pa = Date.parse(`${a}T00:00:00Z`);
-  const pb = Date.parse(`${b}T00:00:00Z`);
-  if (Number.isNaN(pa) || Number.isNaN(pb)) return Infinity;
-  return Math.abs(pa - pb) / 86_400_000;
-}
-
-/** Same trade across sources whose dollar values round/agree within 5%. */
-function valuesClose(a: number, b: number): boolean {
-  const hi = Math.max(Math.abs(a), Math.abs(b));
-  if (hi === 0) return true;
-  return Math.abs(a - b) / hi <= 0.05;
-}
-
-/**
- * De-duplicate cross-source trades. Keyed by ticker|insider|tradeDate, then values
- * within 5% are treated as the same Form 4 (a source reporting "$1.23M" vs the exact
- * "$1,234,567" must not double-count toward dollar volume). Two genuinely different
- * same-day buys by one insider stay separate (values diverge by more than the tol).
- * URL-bearing records (OpenInsider) are preferred so insider history links survive.
- *
- * When EDGAR/OpenInsider is present for a key, estimate sources (Quiver) are dropped
- * entirely so their estimated $ never set displayed/scored dollar volume.
- */
-export function dedupTrades(trades: RawInsiderTrade[]): RawInsiderTrade[] {
-  const groups = new Map<string, RawInsiderTrade[]>();
-  for (const t of trades) {
-    const key = `${t.ticker}|${normalizeInsiderName(t.insiderName)}|${t.tradeDate}`;
-    const list = groups.get(key);
-    if (list) list.push(t);
-    else groups.set(key, [t]);
-  }
-
-  const out: RawInsiderTrade[] = [];
-  for (const group of groups.values()) {
-    // Per-filing-exact sources beat aggregator rows outright: keep only the best
-    // such source present, so cross-source rounding ($1.2M vs $1,234,567 — a
-    // >5% gap) can never double-count the same Form 4. Genuinely distinct
-    // same-day buys appear as distinct rows on these sources, so nothing is lost.
-    let handled = false;
-    for (const src of AUTHORITATIVE_TRADE_SOURCES) {
-      const exact = group.filter((t) => t.source === src);
-      if (exact.length) {
-        // Carry an insider history URL over from any shadowed row so track
-        // records keep working when the kept source lacks one.
-        const urlDonor = group.find((t) => t.insiderUrl);
-        if (urlDonor) {
-          for (const t of exact) if (!t.insiderUrl) t.insiderUrl = urlDonor.insiderUrl;
-        }
-        // Prefer the authoritative row with the strongest positive value among
-        // exact rows; never pull $ from estimate sources in this group.
-        for (const t of exact) {
-          if (!(t.value > 0)) {
-            const authVal = exact.find((e) => e.value > 0 && e !== t);
-            if (authVal) t.value = authVal.value;
-          }
-        }
-        out.push(...exact);
-        handled = true;
-        break;
-      }
-    }
-    if (handled) continue;
-    // Aggregators only: drop pure estimate rows when a non-estimate aggregator
-    // also reported the same key (e.g. Finviz vs Quiver).
-    const nonEstimate = group.filter((t) => !ESTIMATE_TRADE_SOURCES.has(t.source));
-    const pool = nonEstimate.length ? nonEstimate : group;
-    pool.sort((a, b) => (a.insiderUrl ? 0 : 1) - (b.insiderUrl ? 0 : 1));
-    const kept: RawInsiderTrade[] = [];
-    for (const t of pool) {
-      if (kept.some((k) => valuesClose(k.value, t.value))) continue;
-      kept.push(t);
-    }
-    out.push(...kept);
-  }
-
-  // Date-fuzzy reconciliation for undated sources. Everything above keys on an
-  // EXACT trade date, which an undated row (publish date as proxy) can never
-  // match — so without this pass CEOWatcher's rounded dollars would be ADDED to
-  // the authoritative row's, double-counting one Form 4 into both dollar volume
-  // and the distinct-insider cluster count. Matched on the same person, or, when
-  // the caption named only a title, on the same money for the same ticker.
-  // Note the dropped row still counts toward `sourceCount` (computed pre-dedup),
-  // so the corroboration keeps raising confidence without inflating the trade.
-  const undated = out.filter((t) => UNDATED_TRADE_SOURCES.has(t.source));
-  if (!undated.length) return out;
-  const precise = out.filter((t) => !UNDATED_TRADE_SOURCES.has(t.source));
-  if (!precise.length) return out;
-  return out.filter((t) => {
-    if (!UNDATED_TRADE_SOURCES.has(t.source)) return true;
-    const key = normalizeInsiderName(t.insiderName);
-    const named = key && key !== 'unknown';
-    const covered = precise.some(
-      (p) =>
-        p.ticker === t.ticker &&
-        dayDistance(p.tradeDate, t.tradeDate) <= UNDATED_MATCH_WINDOW_DAYS &&
-        (named ? normalizeInsiderName(p.insiderName) === key : valuesClose(p.value, t.value)),
-    );
-    return !covered;
-  });
 }
 
 /**
@@ -472,7 +351,7 @@ function buildAggregates(
   }
 
   const eligibleVolume = (agg: TickerAggregate) =>
-    agg.trades.filter(isScoringEligible).reduce((s, t) => s + (t.value || 0), 0);
+    agg.trades.filter(t => isScoringEligible(t)).reduce((s, t) => s + (t.value || 0), 0);
   // Whale-only tickers gate on BULLISH premium: a lone big bearish put would
   // otherwise surface as a permanent zero-score row (its composite floors at 0).
   // Bearish prints still ride along on insider-backed aggregates as a penalty.
@@ -486,7 +365,7 @@ function buildAggregates(
   // options print. (A ticker with only a small insider buy but a whale print now
   // qualifies on the options leg, with the insider trades kept as context.)
   return [...byTicker.values()].filter((agg) => {
-    const hasInsiderSignal = agg.trades.some(isScoringEligible) && eligibleVolume(agg) >= minDollarVolume;
+    const hasInsiderSignal = agg.trades.some(t => isScoringEligible(t)) && eligibleVolume(agg) >= minDollarVolume;
     const hasWhaleOptions = topBullishPremium(agg) >= MIN_OPTIONS_PREMIUM;
     return hasInsiderSignal || hasWhaleOptions;
   });
@@ -523,7 +402,7 @@ function lookupBestAccuracy(agg: TickerAggregate): number | undefined {
  */
 async function prewarmTrackRecords(context: BrowserContext, aggregates: TickerAggregate[]): Promise<void> {
   const eligibleVolume = (agg: TickerAggregate) =>
-    agg.trades.filter(isScoringEligible).reduce((s, t) => s + (t.value || 0), 0);
+    agg.trades.filter(t => isScoringEligible(t)).reduce((s, t) => s + (t.value || 0), 0);
   const ranked = [...aggregates].sort((a, b) => eligibleVolume(b) - eligibleVolume(a));
 
   const targets: { name: string; role?: string; url: string }[] = [];
@@ -550,7 +429,7 @@ async function prewarmTrackRecords(context: BrowserContext, aggregates: TickerAg
     if (Date.now() > deadline) return;
     try {
       const rec = await withTimeout<InsiderTrackRecord | null>(
-        fetchInsiderTrackRecord(context, tg.name, tg.url, tg.role),
+        () => fetchInsiderTrackRecord(context, tg.name, tg.url, tg.role),
         PREWARM_PER_INSIDER_MS,
         null,
       );
@@ -604,7 +483,7 @@ const TICKER_META_TTL_MS = 24 * 60 * 60 * 1000;
  */
 function rankedForEnrichment(aggregates: TickerAggregate[]): TickerAggregate[] {
   const weight = (agg: TickerAggregate): number => {
-    const insider = agg.trades.filter(isScoringEligible).reduce((s, t) => s + (t.value || 0), 0);
+    const insider = agg.trades.filter(t => isScoringEligible(t)).reduce((s, t) => s + (t.value || 0), 0);
     const options = agg.options.reduce((m, o) => Math.max(m, o.premiumTotal ?? o.notional ?? 0), 0);
     return Math.max(insider, options);
   };
@@ -639,7 +518,7 @@ export async function fetchStockAnalysisEarnings(ticker: string): Promise<StockA
     const url = `https://stockanalysis.com/stocks/${ticker.toLowerCase()}/`;
     // Hard timeout: undici's defaults allow a stalled socket to hang for
     // minutes, and this runs inside the scrape's enrichment phase.
-    const resp = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(10_000) });
+    const resp = await scopedFetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(10_000) });
     // Cacheability of a miss is decided in one place (util) so it can be
     // unit-tested without a network. Measured: AALK 404s, QQQ/SPY/FB return
     // 200 but redirect away from /stocks/, ALK and ABBV are real 200s.
@@ -827,7 +706,7 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
     // and best-effort: with no registry, no ticker is ever "repaired".
     let registered: Set<string> = new Set();
     try {
-      registered = await withTimeout(getRegisteredTickers(), 20_000, new Set<string>());
+      registered = await withTimeout(() => getRegisteredTickers(), 20_000, new Set<string>());
     } catch {
       /* best-effort — an empty set simply disables the repair */
     }
@@ -852,12 +731,11 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
             mainSourceCounts[source.key] = 0;
           } else {
             const timedOut = Symbol('timeout');
-            const result = await Promise.race([
-              fn(context, (message) => errors.push({ source: source.key, message })).then((rows) => rows as RawInsiderTrade[]),
-              new Promise<typeof timedOut>((resolve) =>
-                setTimeout(() => resolve(timedOut), PER_SCRAPER_TIMEOUT_MS),
-              ),
-            ]);
+            let acceptingIssues = true;
+            const result = await withTimeout<RawInsiderTrade[] | typeof timedOut>(
+              () => fn(context, (message) => { if (acceptingIssues) errors.push({ source: source.key, message }); }),
+              PER_SCRAPER_TIMEOUT_MS, timedOut,
+            ).finally(() => { acceptingIssues = false; });
             if (result === timedOut) {
               mainSourceCounts[source.key] = -1;
               errors.push({ source: source.key, message: `Timed out after ${PER_SCRAPER_TIMEOUT_MS}ms` });
@@ -882,12 +760,7 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
             mainSourceCounts[source.key] = 0;
           } else {
             const timedOut = Symbol('timeout');
-            const result = await Promise.race([
-              fn(context).then((rows) => rows as OptionsActivity[]),
-              new Promise<typeof timedOut>((resolve) =>
-                setTimeout(() => resolve(timedOut), PER_SCRAPER_TIMEOUT_MS),
-              ),
-            ]);
+            const result = await withTimeout<OptionsActivity[] | typeof timedOut>(() => fn(context), PER_SCRAPER_TIMEOUT_MS, timedOut);
             if (result === timedOut) {
               mainSourceCounts[source.key] = -1;
               errors.push({ source: source.key, message: `Timed out after ${PER_SCRAPER_TIMEOUT_MS}ms` });
@@ -926,15 +799,16 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
     try {
       const newTrades = upsertInsiderTrades(allTrades);
       const windowTrades = getRecentInsiderTrades(TRADE_WINDOW_DAYS);
-      // The window is a superset of this run's trades once persisted, but fall
-      // back to the live rows if the read came back empty for any reason.
-      mergedTrades = windowTrades.length ? windowTrades : allTrades;
+      // Only canonical admissible versions may re-enter the pipeline. An empty
+      // verified window must not reactivate unresolved live rows.
+      mergedTrades = windowTrades;
       console.log(
         `[scraper] insider trades: ${allTrades.length} scraped (${newTrades} new), ` +
           `${mergedTrades.length} in the ${TRADE_WINDOW_DAYS}d window`,
       );
     } catch (err) {
-      console.error('[scraper] insider-trade persistence failed — falling back to live rows:', err);
+      mergedTrades = [];
+      console.error('[scraper] insider-trade persistence failed — withholding unverified live rows:', err);
       errors.push({
         source: 'insider-trades',
         message: err instanceof Error ? err.message : String(err),
@@ -948,30 +822,21 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
     // the signal pipeline.
     setStatus({ phase: 'Collecting sell-side flow…', currentSource: 'Sell-side flow' });
     try {
-      const salesRows = await withTimeout(scrapeOpenInsiderSales(context), 60_000, null as InsiderFlowRow[] | null);
-      const form144Rows = await withTimeout(fetchEdgarForm144(), 45_000, null as InsiderFlowRow[] | null);
-      if (salesRows == null && form144Rows == null) {
-        throw new Error('Sell-side collectors timed out');
-      }
-      const sales = salesRows ?? [];
-      const form144 = form144Rows ?? [];
-      // Buy side from the persisted trade window so the ratio has both legs
-      // (dedup first — cross-source copies must not inflate it). Reading the
-      // window rather than just this run's rows also lets a scrape that missed
-      // a source heal the buy side instead of leaving a hole in it.
-      const buyByKey = new Map<string, number>();
-      for (const t of dedupTrades(mergedTrades)) {
-        if (classifyTransaction(t.transactionType).modifier <= 0) continue;
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(t.tradeDate)) continue;
-        const key = `${t.ticker}|${t.tradeDate}`;
-        buyByKey.set(key, (buyByKey.get(key) ?? 0) + (t.value || 0));
-      }
-      const buyRows: InsiderFlowRow[] = [...buyByKey.entries()].map(([key, buyValue]) => {
-        const [ticker, flowDate] = key.split('|');
-        return { ticker, flowDate, buyValue, sellValue: 0, form144Count: 0, source: 'pipeline-buys' };
-      });
-      upsertInsiderFlow([...sales, ...form144, ...buyRows]);
-      sideCounts.sellside = sales.length + form144.length;
+      const issue = (message: string) => { checkCancelled(); errors.push({ source: 'sellside', message }); };
+      const [salesResult, formResult] = await Promise.allSettled([
+        withTimeout(() => scrapeOpenInsiderSales(context, issue), 60_000, null),
+        withTimeout(() => fetchEdgarForm144(issue), 45_000, null),
+      ]);
+      let successful = 0;
+      let count = 0;
+      if (salesResult.status === 'fulfilled' && salesResult.value?.complete) {
+        replaceInsiderSalesSnapshot(salesResult.value); successful++; count += salesResult.value.rows.length;
+      } else issue('OpenInsider sales snapshot unavailable or incomplete');
+      if (formResult.status === 'fulfilled' && formResult.value) {
+        upsertInsiderFlow(formResult.value); successful++; count += formResult.value.length;
+      } else issue('Form 144 collector failed or timed out');
+      if (!successful) throw new Error('Both sell-side collectors failed to produce usable coverage');
+      sideCounts.sellside = count;
     } catch (err) {
       sideCounts.sellside = -1;
       errors.push({ source: 'sellside', message: err instanceof Error ? err.message : String(err) });
@@ -983,7 +848,7 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
     // no browser). New filings notify like combos and badge matching signals.
     setStatus({ phase: 'Checking 13D/13G filings…', currentSource: 'Activist radar' });
     try {
-      const events = await withTimeout(fetchActivistFilings(), 45_000, null as FilingEvent[] | null);
+      const events = await withTimeout(() => fetchActivistFilings(message => { checkCancelled(); errors.push({ source: 'activist', message }); }), 45_000, null as FilingEvent[] | null);
       if (events == null) throw new Error('Activist filings timed out');
       if (events.length) newFilingEvents = upsertFilingEvents(events);
       sideCounts.activist = events.length;
@@ -998,7 +863,9 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
     // Hard failure only if every layer fails; then health sees -1 and errors[].
     setStatus({ phase: 'Checking congressional trades…', currentSource: 'Congressional Trades' });
     try {
-      const { trades: rawPoliticianTrades, layer } = await scrapeCongressChain(context);
+      const congress = await withTimeout(() => scrapeCongressChain(context, message => { checkCancelled(); errors.push({ source: 'capitoltrades', message }); }), 120_000, null);
+      if (!congress) throw new Error('Congress collectors timed out');
+      const { trades: rawPoliticianTrades, layer } = congress;
       const { kept: politicianTrades, rejected: badPoliticianTickers, repaired } = sanitizeTickerRows(
         rawPoliticianTrades,
         registered.size ? isRegistered : undefined,
@@ -1089,7 +956,7 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
     // company_tickers.json is already fetched for the CIK map, so this is free.
     if (aggregates.length) {
       try {
-        const names = await withTimeout(getTickerNameMap(), 20_000, new Map<string, string>());
+        const names = await withTimeout(() => getTickerNameMap(), 20_000, new Map<string, string>());
         for (const agg of aggregates) {
           if (!agg.companyName) {
             const name = names.get(agg.ticker.toUpperCase());
@@ -1111,7 +978,7 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
       //    big batch doesn't fire 100+ simultaneous requests (rate-limit/socket burst),
       //    plus a total phase budget so a degraded host can't stall the scrape.
       const enrichmentCompleted = await withTimeout<boolean>(
-        mapLimit(rankedForEnrichment(aggregates), 6, async (agg) => {
+        () => mapLimit(rankedForEnrichment(aggregates), 6, async (agg) => {
           let cached: ReturnType<typeof getTickerMeta> = null;
           try {
             cached = getTickerMeta(agg.ticker, TICKER_META_TTL_MS);
@@ -1151,6 +1018,7 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
             return;
           }
           const e = await fetchStockAnalysisEarnings(agg.ticker);
+          checkCancelled();
           if (e?.marketCap) agg.marketCap = e.marketCap;
           if (e?.sector) agg.sector = e.sector;
           if (e?.earningsDate) {
@@ -1165,6 +1033,7 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
           // per-share price implied by cap ÷ shares outstanding — no extra
           // price parsing, and both inputs are exact-page values.
           const stats = await fetchStockAnalysisStats(agg.ticker);
+          checkCancelled();
           let avgDollarVolume: number | undefined;
           if (stats?.avgVolume && e?.marketCap && stats.sharesOutstanding) {
             avgDollarVolume = stats.avgVolume * (e.marketCap / stats.sharesOutstanding);
@@ -1172,12 +1041,13 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
           // Price context at the buy: drawdown from 52w high as of freshest trade date.
           const asOfTrade =
             agg.trades
-              .filter(isScoringEligible)
+              .filter(t => isScoringEligible(t))
               .map((t) => t.tradeDate)
               .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
               .sort()
               .pop() ?? undefined;
           const pctFrom52wHigh = await fetchDrawdown52w(agg.ticker, asOfTrade);
+          checkCancelled();
           if (
             (stats && (stats.shortPctFloat != null || stats.floatShares != null || avgDollarVolume != null)) ||
             pctFrom52wHigh != null
@@ -1248,7 +1118,7 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
 
         try {
           const earnings = await withTimeout(
-            scrapeFinvizEarnings(context, sortedRemaining, EARNINGS_TICKER_LIMIT, 80_000),
+            () => scrapeFinvizEarnings(context, sortedRemaining, EARNINGS_TICKER_LIMIT, 80_000),
             90_000,
             new Map(),
           );
@@ -1309,7 +1179,7 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
     // scoring notes stay quiet for tickers with no history.
     try {
       const flow = getNetInsiderFlow(agg.ticker, 90);
-      if (flow.buys + flow.sells + flow.form144 > 0) agg.insiderFlow = flow;
+      if (flow.buys + flow.sells + flow.form144 > 0 || flow.unresolvedBuys) agg.insiderFlow = flow;
     } catch {
       /* flow context is best-effort */
     }
@@ -1435,15 +1305,6 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
   // valuation) alone must not mark a productive scrape as failed.
   const persistFailed = errors.some((e) => e.source === 'database');
   const trackedKeys = new Set([...enabled.map((s) => s.key), ...SIDE_KEYS]);
-  const sourceErrorCount = new Set(errors.filter((e) => trackedKeys.has(e.source)).map((e) => e.source)).size;
-  const status: ScrapeResult['status'] = persistFailed
-    ? 'failed'
-    : errors.length === 0
-      ? 'success'
-      : sourceErrorCount < trackedKeys.size
-        ? 'partial'
-        : 'failed';
-
   // Per-source status: prefer explicit scrape status (-1 fail / N rows) over
   // counting only successful pushes (which hid timeouts as empty success).
   const sourceBreakdown: Record<string, number> = {};
@@ -1469,7 +1330,7 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
     for (const src of enabled) {
       const reported = sourceBreakdown[src.key];
       if (typeof reported !== 'number' || reported < 0) continue; // hard-fail sentinel
-      const actual = scrapedBySource[src.key] || 0;
+      const actual = (scrapedBySource[src.key] || 0) + (quality[src.key]?.badTicker ?? 0);
       if (reported !== actual) {
         const msg = `[scrape-metrics] sourceBreakdown mismatch for ${src.key}: breakdown=${reported} scrapedRows=${actual}`;
         console.error(msg);
@@ -1500,6 +1361,15 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
       );
     }
   }
+
+  const sourceErrorCount = new Set(errors.filter((e) => trackedKeys.has(e.source)).map((e) => e.source)).size;
+  const status: ScrapeResult['status'] = persistFailed
+    ? 'failed'
+    : errors.length === 0
+      ? 'success'
+      : sourceErrorCount < trackedKeys.size
+        ? 'partial'
+        : 'failed';
 
   finishScrapeLog(logId, {
     signalsFound,

@@ -112,5 +112,5 @@ export async function scrapeQuiverQuant(context: BrowserContext): Promise<RawIns
       return out;
     },
     { waitUntil: 'domcontentloaded' },
-  ).catch(() => [] as RawInsiderTrade[]);
+  );
 }

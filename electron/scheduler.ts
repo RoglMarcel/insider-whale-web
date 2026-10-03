@@ -1,3 +1,4 @@
+import { marketInstant, upcomingMarketRuns, scheduleRegistration } from './marketSchedule';
 import cron, { type ScheduledTask } from 'node-cron';
 import type { AppSettings } from '../src/types';
 import { app } from 'electron';
@@ -36,106 +37,26 @@ export function stopScheduler(): void {
  * based on current active Daylight Saving Time offsets.
  */
 export function getLocalTimeForET(etTimeStr: string): string {
-  const [etHour, etMinute] = etTimeStr.split(':').map(Number);
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth();
-  const date = now.getDate();
-
-  // Guess UTC time by shifting approx 4 hours
-  const utcGuess = Date.UTC(year, month, date, etHour + 4, etMinute);
-
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: 'numeric',
-    hour12: false,
-  });
-
-  for (let adjust = -3; adjust <= 3; adjust++) {
-    const testTime = utcGuess + adjust * 60 * 60 * 1000;
-    try {
-      const parts = formatter.formatToParts(new Date(testTime));
-      const formattedHour = Number(parts.find((p) => p.type === 'hour')?.value);
-      const formattedMinute = Number(parts.find((p) => p.type === 'minute')?.value);
-
-      if (formattedHour === etHour && formattedMinute === etMinute) {
-        const localDate = new Date(testTime);
-        const localHour = String(localDate.getHours()).padStart(2, '0');
-        const localMinute = String(localDate.getMinutes()).padStart(2, '0');
-        return `${localHour}:${localMinute}`;
-      }
-    } catch {
-      /* ignore */
-    }
-  }
-
-  // Fallback: New York offset is typically -4 (EDT) or -5 (EST)
-  const fallbackHour = (etHour + 4) % 24;
-  return `${String(fallbackHour).padStart(2, '0')}:${String(etMinute).padStart(2, '0')}`;
+  const day = new Intl.DateTimeFormat('en-CA', {timeZone: TIMEZONE,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  const date = marketInstant(day, etTimeStr);
+  return `${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`;
 }
 
-export async function syncTaskScheduler(settings: AppSettings): Promise<void> {
-  if (process.platform !== 'win32') return;
-
-  const exePath = app.getPath('exe');
-  const consolidatedTaskName = 'InsiderWhaleTerminal_DailyScrape';
-
-  // 1. Always delete the old separate tasks to clean up previous versions, and delete consolidated one to recreate
-  const tasksToDelete = [
-    'InsiderWhaleTerminal_MarketOpen',
-    'InsiderWhaleTerminal_Midday',
-    'InsiderWhaleTerminal_MarketClose',
-    consolidatedTaskName
-  ];
-  for (const t of tasksToDelete) {
-    try {
-      await execFileAsync('schtasks', ['/delete', '/tn', t, '/f']);
-    } catch {
-      // Ignore errors if the task doesn't exist
+let taskSync = Promise.resolve();
+export function syncTaskScheduler(settings: AppSettings): Promise<void> {
+  const snapshot = structuredClone(settings);
+  taskSync = taskSync.catch(() => undefined).then(async () => {
+    if (process.platform !== 'win32' || !app.isPackaged) return;
+    const dates = upcomingMarketRuns(snapshot);
+    if (dates.length) {
+      // Register successfully before removing legacy tasks; failure preserves the existing schedule.
+      await execFileAsync('powershell', ['-NoProfile','-NonInteractive','-Command',scheduleRegistration(app.getPath('exe'), dates)], { windowsHide: true });
     }
-  }
-
-  // 2. If schedule is enabled, check which times are enabled
-  if (settings.scheduleEnabled) {
-    const triggers: string[] = [];
-    const days = 'Monday,Tuesday,Wednesday,Thursday,Friday';
-
-    if (settings.scheduleTimes.marketOpen) {
-      const localTimeStr = getLocalTimeForET('09:30');
-      triggers.push(`(New-ScheduledTaskTrigger -Weekly -DaysOfWeek ${days} -At '${localTimeStr}')`);
-    }
-    if (settings.scheduleTimes.midday) {
-      const localTimeStr = getLocalTimeForET('12:00');
-      triggers.push(`(New-ScheduledTaskTrigger -Weekly -DaysOfWeek ${days} -At '${localTimeStr}')`);
-    }
-    if (settings.scheduleTimes.close) {
-      const localTimeStr = getLocalTimeForET('16:00');
-      triggers.push(`(New-ScheduledTaskTrigger -Weekly -DaysOfWeek ${days} -At '${localTimeStr}')`);
-    }
-
-    if (triggers.length > 0) {
-      try {
-        // Escape single quotes for PowerShell single-quoted strings ('' = literal ').
-        const safeExe = exePath.replace(/'/g, "''");
-        const psCommand = `
-          $action = New-ScheduledTaskAction -Execute '${safeExe}' -Argument '--scheduled-scrape'
-          $triggers = @(
-            ${triggers.join(',\n            ')}
-          )
-          $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -WakeToRun
-          Register-ScheduledTask -TaskName '${consolidatedTaskName}' -Action $action -Trigger $triggers -Settings $settings -Force
-        `;
-        await execFileAsync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', psCommand]);
-        console.log(`[scheduler] Created consolidated Windows Task Scheduler task "${consolidatedTaskName}" with ${triggers.length} trigger(s) (StartWhenAvailable=true)`);
-      } catch (err: any) {
-        console.error(`[scheduler] Failed to create consolidated task "${consolidatedTaskName}":`, err.message || err);
-      }
-    }
-  }
+    const obsolete = ['InsiderWhaleTerminal_MarketOpen','InsiderWhaleTerminal_Midday','InsiderWhaleTerminal_MarketClose'];
+    if (!dates.length) obsolete.push('InsiderWhaleTerminal_DailyScrape');
+    for (const name of obsolete) await execFileAsync('schtasks',['/delete','/tn',name,'/f'],{windowsHide:true}).catch(() => undefined);
+  });
+  return taskSync;
 }
 
 /**
@@ -154,6 +75,7 @@ export function configureScheduler(
   });
 
   if (!settings.scheduleEnabled) return;
+  tasks.push(cron.schedule('5 0 * * *', () => { void syncTaskScheduler(settings).catch(console.error); }, { timezone: TIMEZONE }));
 
   const add = (expr: string) => {
     const task = cron.schedule(expr, triggerMain, { timezone: TIMEZONE });

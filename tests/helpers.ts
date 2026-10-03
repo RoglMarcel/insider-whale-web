@@ -1,10 +1,10 @@
 import type { RawInsiderTrade, OptionsActivity, PoliticianTrade, TickerAggregate } from '../src/types';
 
-/** Local calendar date N days ago — `daysBetween` anchors date-only strings to LOCAL midnight. */
+/** UTC calendar date N days ago — `daysBetween` anchors date-only strings to UTC midnight. */
 export function ymd(daysAgo = 0): string {
   const d = new Date();
-  d.setDate(d.getDate() - daysAgo);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  d.setUTCDate(d.getUTCDate() - daysAgo);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
 }
 
 /** The smallest step below a threshold that still reads as "just under" it. */

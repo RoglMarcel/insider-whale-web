@@ -1,3 +1,4 @@
+import { cancellableDelay, checkCancelled } from './cancellation';
 import type { BrowserContext } from 'playwright';
 import type { RawInsiderTrade } from '../../src/types';
 import { withPage, randomDelay } from './browser';
@@ -106,12 +107,13 @@ async function withRetry<T>(url: string, run: () => Promise<T>): Promise<T> {
   } catch (first) {
     const msg = first instanceof Error ? first.message : String(first);
     console.warn(`[openinsider] attempt 1 failed (${msg}) — retrying once: ${url}`);
-    await new Promise((resolve) => setTimeout(resolve, 3_000));
+    await cancellableDelay(3_000);
+    checkCancelled();
     return run();
   }
 }
 
-export async function scrapeOpenInsider(context: BrowserContext): Promise<RawInsiderTrade[]> {
+export async function scrapeOpenInsider(context: BrowserContext, reportIssue: (message: string) => void = console.warn): Promise<RawInsiderTrade[]> {
   const all: RawInsiderTrade[] = [];
   for (const url of URLS) {
     // Deliberately NOT wrapped in `.catch(() => [])`: this is the pipeline's
@@ -173,7 +175,7 @@ export async function scrapeOpenInsider(context: BrowserContext): Promise<RawIns
       // exactly the ones the window exists to cover. Surfacing it beats
       // discovering it as another mystery gap months later.
       if (data.rows.length >= ROW_LIMIT) {
-        console.warn(
+        reportIssue(
           `[openinsider] hit the cnt=${ROW_LIMIT} row cap (${data.rows.length} rows) — ` +
             `the oldest filings in the window are being truncated; narrow fd or add pagination`,
         );

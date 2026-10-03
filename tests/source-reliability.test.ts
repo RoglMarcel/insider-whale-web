@@ -97,6 +97,12 @@ describe('EDGAR coverage', () => {
     const result = scrapeEdgar(context, report);
     await vi.runAllTimersAsync();
     expect(await result).toEqual([]);
-    expect(report).not.toHaveBeenCalled();
+    expect(report).toHaveBeenCalledWith(expect.stringContaining('bounded'));
+    expect(report).not.toHaveBeenCalledWith(expect.stringContaining('failed'));
   });
+});
+
+it('retains a precise source publication instant but does not invent one for date-only feeds', () => {
+  expect(parseAtomFilings(feed(1))[0].revisionAt).toBeUndefined();
+  expect(parseAtomFilings(feed(1).replace('2026-09-22','2026-09-22T15:00:00-04:00'))[0].revisionAt).toBe('2026-09-22T15:00:00-04:00');
 });

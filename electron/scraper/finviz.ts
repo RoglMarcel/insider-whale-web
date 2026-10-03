@@ -65,7 +65,7 @@ export async function scrapeFinviz(context: BrowserContext): Promise<RawInsiderT
       return trades;
     },
     { waitUntil: 'domcontentloaded' },
-  ).catch(() => [] as RawInsiderTrade[]);
+  );
 }
 
 // ──────────────────────────────────────────────────────────────────────────

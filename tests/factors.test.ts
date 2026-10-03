@@ -317,13 +317,13 @@ describe('scoreOneOption — premium ladder', () => {
   it('falls back to notional when premiumTotal is absent', () => {
     expect(scoreOneOption({ ...option(), premiumTotal: undefined, notional: 2_000_000 })).toBe(18);
   });
-  it('missing premium scores the floor rung, never NaN', () => {
-    expect(scoreOneOption({ ...option(), premiumTotal: undefined, notional: undefined as unknown as number })).toBe(3);
+  it('missing premium earns no points', () => {
+    expect(scoreOneOption({ ...option(), premiumTotal: undefined, notional: undefined as unknown as number })).toBe(0);
   });
 });
 
 describe('scoreOneOption — the four multipliers', () => {
-  const base = option({ premiumTotal: 2_000_000, notional: 2_000_000 }); // 18 pts
+  const base = option({ premiumTotal: 2_000_000, notional: 2_000_000, scrapedAt: new Date().toISOString() }); // 18 pts
   it('sweep ×1.6', () => expect(scoreOneOption({ ...base, isSweep: true })).toBeCloseTo(18 * 1.6, 10));
   it('DTE thresholds from both sides', () => {
     expect(scoreOneOption({ ...base, dte: 20 })).toBeCloseTo(18 * 1.5, 10);
@@ -334,7 +334,7 @@ describe('scoreOneOption — the four multipliers', () => {
     expect(scoreOneOption({ ...base, dte: 181 })).toBeCloseTo(18 * 0.8, 10);
   });
   it('an expired contract earns no near-term boost', () => {
-    expect(scoreOneOption({ ...base, dte: -1 })).toBe(18);
+    expect(scoreOneOption({ ...base, dte: -1 })).toBe(0);
     expect(scoreOneOption({ ...base, dte: 0 })).toBeCloseTo(18 * 1.5, 10);
   });
   it('OTM thresholds from both sides', () => {
@@ -353,11 +353,11 @@ describe('scoreOneOption — the four multipliers', () => {
   it('the documented worked example', () => {
     // 2.5M → 18, sweep 1.6, dte 14 → 1.5, otm 20 → 1.4, volOi 12 → 1.3
     expect(
-      scoreOneOption(option({ premiumTotal: 2_500_000, notional: 2_500_000, isSweep: true, dte: 14, otmPercent: 20, volOiRatio: 12 })),
+      scoreOneOption(option({ premiumTotal: 2_500_000, notional: 2_500_000, isSweep: true, scrapedAt: new Date().toISOString(), dte: 14, otmPercent: 20, volOiRatio: 12 })),
     ).toBeCloseTo(78.624, 3);
   });
   it('the ceiling equals MAX_SINGLE_OPTION_POINTS', () => {
-    const maxed = option({ premiumTotal: 1e9, notional: 1e9, isSweep: true, dte: 1, otmPercent: 99, volOiRatio: 99 });
+    const maxed = option({ premiumTotal: 1e9, notional: 1e9, isSweep: true, scrapedAt: new Date().toISOString(), dte: 1, otmPercent: 99, volOiRatio: 99 });
     expect(scoreOneOption(maxed)).toBeCloseTo(MAX_SINGLE_OPTION_POINTS, 6);
   });
   it('non-finite detail fields never produce NaN', () => {
