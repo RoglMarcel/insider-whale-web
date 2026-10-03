@@ -45,3 +45,16 @@ export function localizeRole(value: string, language: Lang): string {
   if (language !== 'de') return value;
   return value.replace(/Chief Accounting Officer/gi, 'Leiter Rechnungswesen').replace(/Chief Investment Officer/gi, 'Leiter Kapitalanlagen').replace(/Chief Technology Officer/gi, 'CTO').replace(/Chief Legal Officer/gi, 'Leiter Recht').replace(/Executive Vice President/gi, 'Geschäftsführender Vizepräsident').replace(/Senior Vice President/gi, 'Leitender Vizepräsident').replace(/Vice President/gi, 'Vizepräsident').replace(/Executive Chairman/gi, 'Geschäftsführender Vorsitzender').replace(/Chief Executive Officer/gi, 'CEO').replace(/Chief Financial Officer/gi, 'CFO').replace(/Chief Operating Officer/gi, 'COO').replace(/Chairman/gi, 'Vorsitzender').replace(/President/gi, 'Präsident').replace(/Director/gi, 'Direktor').replace(/Co[- ]Founder/gi, 'Mitgründer').replace(/10% Owner/gi, '10-%-Anteilseigner').replace(/Officer/gi, 'Führungskraft').replace(/Treasurer/gi, 'Finanzverwalter').replace(/Secretary/gi, 'Gesellschaftssekretär').replace(/\band\b/gi, 'und');
 }
+
+/** Translate classifier labels only; transaction classification and source values stay intact. */
+export function localizeTransactionLabel(value: string, language: Lang): string {
+  if (language !== 'de') return value;
+  const labels: Record<string, string> = {
+    '10b5-1 Sale': '10b5-1-Verkauf', '10b5-1 Buy': '10b5-1-Kauf',
+    'Exercise + Sale': 'Ausübung + Verkauf', 'Exercise + Hold': 'Ausübung + Halten',
+    'Gift Given': 'Schenkung abgegeben', 'Gift Received': 'Schenkung erhalten',
+    'Stock Award': 'Aktienzuteilung', 'Derivative Conversion': 'Derivateumwandlung',
+    'Sale': 'Verkauf', 'Open Market Buy': 'Kauf am offenen Markt', 'Unknown': 'Unbekannt',
+  };
+  return labels[value] ?? value.replace(/^Unknown \(/, 'Unbekannt (');
+}

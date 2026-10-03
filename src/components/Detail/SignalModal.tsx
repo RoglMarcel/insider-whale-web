@@ -313,7 +313,7 @@ export function SignalModal() {
                     letterSpacing: '0.02em',
                   }}
                 >
-                   Big Player
+                   {t('card.bigPlayer')}
                 </span>
               )}
               {!chartOnly && signal && <ConvictionBadge level={signal.convictionLevel} />}
@@ -375,7 +375,7 @@ export function SignalModal() {
           ) : loadingSignal ? (
             <div className="py-16 flex flex-col items-center justify-center gap-3">
               <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--accent-blue)] border-t-transparent" />
-              <span className="text-xs text-secondary font-medium">Loading signal…</span>
+              <span className="text-xs text-secondary font-medium">{t('modal.loadingSignal')}</span>
             </div>
           ) : signal ? (
             <>
@@ -392,7 +392,7 @@ export function SignalModal() {
                     border: '1px solid color-mix(in srgb, var(--accent-purple) 35%, transparent)',
                   }}
                 >
-                  POLITICIAN + INSIDER — congressional buying alongside insider buying
+                  {t('modal.polInsiderBanner')}
                 </div>
               )}
               {signal.breakdown?.politicianComboTier === 'POLITICIAN_OPTIONS' && (
@@ -404,7 +404,7 @@ export function SignalModal() {
                     border: '1px solid color-mix(in srgb, var(--accent-blue) 35%, transparent)',
                   }}
                 >
-                  POLITICIAN + OPTIONS — congressional buying alongside unusual bullish flow
+                  {t('modal.polOptionsBanner')}
                 </div>
               )}
 

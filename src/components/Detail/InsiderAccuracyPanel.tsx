@@ -1,4 +1,5 @@
 import type { InsiderTrackRecord, InsiderHistoricalTrade } from '@/types';
+import { localizeRole } from '@/lib/signal-language';
 import { useI18n } from '@/hooks/useI18n';
 import { accuracyColor, formatPercent } from '@/lib/format';
 
@@ -45,7 +46,7 @@ export function InsiderAccuracyPanel({
   loading: boolean;
 }) {
   const loaded = insiders.map((ins) => ({ ins, rec: records[ins.key] }));
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const withData = loaded.filter((x) => x.rec && x.rec.totalTrades > 0);
 
   // Best insider by 3-month accuracy.
@@ -67,7 +68,7 @@ export function InsiderAccuracyPanel({
             <SkeletonRow />
           </div>
         ) : loaded.length === 0 ? (
-          <div className="px-4 py-5 text-sm text-secondary">No insider history for this signal.</div>
+          <div className="px-4 py-5 text-sm text-secondary">{t('acc.noHistory')}</div>
         ) : (
           loaded.map(({ ins, rec }, i) => (
             <div
@@ -83,7 +84,7 @@ export function InsiderAccuracyPanel({
                       className="rounded-md px-1.5 py-0.5 text-xs"
                       style={{ background: 'var(--bg-glass)', color: 'var(--text-secondary)' }}
                     >
-                      {ins.role}
+                      {localizeRole(ins.role, language)}
                     </span>
                   )}
                   {rec?.pattern === 'routine' && (
@@ -92,7 +93,7 @@ export function InsiderAccuracyPanel({
                       title={t('acc.calendarClustered')}
                       style={{ background: 'var(--bg-glass)', color: 'var(--text-secondary)' }}
                     >
-                       routine buyer
+                       {t('acc.routineBuyer')}
                     </span>
                   )}
                   {rec?.pattern === 'opportunistic' && (
@@ -104,7 +105,7 @@ export function InsiderAccuracyPanel({
                         background: 'color-mix(in srgb, var(--accent-green) 12%, transparent)',
                       }}
                     >
-                       first buy
+                       {t('acc.firstBuy')}
                     </span>
                   )}
                 </div>

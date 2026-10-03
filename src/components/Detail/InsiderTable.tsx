@@ -1,4 +1,4 @@
-import { localizeRole } from '@/lib/signal-language';
+import { localizeRole, localizeTransactionLabel } from '@/lib/signal-language';
 import { useState } from 'react';
 import { ExternalLinkIcon } from '@/components/UI/icons';
 import { useI18n } from '@/hooks/useI18n';
@@ -48,7 +48,7 @@ function TrackRecordModal({ record, onClose }: { record: InsiderTrackRecord; onC
         </button>
 
         <h3 className="mb-4 pr-8 text-sm font-extrabold uppercase tracking-wider text-secondary">
-          {record.insiderName} — Historical Trades
+          {record.insiderName} — {tr('tbl.historicalTrades')}
         </h3>
 
         {record.error ? (
@@ -107,6 +107,7 @@ function TrackRecordCell({
   open: boolean;
   onToggle: () => void;
 }) {
+  const { t: tr } = useI18n();
   if (loading && !record) return <span className="skeleton inline-block h-4 w-16" />;
   if (!record || record.totalTrades === 0) return <span className="text-secondary">—</span>;
   const pct = Math.round(record.accuracy3m * 100);
@@ -120,7 +121,7 @@ function TrackRecordCell({
         }}
         className="inline-flex items-center font-semibold tabular-nums hover:underline"
         style={{ color, minHeight: 44 }}
-        title={`Beat the S&P 500 on ${record.profitable3m} of ${record.totalTrades} buys (~3-month). Click for history.`}
+        title={tr('tbl.trackRecordTitle', { hit: record.profitable3m, total: record.totalTrades })}
       >
         {record.profitable3m}/{record.totalTrades}  ({pct}%)
       </button>
@@ -147,7 +148,7 @@ export function InsiderTable({
   return (
     <section>
       <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-secondary">
-        Insider Trades ({trades.length})
+        {tr('tbl.tradesTitle', { n: trades.length })}
       </h3>
       {/* Mobile: one card per trade. A 7-column table cannot fit 360px — it
           previously overhung the viewport by ~280px and was unreachable, since
@@ -175,7 +176,7 @@ export function InsiderTable({
                   className="shrink-0 whitespace-nowrap rounded-md px-2 py-1 text-xs font-bold"
                   style={{ color, background: `color-mix(in srgb, ${color} 14%, transparent)` }}
                 >
-                  {cls.label}
+                  {localizeTransactionLabel(cls.label, language)}
                 </span>
               </div>
               <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[13px]">
@@ -213,7 +214,7 @@ export function InsiderTable({
                   className="mt-2 inline-flex items-center text-[13px] font-semibold"
                   style={{ minHeight: 44, color: 'var(--accent-blue)' }}
                 >
-                  View filing <ExternalLinkIcon size={13} />
+                  {tr('tbl.viewFiling')} <ExternalLinkIcon size={13} />
                 </a>
               )}
             </div>
@@ -266,7 +267,7 @@ export function InsiderTable({
                           className="inline-block whitespace-nowrap rounded-md px-2 py-0.5 text-xs font-bold not-italic cursor-pointer"
                           style={{ color, background: `color-mix(in srgb, ${color} 14%, transparent)` }}
                         >
-                          {cls.label} <ExternalLinkIcon size={12} />
+                          {localizeTransactionLabel(cls.label, language)} <ExternalLinkIcon size={12} />
                         </span>
                       </a>
                     ) : (
@@ -275,7 +276,7 @@ export function InsiderTable({
                         style={{ color, background: `color-mix(in srgb, ${color} 14%, transparent)` }}
                         title={cls.tier === 'reduced' ? tr('tbl.reducedWeight') : undefined}
                       >
-                        {cls.label}
+                        {localizeTransactionLabel(cls.label, language)}
                       </span>
                     )}
                   </td>
