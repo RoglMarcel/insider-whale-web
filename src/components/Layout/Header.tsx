@@ -20,6 +20,8 @@ const VIEW_META: Record<string, { title: TKey; subtitle: TKey }> = {
 };
 
 export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
+  const initialized = useStore((s) => s.initialized);
+  const signalError = useStore((s) => s.scrapeStatus.error?.includes('signals.json'));
   const view = useStore((s) => s.view);
   const signals = useStore((s) => s.signals);
   const openSignal = useStore((s) => s.openSignal);
@@ -112,7 +114,7 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
           </button>
           <Sheet open={bellOpen} onClose={closeNotifications} title={t('header.notifications')} maxHeight="min(80svh, 620px)">
             <p className="mb-3 text-xs text-secondary">{t('header.highConviction')}</p>
-            {highSignals.length === 0 ? <div className="empty-state"><BellIcon size={26} aria-hidden="true" /><p>{t('header.noHighConviction')}</p></div> :
+            {!initialized ? <div className="empty-state">{t('common.loading')}</div> : signalError && highSignals.length === 0 ? <div className="empty-state">{t('ui.loadError')}</div> : highSignals.length === 0 ? <div className="empty-state"><BellIcon size={26} aria-hidden="true" /><p>{t('header.noHighConviction')}</p></div> :
               <ul className="notification-list">{highSignals.map((signal) => <li key={signal.ticker}>
                 <button type="button" onClick={() => { closeNotifications(); openSignal(signal.ticker); }}>
                   <span><strong>{signal.ticker}</strong><span className="text-xs text-secondary">{signal.companyName}</span></span>

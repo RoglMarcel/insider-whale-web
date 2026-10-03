@@ -55,9 +55,9 @@ function Group<T extends string>({
               className="rounded-lg px-3.5 text-[15px] font-semibold transition-colors"
               style={{
                 minHeight: 44,
-                background: active ? 'var(--accent-blue)' : 'var(--bg-glass)',
-                color: active ? '#fff' : 'var(--text-primary)',
-                border: `1px solid ${active ? 'transparent' : 'var(--border-glass)'}`,
+                background: active ? 'var(--bg-glass-hover)' : 'var(--bg-glass)',
+                color: 'var(--text-primary)',
+                border: `1px solid ${active ? 'var(--border-active)' : 'var(--border-glass)'}`,
               }}
             >
               {o.label}

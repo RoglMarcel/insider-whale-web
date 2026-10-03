@@ -53,7 +53,7 @@ function Segmented<T extends string>({
             className={`rounded-lg font-semibold transition-all ${size === 'sm' ? 'px-2.5 py-1 text-xs' : 'px-3.5 py-1.5 text-sm'}`}
             style={
               active
-                ? { background: 'var(--accent-blue)', color: '#fff' }
+                ? { background: 'var(--bg-glass-hover)', color: 'var(--text-primary)' }
                 : { color: 'var(--text-secondary)', background: 'transparent' }
             }
           >

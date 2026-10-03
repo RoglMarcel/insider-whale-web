@@ -382,7 +382,7 @@ export function PortfolioView() {
                 {/* Before opening day "run a sync to compute it" is wrong advice:
                     there is nothing to compute yet, and the hosted build has no
                     button to press either. */}
-                {!equity.length && config.inceptionDate
+                {!equity.length && config.inceptionDate && config.inceptionDate > new Date().toISOString().slice(0, 10)
                   ? t('pf.headline.opensOn', { date: formatDate(config.inceptionDate) })
                   : t(isWeb ? 'ui.noPortfolioHint' : 'pf.headline.noDataHint')}
               </div>

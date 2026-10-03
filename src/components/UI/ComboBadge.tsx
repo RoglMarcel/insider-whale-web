@@ -6,7 +6,7 @@ export function ComboBadge({ className = '', pulse = true }: { className?: strin
   return (
     <span
       className={`badge ${pulse ? 'combo-pulse' : ''} ${className}`}
-      style={{ color: '#fff', background: 'var(--accent-blue)', border: 'none' }}
+      style={{ color: 'var(--accent-blue)', background: 'var(--bg-glass-hover)', border: '1px solid var(--border-glass)' }}
       title={t('badge.comboTitle')}
     >
        {t('badge.combo')}
