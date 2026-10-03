@@ -299,7 +299,7 @@ export function PortfolioView() {
                 {pct(maxWindow?.diff)}
               </div>
               <div className="text-xs text-secondary">
-                {meta.firstDate ? t('pf.headline.sinceStart', { date: formatDate(meta.firstDate) }) : ''}
+                {meta.firstDate ? t('pf.headline.sinceStart', { date: formatDate(meta.firstDate, language) }) : ''}
               </div>
             </div>
           </div>
@@ -320,7 +320,7 @@ export function PortfolioView() {
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-secondary">
-          {meta.priceAsOf && <span>{t('pf.headline.asOf', { date: formatDate(meta.priceAsOf) })}</span>}
+          {meta.priceAsOf && <span>{t('pf.headline.asOf', { date: formatDate(meta.priceAsOf, language) })}</span>}
           {meta.lastRun && <span>· {t('pf.meta.lastRun', { when: timeAgo(meta.lastRun, language) })}</span>}
           {!isWeb && meta.readOnly && <span>· {t('pf.meta.readOnly')}</span>}
         </div>
@@ -383,7 +383,7 @@ export function PortfolioView() {
                     there is nothing to compute yet, and the hosted build has no
                     button to press either. */}
                 {!equity.length && config.inceptionDate && config.inceptionDate > new Date().toISOString().slice(0, 10)
-                  ? t('pf.headline.opensOn', { date: formatDate(config.inceptionDate) })
+                  ? t('pf.headline.opensOn', { date: formatDate(config.inceptionDate, language) })
                   : t(isWeb ? 'ui.noPortfolioHint' : 'pf.headline.noDataHint')}
               </div>
             </div>
@@ -403,14 +403,14 @@ export function PortfolioView() {
                   benchmark: t('pf.chart.benchmark'),
                   idle: t('pf.chart.idle'),
                   difference: t('pf.chart.difference'),
-                  liveFrom: meta.liveStart ? t('pf.chart.liveFrom', { date: formatDate(meta.liveStart) }) : '',
+                  liveFrom: meta.liveStart ? t('pf.chart.liveFrom', { date: formatDate(meta.liveStart, language) }) : '',
                   buy: t('pf.chart.buy'),
                   sell: t('pf.chart.sell'),
                   more: (n: number) => t('pf.chart.moreTrades', { n }),
                 }}
                 formatValue={(v) => (unit === '$' ? money(v) : pct(v, 1))}
                 formatTick={tickFormatter}
-                formatDate={(d) => formatDate(d)}
+                formatDate={(d) => formatDate(d, language)}
               />
             </Suspense>
           )}
@@ -462,7 +462,7 @@ export function PortfolioView() {
               <> · {t('pf.quality.untradable', { tickers: meta.untradableTickers.join(', ') })}</>
             )}
           </span>
-          {meta.lastRun && <span className="ml-auto text-secondary">{formatDateTime(meta.lastRun)}</span>}
+          {meta.lastRun && <span className="ml-auto text-secondary">{formatDateTime(meta.lastRun, language)}</span>}
         </div>
       </GlassCard>
     </div>

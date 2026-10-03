@@ -9,7 +9,7 @@ import { RefreshIcon, ExternalLinkIcon, AlertIcon, NewsIcon } from '@/components
 import type { NewsItem } from '@/types';
 
 export function NewsView() {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [news, setNews] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [isPending, startTransition] = useTransition();
@@ -217,7 +217,7 @@ export function NewsView() {
                 
                 <span
                   className="shrink-0 text-xs text-secondary font-medium select-none"
-                  title={formatDateTime(item.timestamp)}
+                  title={formatDateTime(item.timestamp, language)}
                 >
                   {timeAgo(item.timestamp)}
                 </span>

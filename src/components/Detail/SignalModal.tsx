@@ -80,7 +80,7 @@ export function SignalModal() {
   const { isWatched, toggleWatch } = useWatchlist();
   const [signal, setSignal] = useState<Signal | null>(null);
   const [loadingSignal, setLoadingSignal] = useState(true);
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [records, setRecords] = useState<Record<string, InsiderTrackRecord>>({});
   const [trLoading, setTrLoading] = useState(false);
   const fetchedRef = useRef<string | null>(null);
@@ -438,10 +438,10 @@ export function SignalModal() {
 
               {/* Features 1 + 5 — dates & earnings */}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <InfoCell label={t('modal.tradeDate')}>{formatDate(signal.tradeDate)}</InfoCell>
+                <InfoCell label={t('modal.tradeDate')}>{formatDate(signal.tradeDate, language)}</InfoCell>
                 <InfoCell label={t('modal.filingDate')}>
                   <span className="inline-flex items-center gap-1">
-                    {formatDate(signal.filingDate)}
+                    {formatDate(signal.filingDate, language)}
                     {signal.lateFiling && (
                       <span className="neutral-badge">{t('modal.lateFiling')}</span>
                     )}
@@ -451,7 +451,7 @@ export function SignalModal() {
                   {localEarningsDate ? (
                     <div>
                        <div>
-                         {formatDate(localEarningsDate)}
+                         {formatDate(localEarningsDate, language)}
                          {localEarningsTiming ? ` · ${localEarningsTiming}` : ''}
                          {localDaysToEarnings != null && localDaysToEarnings >= 0 ? ` (${localDaysToEarnings}d)` : ''}
                        </div>
@@ -473,7 +473,7 @@ export function SignalModal() {
                   className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl px-4 py-3 text-sm"
                   style={{ background: 'var(--bg-glass)', border: '1px solid var(--border-glass)' }}
                 >
-                  <span className="text-secondary">{t('modal.sinceSignal', { date: formatDate(performance.sinceDate) })}</span>
+                  <span className="text-secondary">{t('modal.sinceSignal', { date: formatDate(performance.sinceDate, language) })}</span>
                   <span
                     className="font-bold tabular-nums"
                     style={{ color: (performance.returnPct ?? 0) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}
@@ -522,7 +522,7 @@ export function SignalModal() {
                         style={{ background: 'var(--bg-glass)', border: '1px solid var(--border-glass)' }}
                       >
                         <div>{displayText(n.text)}</div>
-                        <div className="mt-1 text-[11px] text-secondary">{formatDate(n.timestamp)} · @WhaleInsider</div>
+                        <div className="mt-1 text-[11px] text-secondary">{formatDate(n.timestamp, language)} · @WhaleInsider</div>
                       </a>
                     ))}
                   </div>

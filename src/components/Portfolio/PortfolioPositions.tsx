@@ -39,7 +39,7 @@ const EXIT_COLORS: Record<PortfolioExitReason, string> = {
 };
 
 function ExitBadge({ reason }: { reason: PortfolioExitReason }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const color = EXIT_COLORS[reason];
   return (
     <span
@@ -65,7 +65,7 @@ function TickerButton({ ticker }: { ticker: string }) {
 }
 
 function MoreButton({ total, expanded, onToggle }: { total: number; expanded: boolean; onToggle: () => void }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   if (total <= PAGE) return null;
   return (
     <button type="button" className="btn mt-3 w-full" onClick={onToggle}>
@@ -75,7 +75,7 @@ function MoreButton({ total, expanded, onToggle }: { total: number; expanded: bo
 }
 
 export function OpenPositionsTable({ positions }: { positions: PortfolioOpenPosition[] }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   return (
     <GlassCard className="p-4 lg:p-6">
       <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-secondary">
@@ -105,7 +105,7 @@ export function OpenPositionsTable({ positions }: { positions: PortfolioOpenPosi
                   <td className="py-2 pr-3">
                     <TickerButton ticker={p.ticker} />
                   </td>
-                  <td className="py-2 pr-3 whitespace-nowrap text-secondary">{formatDate(p.entryDate)}</td>
+                  <td className="py-2 pr-3 whitespace-nowrap text-secondary">{formatDate(p.entryDate, language)}</td>
                   <td className="py-2 pr-3 text-right tabular-nums">{p.entryScore.toFixed(1)}</td>
                   <td className="py-2 pr-3 text-right tabular-nums text-secondary">{(p.weight * 100).toFixed(1)}%</td>
                   <td className="py-2 pr-3 text-right tabular-nums">{formatPrice(p.entryPrice)}</td>
@@ -113,7 +113,7 @@ export function OpenPositionsTable({ positions }: { positions: PortfolioOpenPosi
                     {formatPrice(p.lastPrice)}
                     {p.priceStale && (
                       <div className="text-xs text-secondary">
-                        {p.priceAsOf ? t('pf.price.stale', { date: formatDate(p.priceAsOf) }) : t('pf.price.unavailable')}
+                        {p.priceAsOf ? t('pf.price.stale', { date: formatDate(p.priceAsOf, language) }) : t('pf.price.unavailable')}
                       </div>
                     )}
                   </td>
@@ -144,7 +144,7 @@ export function OpenPositionsTable({ positions }: { positions: PortfolioOpenPosi
 }
 
 export function ClosedTradesTable({ trades }: { trades: PortfolioClosedPosition[] }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const shown = expanded ? trades : trades.slice(0, PAGE);
 
@@ -185,8 +185,8 @@ export function ClosedTradesTable({ trades }: { trades: PortfolioClosedPosition[
                     <td className="py-2 pr-3">
                       <TickerButton ticker={p.ticker} />
                     </td>
-                    <td className="py-2 pr-3 whitespace-nowrap text-secondary">{formatDate(p.entryDate)}</td>
-                    <td className="py-2 pr-3 whitespace-nowrap text-secondary">{formatDate(p.exitDate)}</td>
+                    <td className="py-2 pr-3 whitespace-nowrap text-secondary">{formatDate(p.entryDate, language)}</td>
+                    <td className="py-2 pr-3 whitespace-nowrap text-secondary">{formatDate(p.exitDate, language)}</td>
                     <td className="py-2 pr-3 text-right tabular-nums">{p.entryScore.toFixed(1)}</td>
                     <td className="py-2 pr-3 text-right tabular-nums">{formatPrice(p.entryPrice)}</td>
                     <td className="py-2 pr-3 text-right tabular-nums">{formatPrice(p.exitPrice)}</td>

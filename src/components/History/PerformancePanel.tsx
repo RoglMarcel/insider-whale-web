@@ -14,7 +14,7 @@ const pct = (v: number): string => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
 const alphaColor = (v: number): string => (v >= 0 ? 'var(--accent-green)' : 'var(--accent-red)');
 
 export function PerformancePanel() {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [report, setReport] = useState<PerformanceReport | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,8 +64,8 @@ export function PerformancePanel() {
         <>
           <div className="mb-3 text-xs text-secondary">
             {report.nObservations} deduplicated observations
-            {report.fromDate ? ` · ${formatDate(report.fromDate)} → ${formatDate(report.toDate)}` : ''} · computed{' '}
-            {formatDateTime(report.ranAt)}
+            {report.fromDate ? ` · ${formatDate(report.fromDate, language)} → ${formatDate(report.toDate, language)}` : ''} · computed{' '}
+            {formatDateTime(report.ranAt, language)}
             {report.ic10 != null && (
               <>
                 {' '}

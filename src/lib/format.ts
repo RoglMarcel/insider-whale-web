@@ -58,18 +58,18 @@ export function partyMeta(party: string | null | undefined): { initial: string; 
   return { initial: '—', colorClass: 'text-gray-400', color: 'var(--text-secondary)' };
 }
 
-export function formatDate(iso: string | null | undefined): string {
+export function formatDate(iso: string | null | undefined, lang: Lang = 'en'): string {
   if (!iso) return '—';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return d.toLocaleDateString(lang === 'de' ? 'de-DE' : 'en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-export function formatDateTime(iso: string | null | undefined): string {
+export function formatDateTime(iso: string | null | undefined, lang: Lang = 'en'): string {
   if (!iso) return '—';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleString('en-US', {
+  return d.toLocaleString(lang === 'de' ? 'de-DE' : 'en-US', {
     month: 'short',
     day: 'numeric',
     hour: 'numeric',

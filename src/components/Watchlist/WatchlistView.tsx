@@ -62,7 +62,7 @@ export function WatchlistView() {
   const chartData = useMemo(
     () =>
       history.map((h) => ({
-        time: formatDateTime(h.scrapedAt),
+        time: formatDateTime(h.scrapedAt, language),
         score: h.score,
       })),
     [history],

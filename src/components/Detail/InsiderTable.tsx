@@ -69,7 +69,7 @@ function TrackRecordModal({ record, onClose }: { record: InsiderTrackRecord; onC
               <tbody>
                 {record.recentTrades.map((t, i) => (
                   <tr key={i} style={{ borderTop: '1px solid var(--border-glass)' }}>
-                    <td className="py-2.5 px-1 text-secondary whitespace-nowrap">{formatDate(t.tradeDate)}</td>
+                    <td className="py-2.5 px-1 text-secondary whitespace-nowrap">{formatDate(t.tradeDate, language)}</td>
                     <td className="py-2.5 px-1 font-semibold">{t.ticker}</td>
                     <td className="py-2.5 px-1 text-right tabular-nums">
                       {formatUSD(t.value ?? (t.shares && t.purchasePrice ? t.shares * t.purchasePrice : undefined))}
@@ -181,7 +181,7 @@ export function InsiderTable({
               <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[13px]">
                 <div className="flex justify-between gap-2">
                   <dt className="text-secondary">{tr('tbl.date')}</dt>
-                  <dd className="tabular-nums">{formatDate(t.tradeDate) || '—'}</dd>
+                  <dd className="tabular-nums">{formatDate(t.tradeDate, language) || '—'}</dd>
                 </div>
                 <div className="flex justify-between gap-2">
                   <dt className="text-secondary">{tr('tbl.price')}</dt>
@@ -247,7 +247,7 @@ export function InsiderTable({
                   style={{ borderTop: '1px solid var(--border-glass)', opacity: excluded ? 0.55 : 1 }}
                   className={excluded ? 'italic' : ''}
                 >
-                  <td className="whitespace-nowrap px-3 py-2 text-secondary">{formatDate(t.tradeDate) || '—'}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-secondary">{formatDate(t.tradeDate, language) || '—'}</td>
                   <td className="px-3 py-2">
                     <div className="font-medium not-italic">{t.insiderName}</div>
                     <div className="text-xs text-secondary">{localizeRole(t.role || '—', language)}</div>

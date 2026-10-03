@@ -62,7 +62,7 @@ function PoliticianRow({ t }: { t: PoliticianTrade }) {
         <span className="font-semibold" style={{ color: isBuy ? 'var(--accent-green)' : 'var(--accent-red)' }}>
           {isBuy ? tr('common.buy') : tr('common.sell')} · {formatUSD(t.amountMidpoint)}
         </span>
-        <span className="text-xs text-secondary" title={formatDate(t.tradeDate)}>
+        <span className="text-xs text-secondary" title={formatDate(t.tradeDate, language)}>
           {age == null ? '—' : timeAgo(t.tradeDate, language)}
         </span>
         <span

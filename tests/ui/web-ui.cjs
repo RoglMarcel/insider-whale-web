@@ -58,7 +58,7 @@ async function checkPage(page, label) {
   await page.screenshot({ path: path.join(out, `${label}.png`) });
 }
 async function navigate(page, width, view) {
-  const labels = { dashboard: /^Alerts$/, portfolio: /^(Paper|Portfolio)$/, history: /^History$/, settings: /^(Setup|Settings)$/, watchlist: /\b(Watch|Watchlist)\b/ };
+  const labels = { dashboard: /^Alerts$/, portfolio: /^(Paper|Portfolio)$/, history: /^(History|Verlauf)$/, settings: /^(Setup|Settings)$/, watchlist: /\b(Watch|Watchlist)\b/ };
   if (width < 768) await page.locator('nav').filter({ has: page.locator('button[aria-current]') }).getByRole('button', { name: labels[view] }).click();
   else {
     if (width < 1024) await page.getByRole('button', { name: /^(Open menu|Menü öffnen)$/, exact: true }).click();
@@ -175,6 +175,8 @@ async function contextPage(width, mode = 'full') {
     await page.getByRole('combobox', { name: 'Language', exact: true }).selectOption('de');
     await page.getByText('Quellen der vorhandenen Alerts', { exact: true }).waitFor();
     await checkPage(page, `${width}-settings-de`);
+    await navigate(page, width, 'history');
+    assert(!/\bOct\b|\bSep\b|\bAM\b|\bPM\b/.test(await page.locator('main').innerText()), 'German dates and time format in history');
     await navigate(page, width, 'dashboard');
     await page.locator('main [role="button"][aria-label="NVDA"]').click();
     await page.getByText('Fair Value · 26 Bewertungsmodelle',{exact:true}).waitFor();

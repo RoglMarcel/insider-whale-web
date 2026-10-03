@@ -9,7 +9,7 @@ import { SourceHealthPanel } from '@/components/UI/SourceHealth';
 import { isWeb } from '@/lib/ipc';
 
 export function HistoryView() {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const logs = useStore((s) => s.scrapeLogs);
   const loadError = useStore((s) => s.scrapeStatus.error?.includes('meta.json'));
   const initialized = useStore((s) => s.initialized);
@@ -31,7 +31,7 @@ export function HistoryView() {
             return <details className="history-entry" key={`${log.id ?? index}-${log.startedAt}`}>
               <summary>
                 <HistoryIcon size={18} aria-hidden="true" />
-                <span className="history-entry-date">{formatDateTime(log.startedAt)}<span className="text-xs text-secondary">{t('ui.historySources', { n: log.sourcesScraped.length })}</span></span>
+                <span className="history-entry-date">{formatDateTime(log.startedAt, language)}<span className="text-xs text-secondary">{t('ui.historySources', { n: log.sourcesScraped.length })}</span></span>
                 <span className="history-entry-count">{log.signalsFound}<span className="text-xs text-secondary">{t('ui.alerts')}</span></span>
                 <span className="neutral-badge">{t(log.status === 'success' ? 'ui.available' : log.status === 'partial' ? 'ui.partial' : 'ui.unavailable')}</span>
               </summary>
