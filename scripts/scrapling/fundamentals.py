@@ -128,7 +128,6 @@ def gurufocus(ticker):
     # TTM earnings and analyst growth are visibly labeled in the public tables.
     # We retain observation-date precision rather than inventing a report date.
     observed=dt.datetime.now(dt.timezone.utc).date().isoformat();facts={}
-    mapping={'eps-diluated':('eps','perShare'), 'earnings-growth-rate':('expectedEpsGrowth','fraction')}
     for tr in page.css('tr'):
         cells=tr.css('td')
         if len(cells)<3:continue
@@ -194,7 +193,9 @@ def main():
             if url:
                 try:collected.append(macrotrends(ticker,url))
                 except Exception:print(f'macrotrends: {ticker}: no supported public dataset')
-            if collected:stocks[ticker]=collected
+            if collected:
+                refreshed={d['provider'] for d in collected}
+                stocks[ticker]=[d for d in stocks.get(ticker,[]) if d.get('provider') not in refreshed]+collected
         for provider in ['stockrow','gurufocus','tikr','macrotrends']:
             file=import_dir/provider/(ticker+'.json')
             if file.exists():

@@ -10,14 +10,14 @@ function fact(key:string,input:unknown):Fact|null {
   if(!KNOWN.has(key)||!input||typeof input!=='object')return null;
   const f=input as Fact;
   const expected=key==='shares'?'shares':PER_SHARE.has(key)?'perShare':FRACTIONS.has(key)?'fraction':RATIOS.has(key)?'ratio':'currency';
-  if(typeof f.value!=='number'||!Number.isFinite(f.value)||Math.abs(f.value)>1e16||f.unit!==expected||typeof f.period!=='string'||f.period.length>80)return null;
+  if(typeof f.value!=='number'||!Number.isFinite(f.value)||Math.abs(f.value)>1e16||f.unit!==expected||typeof f.period!=='string'||! /^(?:(?:TTM|forecast) observed )?\d{4}-\d{2}(?:-\d{2})?$/.test(f.period))return null;
   return {value:f.value,unit:f.unit,period:f.period,...(f.derived===true?{derived:true}:{})};
 }
 /** Strict allowlist output also strips all unknown imported fields, including cookies, sessions and tokens. */
 export function validateFundamentals(input:unknown,ticker:string):Fundamentals|null {
   if(!input||typeof input!=='object')return null;
   const d=input as Fundamentals;
-  if(d.ticker!==ticker||!PROVIDERS.includes(d.provider)||!/^\d{4}-\d{2}(?:-\d{2})?$/.test(d.statementDate)||!Number.isFinite(Date.parse(d.fetchedAt))||!['USD','EUR','GBP','CAD','CHF','JPY','AUD','HKD'].includes(d.currency))return null;
+  if(d.ticker!==ticker||!PROVIDERS.includes(d.provider)||!/^\d{4}-\d{2}(?:-\d{2})?$/.test(d.statementDate)||!Number.isFinite(Date.parse(d.statementDate))||!Number.isFinite(Date.parse(d.fetchedAt))||!['USD','EUR','GBP','CAD','CHF','JPY','AUD','HKD'].includes(d.currency))return null;
   let url:URL;try{url=new URL(d.url);}catch{return null;}
   if(url.protocol!=='https:'||url.username||url.password||url.search||url.hash||!DOMAINS[d.provider].includes(url.hostname))return null;
   const facts:Record<string,Fact>={};for(const [key,value]of Object.entries(d.facts??{})){const f=fact(key,value);if(f)facts[key]=f;}
