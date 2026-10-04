@@ -1,3 +1,4 @@
+import { localizeRole } from '@/lib/signal-language';
 import type { MouseEvent } from 'react';
 import { type Signal, daysBetween, classifyTransaction } from '@/types';
 import { GlassCard } from '@/components/UI/GlassCard';
@@ -44,7 +45,7 @@ function Pill({ text, color, title }: { text: string; color: string; title?: str
 export function SignalCard({ signal }: { signal: Signal }) {
   const openSignal = useStore((s) => s.openSignal);
   const { isWatched, toggleWatch } = useWatchlist();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const watched = isWatched(signal.ticker);
 
   // Insider display fields — derive from raw trades so empty topInsiderRole /
@@ -116,7 +117,7 @@ export function SignalCard({ signal }: { signal: Signal }) {
   };
 
   const cardBorderStyle = isMega
-    ? { border: '1px solid color-mix(in srgb, var(--accent-red) 60%, transparent)', boxShadow: '0 0 16px rgba(255, 59, 48, 0.18)' }
+    ? { border: '1px solid color-mix(in srgb, var(--accent-red) 60%, transparent)' }
     : tier === 'POLITICIAN_INSIDER'
       ? { border: '1px solid color-mix(in srgb, var(--accent-purple) 55%, transparent)' }
       : tier === 'POLITICIAN_OPTIONS'
@@ -124,20 +125,25 @@ export function SignalCard({ signal }: { signal: Signal }) {
         : signal.comboSignal
           ? { border: '1px solid color-mix(in srgb, var(--accent-blue) 50%, transparent)' }
           : signal.bigPlayer
-            ? { border: '1px solid #ffcc00', boxShadow: '0 0 16px rgba(255, 204, 0, 0.15)' }
+            ? { border: '1px solid color-mix(in srgb, var(--accent-yellow) 40%, var(--border-glass))' }
             : undefined;
 
   return (
-    <div className="flex w-full min-w-0 flex-col gap-2">
+    <div className="flex h-full w-full min-w-0 flex-col gap-2">
       {/* MEGA_SIGNAL — full-width pulsing banner above the card, unmissable. */}
-      {isMega && <MegaSignalBanner />}
+
 
       <GlassCard
         hover
         onClick={() => openSignal(signal.ticker)}
-        className="relative flex w-full min-w-0 flex-col gap-3 p-4 lg:gap-4 lg:p-5"
+        role="button"
+        tabIndex={0}
+        aria-label={signal.ticker}
+        onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openSignal(signal.ticker); } }}
+        className="signal-card relative flex h-full w-full min-w-0 flex-1 flex-col gap-3 p-4 lg:gap-4 lg:p-5"
         style={cardBorderStyle}
       >
+        {isMega && <MegaSignalBanner />}
         {/* Combo badge — a politician tier REPLACES the orange COMBO badge. */}
         {tier ? (
           <PoliticianComboBadge tier={tier} className="absolute -right-2 -top-2 shadow-lg" />
@@ -151,16 +157,16 @@ export function SignalCard({ signal }: { signal: Signal }) {
             <div className="text-xl font-extrabold leading-tight font-mono-terminal">{signal.ticker}</div>
             {signal.bigPlayer && (
               <span
-                className="inline-flex select-none items-center gap-0.5 rounded px-2 py-0.5 text-xs font-extrabold uppercase shadow-[0_0_12px_rgba(255,179,0,0.45)]"
+                className="inline-flex select-none items-center gap-0.5 rounded px-2 py-0.5 text-xs font-extrabold uppercase "
                 style={{
-                  background: 'linear-gradient(135deg, #FFE082 0%, #FFB300 50%, #FFA000 100%)',
-                  color: '#000000',
-                  border: '1px solid #FFC107',
-                  fontWeight: 900,
+                  background: 'var(--bg-glass-hover)',
+                  color: 'var(--accent-yellow)',
+                  border: '1px solid var(--border-glass)',
+                  fontWeight: 650,
                   letterSpacing: '0.02em',
                 }}
               >
-                ★ {t('card.bigPlayer')}
+                 {t('card.bigPlayer')}
               </span>
             )}
           </div>
@@ -198,7 +204,7 @@ export function SignalCard({ signal }: { signal: Signal }) {
             <EarningsChip days={signal.daysToEarnings} timing={signal.earningsTiming} className="shrink-0 px-2 py-1 text-xs" />
             {hasPolitician && <PoliticianCountBadge count={politicianCount} className="shrink-0" />}
           </div>
-          <DetailRow label={t('card.role')} value={displayRole} />
+          <DetailRow label={t('card.role')} value={localizeRole(displayRole, language)} />
           <DetailRow label={t('card.price')} value={avgPrice ? formatPrice(avgPrice) : '—'} isMono />
           <DetailRow label={t('card.volume')} value={displayVolume > 0 ? formatUSD(displayVolume) : '—'} isMono />
         </div>
@@ -207,7 +213,7 @@ export function SignalCard({ signal }: { signal: Signal }) {
       {/* Context pills — net flow, drawdown, short interest, liquidity. Each only
           renders when the backend has the datum; the row hides entirely if none. */}
       {(netFlow != null || dd != null || (shortPct != null && shortPct >= 20) || (adv != null && adv < 500_000)) && (
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="signal-context flex flex-wrap items-start gap-1.5">
           {netFlow != null && (
             <Pill
               color={netFlowColor}
@@ -228,15 +234,15 @@ export function SignalCard({ signal }: { signal: Signal }) {
             />
           )}
           {shortPct != null && shortPct >= 20 && (
-            <Pill color="#ff9f0a" text={`⚡ SI ${shortPct.toFixed(0)}%`} title={t('card.shortInterestTitle', { pct: shortPct.toFixed(1) })} />
+            <Pill color="#ff9f0a" text={` SI ${shortPct.toFixed(0)}%`} title={t('card.shortInterestTitle', { pct: shortPct.toFixed(1) })} />
           )}
           {adv != null && adv < 500_000 && (
-            <Pill color="var(--accent-red)" text={`⚠ ${t('card.lowLiquidity')}`} title={t('card.lowLiquidityTitle', { amount: formatUSD(adv) })} />
+            <Pill color="var(--accent-red)" text={` ${t('card.lowLiquidity')}`} title={t('card.lowLiquidityTitle', { amount: formatUSD(adv) })} />
           )}
         </div>
       )}
 
-      <div className="flex items-center justify-between border-t pt-3" style={{ borderColor: 'var(--border-glass)' }}>
+      <div className="mt-auto flex items-center justify-between gap-2 border-t pt-3" style={{ borderColor: 'var(--border-glass)' }}>
         <span className="inline-flex items-center gap-1.5 text-sm text-secondary">
           <UsersIcon size={15} />
           {t(signal.insiderCount === 1 ? 'card.insiderOne' : 'card.insiderMany', { count: signal.insiderCount })}
@@ -247,7 +253,7 @@ export function SignalCard({ signal }: { signal: Signal }) {
             style={{ color: topOption.sentiment === 'bullish' ? 'var(--accent-green)' : 'var(--accent-red)' }}
           >
             <ActivityIcon size={15} className="shrink-0" />
-            {formatUSD(topOption.notional)} {topOption.type}s
+            {formatUSD(topOption.notional)} {t(topOption.type === 'call' ? 'card.calls' : 'card.puts')}
           </span>
         ) : (
           <span className="text-sm text-secondary">{t('card.noOptionsFlow')}</span>

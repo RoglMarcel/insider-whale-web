@@ -173,7 +173,7 @@ export function AlertRules() {
           {rules.map((rule) => (
             <div key={rule.id} className="flex items-center justify-between gap-3 py-2.5">
               <span className="text-sm" style={{ opacity: rule.enabled ? 1 : 0.5 }}>
-                🔔 {describeRule(rule, t)}
+                 {describeRule(rule, t)}
               </span>
               <div className="flex items-center gap-2">
                 <button

@@ -1,3 +1,4 @@
+import { useScrapling, scraplingTable } from './scrapling';
 import { cancellableDelay, checkCancelled } from './cancellation';
 import type { BrowserContext } from 'playwright';
 import type { RawInsiderTrade } from '../../src/types';
@@ -130,6 +131,14 @@ export async function scrapeOpenInsider(context: BrowserContext, reportIssue: (m
     // ~370 rows — the pipeline's widest source — and tripped the red "broken"
     // banner. One retry separates a hiccup from a real break; a source that
     // fails twice in a row still reports −1, which is what the sentinel is for.
+    if (useScrapling()) {
+      const data = await withRetry(url, () => scraplingTable(url, ['table.tinytable']));
+      if (data.rows.length >= ROW_LIMIT) reportIssue(`[openinsider] hit the cnt=${ROW_LIMIT} row cap (${data.rows.length} rows)`);
+      const trades = mapRows(data.headers, data.rows.map(r => ({cells:r.cells, insiderUrl:r.insiderUrl,sourceUrl:r.filingUrl})), url);
+      if (!trades.length) throw new Error('OpenInsider returned no usable rows');
+      all.push(...trades);
+      continue;
+    }
     const trades = await withRetry(url, () => withPage(context, url, async (page) => {
       await page.waitForSelector('table.tinytable', { timeout: 15_000 }).catch(() => undefined);
       const data = await page.evaluate(() => {

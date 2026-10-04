@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
 import { GlassCard } from '@/components/UI/GlassCard';
+import { useStore } from '@/store/useStore';
 import { useSignals } from '@/hooks/useSignals';
-import { LayersIcon, TrendingUpIcon, ActivityIcon } from '@/components/UI/icons';
+import { LayersIcon, CombineIcon, TrendingUpIcon, ActivityIcon } from '@/components/UI/icons';
 import { formatUSD } from '@/lib/format';
 import { useI18n } from '@/hooks/useI18n';
 
@@ -34,7 +35,7 @@ function StatCard({
         {icon}
       </div>
       <div className="min-w-0">
-        <div className="truncate text-xs font-medium uppercase tracking-wide text-secondary">
+        <div className="text-[11px] font-medium uppercase leading-tight tracking-wide text-secondary">
           {label}
         </div>
         <div
@@ -52,40 +53,42 @@ function StatCard({
 
 export function StatCards() {
   const { stats } = useSignals();
+  const initialized = useStore((s) => s.initialized);
+  const available = useStore((s) => s.initialized && (!s.scrapeStatus.error?.includes('signals.json') || s.signals.length > 0));
   const { t } = useI18n();
   return (
     // 2×2 on mobile instead of four stacked cards. Considered a horizontally
     // snapping row (DESIGN.md §7) and rejected it after comparing both: the row
     // is 72px tall but hides two of the four numbers behind a scroll gesture,
     // while the 2×2 grid shows all four in ~136px and needs no discovery.
-    <div className="grid grid-cols-2 gap-2 lg:grid-cols-2 lg:gap-4 xl:grid-cols-4">
+    <div data-testid="summary-stats" className="grid grid-cols-2 gap-2 lg:grid-cols-2 lg:gap-4 xl:grid-cols-4">
       <StatCard
         icon={<LayersIcon size={22} />}
         label={t('stats.totalSignals')}
-        value={stats.total}
+        value={available ? stats.total : '—'}
         accent="var(--accent-blue)"
-        sub={t('stats.insiderBuys', { amount: formatUSD(stats.totalVolume) })}
+        sub={available ? t('stats.insiderBuys', { amount: formatUSD(stats.totalVolume) }) : t(initialized ? 'ui.unavailable' : 'common.loading')}
       />
       <StatCard
         icon={<TrendingUpIcon size={22} />}
         label={t('stats.highConviction')}
-        value={stats.high}
+        value={available ? stats.high : '—'}
         accent="var(--accent-green)"
-        sub={t('stats.onWatch', { count: stats.watch })}
+        sub={available ? t('stats.onWatch', { count: stats.watch }) : undefined}
       />
       <StatCard
         icon={<ActivityIcon size={22} />}
         label={t('stats.unusualOptions')}
-        value={stats.options}
+        value={available ? stats.options : '—'}
         accent="var(--accent-purple)"
-        sub={t('stats.tickersWithFlow')}
+        sub={available ? t('stats.tickersWithFlow') : undefined}
       />
       <StatCard
-        icon={<span className="text-xl">⚡</span>}
+        icon={<CombineIcon size={22} />}
         label={t('stats.comboSignals')}
-        value={stats.combos}
+        value={available ? stats.combos : '—'}
         accent="var(--accent-blue)"
-        sub={t('stats.insiderPlusOptions')}
+        sub={available ? t('stats.insiderPlusOptions') : undefined}
         highlight
       />
     </div>

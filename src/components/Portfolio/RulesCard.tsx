@@ -43,7 +43,7 @@ export function RulesCard({
   /** Absent on the hosted build, where a browser cannot recompute the curve. */
   onApplyConfig?: (partial: Partial<PortfolioConfig>) => void;
 }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
 
@@ -152,9 +152,9 @@ export function RulesCard({
                 the book opened after the live signal table already covered it,
                 so every trade in it was decided without knowing the outcome. */}
             {meta.backfillStart && meta.liveStart
-              ? t('pf.meta.backfill', { from: formatDate(meta.backfillStart), live: formatDate(meta.liveStart) })
+              ? t('pf.meta.backfill', { from: formatDate(meta.backfillStart, language), live: formatDate(meta.liveStart, language) })
               : meta.backfillStart
-                ? t('pf.meta.liveOnly', { from: formatDate(meta.backfillStart) })
+                ? t('pf.meta.liveOnly', { from: formatDate(meta.backfillStart, language) })
                 : ''}
           </p>
         </div>

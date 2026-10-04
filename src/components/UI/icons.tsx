@@ -163,3 +163,8 @@ export const NewsIcon = (p: IconProps) => (
     <path d="M16 8h2M16 12h2M8 8h6M8 12h6M8 16h10" />
   </svg>
 );
+
+/** Two independent inputs merge into one combo signal. */
+export const CombineIcon = (p: IconProps) => (
+  <svg {...base(p)}><rect x="3" y="3" width="6" height="6" rx="1.5" /><rect x="15" y="3" width="6" height="6" rx="1.5" /><path d="M6 9v3l6 4 6-4V9M12 16v5M9 18l3 3 3-3" /></svg>
+);

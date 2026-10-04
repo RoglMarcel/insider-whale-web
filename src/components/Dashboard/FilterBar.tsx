@@ -53,7 +53,7 @@ function Segmented<T extends string>({
             className={`rounded-lg font-semibold transition-all ${size === 'sm' ? 'px-2.5 py-1 text-xs' : 'px-3.5 py-1.5 text-sm'}`}
             style={
               active
-                ? { background: 'var(--accent-blue)', color: '#fff' }
+                ? { background: 'var(--bg-glass-hover)', color: 'var(--text-primary)' }
                 : { color: 'var(--text-secondary)', background: 'transparent' }
             }
           >
@@ -84,7 +84,7 @@ export function ActiveFilterChips() {
     chips.push({ label: m ? t(m.label) : filter.type, clear: () => setFilter({ type: 'all' }) });
   }
   if (filter.conviction !== 'all') {
-    chips.push({ label: filter.conviction, clear: () => setFilter({ conviction: 'all' }) });
+    chips.push({ label: t(filter.conviction === 'HIGH' ? 'filter.high' : 'filter.watch'), clear: () => setFilter({ conviction: 'all' }) });
   }
   if (filter.bigPlayersOnly)
     chips.push({ label: t('filter.bigPlayersChip'), clear: () => setFilter({ bigPlayersOnly: false }) });
@@ -134,7 +134,7 @@ export function FilterBar() {
               : 'text-secondary bg-transparent hover:bg-[rgba(255,255,255,0.04)] hover:text-white border-transparent'
           }`}
         >
-          <span style={filter.bigPlayersOnly ? { color: '#fbbf24' } : undefined}>★</span>
+
           {t('filter.bigPlayersOnly')}
         </button>
       </div>

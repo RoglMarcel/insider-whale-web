@@ -24,7 +24,7 @@ export function EarningsChip({
           : t('badge.earningsUpcoming')
       }
     >
-      📅 {t('badge.earningsIn', { days })}
+       {t('badge.earningsIn', { days })}
     </span>
   );
 }

@@ -14,7 +14,7 @@ import { api } from '@/lib/ipc';
 const ScoreTrendChart = lazy(() => import('./ScoreTrendChart'));
 import type { Signal } from '@/types';
 
-const ACCENT_BLUE = '#0a84ff';
+const ACCENT_BLUE = 'var(--accent-blue)';
 const GRID = 'rgba(128,128,128,0.2)';
 
 export function WatchlistView() {
@@ -62,15 +62,15 @@ export function WatchlistView() {
   const chartData = useMemo(
     () =>
       history.map((h) => ({
-        time: formatDateTime(h.scrapedAt),
+        time: formatDateTime(h.scrapedAt, language),
         score: h.score,
       })),
-    [history],
+    [history, language],
   );
 
   if (watchlist.length === 0) {
     return (
-      <GlassCard className="animate-fade-in flex flex-col items-center justify-center gap-3 px-6 py-20 text-center">
+      <GlassCard className="animate-fade-in flex flex-col items-center justify-center gap-3 px-6 py-10 text-center">
         <div
           className="flex h-16 w-16 items-center justify-center rounded-2xl"
           style={{ background: 'var(--bg-glass)', color: 'var(--accent-yellow)' }}
@@ -86,7 +86,7 @@ export function WatchlistView() {
   }
 
   return (
-    <div className="animate-fade-in flex flex-col gap-6">
+    <div className="workspace-view animate-fade-in">
       {/* Watchlist cards */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         {watchlist.map((item) => {
@@ -100,6 +100,10 @@ export function WatchlistView() {
               key={item.ticker}
               hover
               onClick={() => openSignal(item.ticker)}
+              role="button"
+              tabIndex={0}
+              aria-label={item.ticker}
+              onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openSignal(item.ticker); } }}
               className="flex items-center gap-4 p-5"
             >
               {signal ? (
@@ -125,10 +129,10 @@ export function WatchlistView() {
                   )}
                 </div>
                 {signal && (
-                  <div className="mt-1 text-xs text-secondary">{formatUSD(signal.totalDollarVolume)} insider buys</div>
+                  <div className="mt-1 text-xs text-secondary">{t('stats.insiderBuys', { amount: formatUSD(signal.totalDollarVolume) })}</div>
                 )}
               </div>
-              <button className="icon-btn h-9 w-9" onClick={onRemove} title={t('card.removeFromWatchlist')}>
+              <button className="icon-btn h-9 w-9" onClick={onRemove} aria-label={t('card.removeFromWatchlist')} title={t('card.removeFromWatchlist')}>
                 <TrashIcon size={16} />
               </button>
             </GlassCard>
@@ -139,7 +143,7 @@ export function WatchlistView() {
       {/* Score Trend Card */}
       <GlassCard className="p-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-sm font-bold uppercase tracking-wide text-secondary">Score Trend</h3>
+          <h3 className="text-sm font-bold uppercase tracking-wide text-secondary">{t('watch.scoreTrend')}</h3>
           <div className="flex flex-wrap gap-1.5">
             {watchlist.map((w) => (
               <button

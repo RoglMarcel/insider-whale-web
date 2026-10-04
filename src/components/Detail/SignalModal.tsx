@@ -1,3 +1,4 @@
+import { displayText } from '@/lib/display-text';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useI18n } from '@/hooks/useI18n';
 import { createPortal } from 'react-dom';
@@ -9,6 +10,7 @@ import { ScoreGauge } from '@/components/UI/ScoreGauge';
 import { ConvictionBadge } from '@/components/UI/ConvictionBadge';
 import { ComboBadge } from '@/components/UI/ComboBadge';
 import { PoliticianComboBadge, MegaSignalBanner } from '@/components/UI/PoliticianBadges';
+import { FairValuePanel } from '@/components/Valuation/FairValuePanel';
 import { ScoreBreakdown } from './ScoreBreakdown';
 import { FairValuePanel } from './FairValuePanel';
 import { InsiderTable } from './InsiderTable';
@@ -79,7 +81,7 @@ export function SignalModal() {
   const { isWatched, toggleWatch } = useWatchlist();
   const [signal, setSignal] = useState<Signal | null>(null);
   const [loadingSignal, setLoadingSignal] = useState(true);
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [records, setRecords] = useState<Record<string, InsiderTrackRecord>>({});
   const [trLoading, setTrLoading] = useState(false);
   const fetchedRef = useRef<string | null>(null);
@@ -263,11 +265,14 @@ export function SignalModal() {
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4"
+      className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center sm:p-4"
       style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)' }}
       onClick={closeSignal}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={selectedTicker}
         // Mobile: a bottom sheet that owns the full width and nearly the full
         // height — a centred dialog wasted horizontal space on a 360px screen and
         // squeezed body text into 1–2 word columns (AUDIT B2).
@@ -300,16 +305,16 @@ export function SignalModal() {
               <h2 className="text-xl font-extrabold font-mono-terminal sm:text-2xl">{selectedTicker}</h2>
               {!chartOnly && signal?.bigPlayer && (
                 <span
-                  className="inline-flex select-none items-center gap-0.5 rounded px-2 py-0.5 text-xs font-extrabold uppercase shadow-[0_0_12px_rgba(255,179,0,0.45)]"
+                  className="inline-flex select-none items-center gap-0.5 rounded px-2 py-0.5 text-xs font-extrabold uppercase "
                   style={{
-                    background: 'linear-gradient(135deg, #FFE082 0%, #FFB300 50%, #FFA000 100%)',
-                    color: '#000000',
-                    border: '1px solid #FFC107',
-                    fontWeight: 900,
+                    background: 'var(--bg-glass-hover)',
+                    color: 'var(--accent-yellow)',
+                    border: '1px solid var(--border-glass)',
+                    fontWeight: 650,
                     letterSpacing: '0.02em',
                   }}
                 >
-                  ★ Big Player
+                   {t('card.bigPlayer')}
                 </span>
               )}
               {!chartOnly && signal && <ConvictionBadge level={signal.convictionLevel} />}
@@ -371,7 +376,7 @@ export function SignalModal() {
           ) : loadingSignal ? (
             <div className="py-16 flex flex-col items-center justify-center gap-3">
               <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--accent-blue)] border-t-transparent" />
-              <span className="text-xs text-secondary font-medium">Loading signal…</span>
+              <span className="text-xs text-secondary font-medium">{t('modal.loadingSignal')}</span>
             </div>
           ) : signal ? (
             <>
@@ -388,7 +393,7 @@ export function SignalModal() {
                     border: '1px solid color-mix(in srgb, var(--accent-purple) 35%, transparent)',
                   }}
                 >
-                  🏛️ + 👔 POLITICIAN + INSIDER — congressional buying alongside insider buying
+                  {t('modal.polInsiderBanner')}
                 </div>
               )}
               {signal.breakdown?.politicianComboTier === 'POLITICIAN_OPTIONS' && (
@@ -400,7 +405,7 @@ export function SignalModal() {
                     border: '1px solid color-mix(in srgb, var(--accent-blue) 35%, transparent)',
                   }}
                 >
-                  🏛️ + 🐋 POLITICIAN + OPTIONS — congressional buying alongside unusual bullish flow
+                  {t('modal.polOptionsBanner')}
                 </div>
               )}
 
@@ -414,7 +419,7 @@ export function SignalModal() {
                     border: '1px solid color-mix(in srgb, var(--accent-blue) 35%, transparent)',
                   }}
                 >
-                  ⚡ {t('modal.comboDetected')}
+                   {t('modal.comboDetected')}
                 </div>
               )}
 
@@ -428,18 +433,18 @@ export function SignalModal() {
                     border: '1px solid color-mix(in srgb, var(--accent-red) 30%, transparent)',
                   }}
                 >
-                  🐻 {t('modal.netBearish')}
+                   {t('modal.netBearish')}
                 </div>
               )}
 
               {/* Features 1 + 5 — dates & earnings */}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <InfoCell label={t('modal.tradeDate')}>{formatDate(signal.tradeDate)}</InfoCell>
+                <InfoCell label={t('modal.tradeDate')}>{formatDate(signal.tradeDate, language)}</InfoCell>
                 <InfoCell label={t('modal.filingDate')}>
                   <span className="inline-flex items-center gap-1">
-                    {formatDate(signal.filingDate)}
+                    {formatDate(signal.filingDate, language)}
                     {signal.lateFiling && (
-                      <span title={t('modal.lateFiling')}>⚠️</span>
+                      <span className="neutral-badge">{t('modal.lateFiling')}</span>
                     )}
                   </span>
                 </InfoCell>
@@ -447,7 +452,7 @@ export function SignalModal() {
                   {localEarningsDate ? (
                     <div>
                        <div>
-                         {formatDate(localEarningsDate)}
+                         {formatDate(localEarningsDate, language)}
                          {localEarningsTiming ? ` · ${localEarningsTiming}` : ''}
                          {localDaysToEarnings != null && localDaysToEarnings >= 0 ? ` (${localDaysToEarnings}d)` : ''}
                        </div>
@@ -469,7 +474,7 @@ export function SignalModal() {
                   className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl px-4 py-3 text-sm"
                   style={{ background: 'var(--bg-glass)', border: '1px solid var(--border-glass)' }}
                 >
-                  <span className="text-secondary">{t('modal.sinceSignal', { date: formatDate(performance.sinceDate) })}</span>
+                  <span className="text-secondary">{t('modal.sinceSignal', { date: formatDate(performance.sinceDate, language) })}</span>
                   <span
                     className="font-bold tabular-nums"
                     style={{ color: (performance.returnPct ?? 0) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}
@@ -486,6 +491,8 @@ export function SignalModal() {
                   )}
                 </div>
               )}
+
+              <FairValuePanel ticker={selectedTicker} />
 
               {/* TradingView Chart */}
               <TradingViewChart ticker={selectedTicker} theme={theme} />
@@ -516,8 +523,8 @@ export function SignalModal() {
                         className="rounded-xl px-4 py-2.5 text-sm hover:opacity-80"
                         style={{ background: 'var(--bg-glass)', border: '1px solid var(--border-glass)' }}
                       >
-                        <div>{n.text}</div>
-                        <div className="mt-1 text-[11px] text-secondary">{formatDate(n.timestamp)} · @WhaleInsider</div>
+                        <div>{displayText(n.text)}</div>
+                        <div className="mt-1 text-[11px] text-secondary">{formatDate(n.timestamp, language)} · @WhaleInsider</div>
                       </a>
                     ))}
                   </div>

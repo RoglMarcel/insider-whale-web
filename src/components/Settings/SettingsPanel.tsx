@@ -1,7 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { useStore } from '@/store/useStore';
 import { GlassCard } from '@/components/UI/GlassCard';
-import { TrashIcon, AlertIcon } from '@/components/UI/icons';
+import { TrashIcon } from '@/components/UI/icons';
 import { ROLE_CATEGORIES, SCRAPER_SOURCES, type AppSettings, isSourceUnlocked } from '@/types';
 import { formatUSD } from '@/lib/format';
 import { PlatformLogins } from './PlatformLogins';
@@ -9,6 +9,8 @@ import { AlertRules } from './AlertRules';
 import { ShadowScoring } from './ShadowScoring';
 import { api, isWeb } from '@/lib/ipc';
 import { useI18n } from '@/hooks/useI18n';
+import { AlertSources } from './AlertSources';
+import { LANGUAGES, type Lang } from '@/lib/i18n';
 
 function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
@@ -60,7 +62,7 @@ export function SettingsPanel() {
   const saveSettings = useStore((s) => s.saveSettings);
   const clearDatabase = useStore((s) => s.clearDatabase);
   const authStatus = useStore((s) => s.authStatus);
-  const { t } = useI18n();
+  const { t, language, setLanguage } = useI18n();
 
   const save = (patch: Partial<AppSettings>) => void saveSettings(patch);
 
@@ -71,29 +73,18 @@ export function SettingsPanel() {
   };
 
   return (
-    <div className="animate-fade-in mx-auto flex max-w-3xl flex-col gap-5">
-      {isWeb && (
-        <div
-          className="rounded-xl px-4 py-2.5 text-xs"
-          style={{
-            background: 'color-mix(in srgb, var(--accent-blue) 12%, transparent)',
-            color: 'var(--text-primary)',
-            border: '1px solid color-mix(in srgb, var(--accent-blue) 26%, transparent)',
-          }}
-        >
-          {t('set.webNote')}
-        </div>
-      )}
-
-      {/* Web build: the local scraper/scorer doesn't exist, so the interactive
-          controls below are omitted. A read-only note replaces the schedule. */}
-      {isWeb && (
-        <SectionCard title={t('set.cloudSchedule')}>
-          <div className="py-2 text-xs text-secondary">
-            {t('set.cloudScheduleNote')}
-          </div>
+    <div className="settings-view workspace-view animate-fade-in">
+      {isWeb && <>
+        <SectionCard title={language === 'de' ? 'Darstellung' : 'Preferences'}>
+          <Row label={t('header.language')}>
+            <select className="input preference-select" aria-label={t('header.language')} value={language} onChange={(e) => setLanguage(e.target.value as Lang)}>
+              {LANGUAGES.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
+            </select>
+          </Row>
+          <p className="py-2 text-xs text-secondary">{language === 'de' ? 'Deine Sprachwahl und Watchlist werden auf diesem Gerät gespeichert.' : 'Your language preference and watchlist are saved on this device.'}</p>
         </SectionCard>
-      )}
+        <AlertSources />
+      </>}
 
       {!isWeb && (
       <>
@@ -209,7 +200,7 @@ export function SettingsPanel() {
       )}
 
       {/* Platform Logins */}
-      <PlatformLogins />
+      {!isWeb && <PlatformLogins />}
 
       {!isWeb && (
       <>

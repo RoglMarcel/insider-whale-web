@@ -4,15 +4,19 @@ import { Header } from './Header';
 import { BottomTabBar } from './BottomTabBar';
 import { UpdateNotification } from '@/components/UI/UpdateNotification';
 import { UpdateHealth } from '@/components/UI/UpdateHealth';
-import { SourceHealthBanner } from '@/components/UI/SourceHealth';
+import { useStore } from '@/store/useStore';
+import { useI18n } from '@/hooks/useI18n';
+import { isWeb } from '@/lib/ipc';
 
 export function Layout({ children }: { children: ReactNode }) {
   // Drawer state applies to the md–lg band only; below md the bottom tab bar
   // navigates directly, above lg the sidebar is a static column.
   const [navOpen, setNavOpen] = useState(false);
+  const dataError = useStore((s) => s.scrapeStatus.error);
+  const { t } = useI18n();
 
   return (
-    <div className="relative z-10 flex h-full w-full overflow-hidden">
+    <div className="app-shell relative z-10 flex h-full w-full overflow-hidden">
       {navOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/50 lg:hidden"
@@ -39,8 +43,8 @@ export function Layout({ children }: { children: ReactNode }) {
           {children}
           <footer className="data-notes">
             <UpdateHealth />
-            <SourceHealthBanner />
-            <UpdateNotification />
+            {isWeb && dataError && <p className="text-xs text-secondary">{t('ui.loadError')}</p>}
+            {!isWeb && <UpdateNotification />}
           </footer>
         </main>
       </div>

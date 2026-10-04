@@ -1,14 +1,15 @@
+import { displayText } from '@/lib/display-text';
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useI18n } from '@/hooks/useI18n';
 import { useStore } from '@/store/useStore';
 import { api } from '@/lib/ipc';
 import { GlassCard } from '@/components/UI/GlassCard';
 import { timeAgo, formatDateTime } from '@/lib/format';
-import { RefreshIcon, ExternalLinkIcon, AlertIcon } from '@/components/UI/icons';
+import { RefreshIcon, ExternalLinkIcon, AlertIcon, NewsIcon } from '@/components/UI/icons';
 import type { NewsItem } from '@/types';
 
 export function NewsView() {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [news, setNews] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [isPending, startTransition] = useTransition();
@@ -43,7 +44,7 @@ export function NewsView() {
   };
 
   const formatTweetText = (text: string) => {
-    const parts = text.split(/(\$[a-zA-Z0-9\.\-]+)/g);
+    const parts = displayText(text).split(/(\$[a-zA-Z0-9\.\-]+)/g);
     return parts.map((part, index) => {
       if (part.startsWith('$') && part.length > 1) {
         const cleanTicker = part.replace('$', '').toUpperCase();
@@ -157,7 +158,7 @@ export function NewsView() {
               style={pol?.mega ? { borderColor: 'color-mix(in srgb, var(--accent-red) 55%, transparent)' } : undefined}
             >
               {/* Congressional cross-reference: this tweet cashtags a ticker with
-                  active politician trading. MEGA gets a red left border + 🚨. */}
+                  active politician trading. MEGA gets a red left border + . */}
               {pol && (
                 <div
                   className="absolute left-0 top-0 bottom-0 w-[3px]"
@@ -174,7 +175,7 @@ export function NewsView() {
                   }
                   title={`${pol.count} member(s) of Congress trading a ticker mentioned here${pol.mega ? ' — MEGA SIGNAL' : ''}`}
                 >
-                  {pol.mega ? '🚨 MEGA' : `🏛️ ${pol.count} politician${pol.count === 1 ? '' : 's'}`}
+                  {pol.mega ? ' MEGA' : ` ${pol.count} politician${pol.count === 1 ? '' : 's'}`}
                 </div>
               )}
               {/* Glowing vertical bar on hover */}
@@ -183,7 +184,7 @@ export function NewsView() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="h-9 w-9 rounded-full bg-white/10 border border-white/5 flex items-center justify-center font-extrabold text-sm text-[var(--accent-blue)] bg-gradient-to-br from-white/10 to-transparent">
-                    🐳
+                    <NewsIcon size={18} />
                   </div>
                   <div>
                     <div className="flex items-center gap-1.5 text-sm font-extrabold">
@@ -216,7 +217,7 @@ export function NewsView() {
                 
                 <span
                   className="shrink-0 text-xs text-secondary font-medium select-none"
-                  title={formatDateTime(item.timestamp)}
+                  title={formatDateTime(item.timestamp, language)}
                 >
                   {timeAgo(item.timestamp)}
                 </span>

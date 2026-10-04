@@ -55,9 +55,9 @@ function Group<T extends string>({
               className="rounded-lg px-3.5 text-[15px] font-semibold transition-colors"
               style={{
                 minHeight: 44,
-                background: active ? 'var(--accent-blue)' : 'var(--bg-glass)',
-                color: active ? '#fff' : 'var(--text-primary)',
-                border: `1px solid ${active ? 'transparent' : 'var(--border-glass)'}`,
+                background: active ? 'var(--bg-glass-hover)' : 'var(--bg-glass)',
+                color: 'var(--text-primary)',
+                border: `1px solid ${active ? 'var(--border-active)' : 'var(--border-glass)'}`,
               }}
             >
               {o.label}
@@ -113,7 +113,7 @@ export function FilterSheet({ open, onClose }: { open: boolean; onClose: () => v
               border: `1px solid ${filter.bigPlayersOnly ? 'color-mix(in srgb, #f59e0b 35%, transparent)' : 'var(--border-glass)'}`,
             }}
           >
-            <span>★ {t('filter.bigPlayersOnly')}</span>
+            <span> {t('filter.bigPlayersOnly')}</span>
             <span className="text-[13px] text-secondary">{filter.bigPlayersOnly ? t('filter.on') : t('filter.off')}</span>
           </button>
         </div>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useSignals } from '@/hooks/useSignals';
 import { StatCards } from './StatCards';
 import { SignalGrid } from './SignalGrid';
@@ -16,6 +16,7 @@ export function Dashboard() {
   const searchQuery = filter.search ?? '';
   const [exporting, setExporting] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
+  const closeFilters = useCallback(() => setFilterOpen(false), []);
   const activeFilterCount =
     (filter.timeRange !== 'all' ? 1 : 0) +
     (filter.type !== 'all' ? 1 : 0) +
@@ -46,7 +47,7 @@ export function Dashboard() {
   const searched = sorted;
 
   return (
-    <div className="flex flex-col gap-3 animate-fade-in lg:gap-6">
+    <div className="workspace-view animate-fade-in">
       <StatCards />
 
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between md:gap-4">
@@ -101,7 +102,7 @@ export function Dashboard() {
 
       <SignalGrid signals={searched} hasSearchQuery={!!searchQuery.trim()} />
 
-      <FilterSheet open={filterOpen} onClose={() => setFilterOpen(false)} />
+      <FilterSheet open={filterOpen} onClose={closeFilters} />
     </div>
   );
 }

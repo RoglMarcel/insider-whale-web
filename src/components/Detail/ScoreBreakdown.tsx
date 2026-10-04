@@ -1,3 +1,4 @@
+import { localizeScoreNote } from '@/lib/signal-language';
 import {
   type ScoreBreakdown as Breakdown,
   type InsiderFlowSummary,
@@ -46,7 +47,8 @@ function PoliticianRow({ t }: { t: PoliticianTrade }) {
   const { t: tr, language } = useI18n();
   const party = partyMeta(t.party);
   const isBuy = t.transactionType === 'buy';
-  const ctx = [t.chamber, t.committee].filter(Boolean).join(' · ');
+  const chamber = language === 'de' ? t.chamber?.replace(/\bHouse\b/g, 'Repräsentantenhaus').replace(/\bSenate\b/g, 'Senat') : t.chamber;
+  const ctx = [chamber, t.committee].filter(Boolean).join(' · ');
   const age = daysBetween(t.tradeDate);
   const lateDisclose = t.daysToDisclose != null && t.daysToDisclose > 30;
   return (
@@ -61,7 +63,7 @@ function PoliticianRow({ t }: { t: PoliticianTrade }) {
         <span className="font-semibold" style={{ color: isBuy ? 'var(--accent-green)' : 'var(--accent-red)' }}>
           {isBuy ? tr('common.buy') : tr('common.sell')} · {formatUSD(t.amountMidpoint)}
         </span>
-        <span className="text-xs text-secondary" title={formatDate(t.tradeDate)}>
+        <span className="text-xs text-secondary" title={formatDate(t.tradeDate, language)}>
           {age == null ? '—' : timeAgo(t.tradeDate, language)}
         </span>
         <span
@@ -70,7 +72,7 @@ function PoliticianRow({ t }: { t: PoliticianTrade }) {
           title={t.daysToDisclose == null ? undefined : tr('bd.disclosedAfter', { n: t.daysToDisclose })}
         >
           {t.daysToDisclose == null ? '—' : lateDisclose
-            ? `⚠ ${tr('bd.disclosedLate', { n: t.daysToDisclose })}`
+            ? tr('bd.disclosedLate', { n: t.daysToDisclose })
             : tr('bd.disclosedIn', { n: t.daysToDisclose })}
         </span>
       </div>
@@ -94,6 +96,7 @@ export function ScoreBreakdown({
   const b = breakdown;
   const { t, language } = useI18n();
   const fresh = freshnessMeta(b.signalAgeDays);
+  const points = language === 'de' ? 'Punkte' : 'pts';
 
   // "No insider data" and "bad insider data" are different facts and must not
   // render the same. With zero scoring-eligible trades the insider leg is
@@ -113,7 +116,7 @@ export function ScoreBreakdown({
     },
     {
       label: t('bd.dollarVolume'),
-      display: hasInsiderLeg ? `${b.dollarVolumePoints} / 20 pts` : NA,
+      display: hasInsiderLeg ? `${b.dollarVolumePoints} / 20 ${points}` : NA,
       fill: hasInsiderLeg ? b.dollarVolumePoints / 20 : 0,
       color: 'var(--accent-blue)',
     },
@@ -137,7 +140,7 @@ export function ScoreBreakdown({
     },
     {
       label: t('bd.optionsFlow'),
-      display: `${b.optionsScore >= 0 ? '+' : ''}${b.optionsScore.toFixed(0)} pts`,
+      display: `${b.optionsScore >= 0 ? '+' : ''}${b.optionsScore.toFixed(0)} ${points}`,
       fill: Math.min(Math.abs(b.optionsScore) / MAX_OPTIONS_SCORE_TOTAL, 1),
       color: b.optionsScore < 0 ? 'var(--accent-red)' : 'var(--accent-green)',
     },
@@ -179,7 +182,7 @@ export function ScoreBreakdown({
   // When a politician tier is set, the tier row shows that bonus; comboBonus
   // already holds the effective total — avoid double-counting in the factor list.
   if (b.comboBonus > 0 && !b.politicianComboTier) {
-    factors.push({ label: t('bd.comboBonus'), display: `+ ${b.comboBonus} pts`, fill: 1, color: 'var(--accent-blue)' });
+    factors.push({ label: t('bd.comboBonus'), display: `+ ${b.comboBonus} ${points}`, fill: 1, color: 'var(--accent-blue)' });
   }
 
   const hasFlow = !!insiderFlow && (insiderFlow.buys > 0 || insiderFlow.sells > 0 || insiderFlow.form144 > 0);
@@ -279,7 +282,7 @@ export function ScoreBreakdown({
             {stats.shortPctFloat != null && (
               <KV
                 label={t('bd.shortInterest')}
-                value={`${stats.shortPctFloat.toFixed(1)}% of float`}
+                value={t('bd.floatPercent', { n: stats.shortPctFloat.toFixed(1) })}
                 color={stats.shortPctFloat >= 20 ? '#ff9f0a' : undefined}
               />
             )}
@@ -306,7 +309,7 @@ export function ScoreBreakdown({
       {politicianTrades && politicianTrades.length > 0 && (
         <div className="mt-3 rounded-xl px-4 py-3" style={{ background: 'var(--bg-glass)', border: '1px solid var(--border-glass)' }}>
           <div className="mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-secondary">
-            🏛️ {t('bd.politicianActivity')}
+             {t('bd.politicianActivity')}
           </div>
           <div className="divide-y" style={{ borderColor: 'var(--border-glass)' }}>
             {politicianTrades.slice(0, 8).map((t, i) => (
@@ -315,13 +318,13 @@ export function ScoreBreakdown({
           </div>
           {politicianTrades.some((t) => t.transactionType === 'sell') && (
             <div className="mt-2 text-xs" style={{ color: 'var(--accent-red)' }}>
-              ⚠ {t('bd.contraSignal')}
+               {t('bd.contraSignal')}
             </div>
           )}
           <div className="mt-3 flex flex-col gap-1.5 border-t pt-2.5" style={{ borderColor: 'var(--border-glass)' }}>
             <KV
               label={t('bd.politicianContribution')}
-              value={`+${Math.round(b.politicianScore ?? 0)} pts`}
+              value={`+${Math.round(b.politicianScore ?? 0)} ${points}`}
               color={(b.politicianScore ?? 0) > 0 ? 'var(--accent-purple)' : undefined}
             />
             {b.politicianComboTier && (
@@ -335,7 +338,7 @@ export function ScoreBreakdown({
               <KV
                 label={t('bd.comboTier')}
                 value={
-                  `${b.politicianComboTier}  (× ${POLITICIAN_COMBO_SOFT_MULT[b.politicianComboTier].toFixed(2)}` +
+                  `${t(b.politicianComboTier === 'MEGA_SIGNAL' ? 'badge.mega' : b.politicianComboTier === 'POLITICIAN_INSIDER' ? 'badge.polInsider' : 'badge.polOptions')}  (× ${POLITICIAN_COMBO_SOFT_MULT[b.politicianComboTier].toFixed(2)}` +
                   `${b.comboBonus > 0 ? '' : `, ${t('bd.gated', { gate: CORROBORATION_GATE })}`})`
                 }
                 color={TIER_COLOR[b.politicianComboTier]}
@@ -356,7 +359,7 @@ export function ScoreBreakdown({
                 color: 'var(--accent-blue)',
               }}
             >
-              {note}
+              {localizeScoreNote(note, language)}
             </span>
           ))}
         </div>
@@ -375,9 +378,9 @@ export function ScoreBreakdown({
               key={d.factor}
               className="rounded-full px-2.5 py-1 text-xs text-secondary"
               style={{ border: '1px dashed var(--border-glass)' }}
-              title={d.reason}
+              title={t(d.factor === 'valuationMultiplier' ? 'bd.noFairValue' : d.factor === 'vixMultiplier' ? 'bd.noVix' : 'bd.gateMissing')}
             >
-              {d.factor} — {d.reason}
+              {t(d.factor === 'valuationMultiplier' ? 'bd.valuationFactor' : d.factor === 'vixMultiplier' ? 'bd.vixFactor' : 'bd.comboFactor')} — {t(d.factor === 'valuationMultiplier' ? 'bd.noFairValue' : d.factor === 'vixMultiplier' ? 'bd.noVix' : 'bd.gateMissing')}
             </span>
           ))}
         </div>

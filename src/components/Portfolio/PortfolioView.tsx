@@ -2,7 +2,7 @@ import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { GlassCard } from '@/components/UI/GlassCard';
 import { RefreshIcon } from '@/components/UI/icons';
 import { useI18n } from '@/hooks/useI18n';
-import { api } from '@/lib/ipc';
+import { api, isWeb } from '@/lib/ipc';
 import { formatDate, formatDateTime, timeAgo } from '@/lib/format';
 import { addDaysYmd, diffDaysYmd, emptyPortfolioState } from '@/lib/portfolio-rules';
 import type { PortfolioConfig, PortfolioState } from '@/types';
@@ -92,8 +92,8 @@ function Toggle({
           // reads as "the strategy did nothing", which is a different claim.
           className="px-2.5 py-1 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-35"
           style={{
-            background: value === o.key ? 'color-mix(in srgb, var(--accent-blue) 18%, transparent)' : 'transparent',
-            color: value === o.key ? 'var(--accent-blue)' : 'var(--text-secondary)',
+            background: value === o.key ? 'var(--bg-glass-hover)' : 'transparent',
+            color: value === o.key ? 'var(--text-primary)' : 'var(--text-secondary)',
           }}
         >
           {o.label}
@@ -299,14 +299,14 @@ export function PortfolioView() {
                 {pct(maxWindow?.diff)}
               </div>
               <div className="text-xs text-secondary">
-                {meta.firstDate ? t('pf.headline.sinceStart', { date: formatDate(meta.firstDate) }) : ''}
+                {meta.firstDate ? t('pf.headline.sinceStart', { date: formatDate(meta.firstDate, language) }) : ''}
               </div>
             </div>
           </div>
 
           {/* Desktop can run the simulation; the hosted build reads a published
               result and must not offer buttons that cannot do anything. */}
-          {!meta.readOnly && (
+          {!isWeb && !meta.readOnly && (
             <div className="flex shrink-0 flex-wrap gap-2">
               <button className="btn btn-primary" onClick={() => void run('sync')} disabled={busy !== null}>
                 <RefreshIcon size={15} className={busy === 'sync' ? 'animate-spin' : ''} />
@@ -320,22 +320,22 @@ export function PortfolioView() {
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-secondary">
-          {meta.priceAsOf && <span>{t('pf.headline.asOf', { date: formatDate(meta.priceAsOf) })}</span>}
+          {meta.priceAsOf && <span>{t('pf.headline.asOf', { date: formatDate(meta.priceAsOf, language) })}</span>}
           {meta.lastRun && <span>· {t('pf.meta.lastRun', { when: timeAgo(meta.lastRun, language) })}</span>}
-          {meta.readOnly && <span>· {t('pf.meta.readOnly')}</span>}
+          {!isWeb && meta.readOnly && <span>· {t('pf.meta.readOnly')}</span>}
         </div>
 
         {error && (
           <div className="mt-3 text-xs text-secondary">
-            {error}
+            {isWeb ? t('ui.loadError') : error}
           </div>
         )}
-        {meta.note && <div className="mt-3 text-xs text-secondary">{meta.note}</div>}
+        {!isWeb && meta.note && <div className="mt-3 text-xs text-secondary">{meta.note}</div>}
       </GlassCard>
 
       {/* ── Chart ── */}
       <GlassCard className="portfolio-chart">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        {chartData.length >= 2 && <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <Toggle
             options={rangeOptions}
             value={effectiveRange}
@@ -370,7 +370,7 @@ export function PortfolioView() {
               }}
             />
           </div>
-        </div>
+        </div>}
 
         <div className="portfolio-chart-canvas">
           {loading ? (
@@ -382,9 +382,9 @@ export function PortfolioView() {
                 {/* Before opening day "run a sync to compute it" is wrong advice:
                     there is nothing to compute yet, and the hosted build has no
                     button to press either. */}
-                {!equity.length && config.inceptionDate
-                  ? t('pf.headline.opensOn', { date: formatDate(config.inceptionDate) })
-                  : t('pf.headline.noDataHint')}
+                {!equity.length && config.inceptionDate && config.inceptionDate > new Date().toISOString().slice(0, 10)
+                  ? t('pf.headline.opensOn', { date: formatDate(config.inceptionDate, language) })
+                  : t(isWeb ? 'ui.noPortfolioHint' : 'pf.headline.noDataHint')}
               </div>
             </div>
           ) : (
@@ -403,14 +403,14 @@ export function PortfolioView() {
                   benchmark: t('pf.chart.benchmark'),
                   idle: t('pf.chart.idle'),
                   difference: t('pf.chart.difference'),
-                  liveFrom: meta.liveStart ? t('pf.chart.liveFrom', { date: formatDate(meta.liveStart) }) : '',
+                  liveFrom: meta.liveStart ? t('pf.chart.liveFrom', { date: formatDate(meta.liveStart, language) }) : '',
                   buy: t('pf.chart.buy'),
                   sell: t('pf.chart.sell'),
                   more: (n: number) => t('pf.chart.moreTrades', { n }),
                 }}
                 formatValue={(v) => (unit === '$' ? money(v) : pct(v, 1))}
                 formatTick={tickFormatter}
-                formatDate={(d) => formatDate(d)}
+                formatDate={(d) => formatDate(d, language)}
               />
             </Suspense>
           )}
@@ -449,7 +449,7 @@ export function PortfolioView() {
         config={config}
         meta={meta}
         busy={busy === 'config'}
-        onApplyConfig={variant === 'overlay' ? (partial) => void applyConfig(partial) : undefined}
+        onApplyConfig={!isWeb && variant === 'overlay' ? (partial) => void applyConfig(partial) : undefined}
       />
 
       {/* ── Data quality — visible, never swallowed ── */}
@@ -457,12 +457,12 @@ export function PortfolioView() {
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs">
           <span className="font-semibold uppercase tracking-wide text-secondary">{t('pf.quality.title')}</span>
           <span className="text-secondary">
-            {quality.length ? quality.join(' · ') : t('pf.quality.clean')}
+            {meta.available ? (quality.length ? quality.join(' · ') : t('pf.quality.clean')) : t('ui.noPortfolioHint')}
             {meta.untradableTickers.length > 0 && (
               <> · {t('pf.quality.untradable', { tickers: meta.untradableTickers.join(', ') })}</>
             )}
           </span>
-          {meta.lastRun && <span className="ml-auto text-secondary">{formatDateTime(meta.lastRun)}</span>}
+          {meta.lastRun && <span className="ml-auto text-secondary">{formatDateTime(meta.lastRun, language)}</span>}
         </div>
       </GlassCard>
     </div>

@@ -80,6 +80,7 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
           return (
             <button
               key={item.key}
+              aria-current={active ? 'page' : undefined}
               className={`sidebar-item ${active ? 'sidebar-item-active' : ''}`}
               onClick={() => go(item.key)}
             >
@@ -102,13 +103,13 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
       </nav>
 
       <div className="mt-auto px-2 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-xs text-secondary">
+        {!isWeb && <div className="flex items-center gap-2 text-xs text-secondary">
           <span
             className="h-2 w-2 rounded-full"
             style={{ background: scheduleEnabled ? 'var(--accent-green)' : 'var(--text-secondary)' }}
           />
           {scheduleEnabled ? t('nav.autoRefreshOn') : t('nav.autoRefreshOff')}
-        </div>
+        </div>}
         {version && <span className="text-[10px] text-secondary/50 font-medium select-none">v{version}</span>}
       </div>
     </aside>
