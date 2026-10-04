@@ -21,6 +21,7 @@ on:
     paths-ignore:                # ...but not for pure docs edits
       - '**/*.md'
   schedule:
+    - cron: '23 6 * * *'        # daily catalogue refresh, including weekends
     - cron: '23 13-21 * * 1-5'   # hourly across the US session (13:23–21:23 UTC)
 
 # contents:write lets the run upload durable history release assets.
@@ -247,7 +248,7 @@ jobs:
       - name: Refresh stock analysis catalogue
         timeout-minutes: 60
         env:
-          ANALYSIS_MAX_REFRESH: '3000'
+          ANALYSIS_MAX_REFRESH: ${{ github.event_name == 'push' && '0' || '3000' }}
         run: npm run analysis:catalogue
 
       - name: Save analysis cache

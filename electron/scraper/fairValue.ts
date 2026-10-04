@@ -51,7 +51,7 @@ export function parseFundamentals(html: string, source: string, fetchedAt: strin
   return out;
 }
 
-export async function fetchFairValue(ticker: string): Promise<FairValueResult> {
+export async function fetchFairValue(ticker: string, industry?: string): Promise<FairValueResult> {
   const inputs: Record<string, FundamentalDatum> = {};
   const warnings: string[] = [];
   if (!/^[A-Z0-9][A-Z0-9.-]{0,19}$/.test(ticker) || ticker.includes('..')) return calculateFairValue({}, Date.now(), ['Unsupported ticker']);
@@ -76,6 +76,10 @@ export async function fetchFairValue(ticker: string): Promise<FairValueResult> {
         warnings.push(`${provider}: listing/currency could not be verified`); continue;
       }
       const parsed = parseFundamentals(html, url, new Date().toISOString(), provider);
+      const observedIndustry = industry || /industry:\s*"([^"\\]+)"/.exec(html)?.[1];
+      if (observedIndustry && /\b(banks?|insurance|credit services)\b/i.test(observedIndustry)) {
+        parsed.financialCompany = { value: 1, source: url, fetchedAt: new Date().toISOString() };
+      }
       if (provider === 'stockanalysis' && !location.us) {
         financialCurrency = /had revenue of\s+([A-Z]{3})\b/.exec(text(html))?.[1] ?? '';
       }
@@ -97,6 +101,7 @@ export async function fetchFairValue(ticker: string): Promise<FairValueResult> {
     warnings.push('Market quote older than five days; current valuation signal withheld.');
   }
   warnings.push('TTM and analyst snapshots; growth forecasts are estimates, not guaranteed cashflows.');
+  if (inputs.financialCompany) warnings.push('Financial company: generic industrial FCF models excluded; deposits, lending and regulatory capital need sector-specific treatment.');
   const result = calculateFairValue(inputs, Date.now(), warnings);
   result.currency = quote?.currency || financialCurrency || 'USD';
   if (quote) result.quote = { source: quote.source, asOf: quote.asOf, name: quote.name, exchange: quote.exchange, session: 'regular', delayed: true };

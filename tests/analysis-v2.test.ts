@@ -32,6 +32,12 @@ describe('valuation v2 regression',()=>{
   it('matches the standard Black-Scholes call benchmark',()=>{
     expect(realOptionCall(100,100,1,.05,.2)).toBeCloseTo(10.4506,3);
   });
+  it('excludes industrial cashflow models for financial companies',()=>{
+    const r=calculateFairValue(data({financialCompany:1,normalizedFcfePerShare:100,eps:8,price:150}),now);
+    expect(r.models.find(m=>m.name==='DCF-FCFE')?.value).toBeNull();
+    expect(r.status).toBe('fallback');
+    expect(r.fairValue).toBe(100);
+  });
 });
 describe('global quotes and directories',()=>{
   it('preserves foreign suffixes and maps US share classes',()=>{
@@ -39,6 +45,9 @@ describe('global quotes and directories',()=>{
     expect(yahooSymbol('SAP.DE')).toBe('SAP.DE');
     expect(fundamentalsLocation('SAP.DE')?.url).toContain('/quote/etr/SAP/');
     expect(fundamentalsLocation('7203.T')?.url).toContain('/quote/tyo/7203/');
+    expect(fundamentalsLocation('BNS.TO')?.url).toContain('/quote/tsx/BNS/');
+    expect(yahooSymbol('VOLV.B.ST')).toBe('VOLV-B.ST');
+    expect(fundamentalsLocation('VOLV-B.ST')?.url).toContain('/quote/sto/VOLV.B/');
   });
   it('reads actual quotes and normalizes pence to pounds',async()=>{
     vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response(JSON.stringify({chart:{result:[{meta:{symbol:'SHEL.L',instrumentType:'EQUITY',currency:'GBp',regularMarketPrice:2500,regularMarketTime:1700000000,fullExchangeName:'LSE'}}]}}))));

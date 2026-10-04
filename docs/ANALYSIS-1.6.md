@@ -11,12 +11,16 @@ analysis server remains available for development only.
 `npm run analysis:catalogue` discovers US companies (market cap at least USD 300M,
 excluding shell companies and special securities) and the first 500 listings by
 market cap from each configured international exchange directory. Initial
-discovery found 8,598 listings; this is broad coverage, not every security in
+discovery found about 8,600 listings; this is broad coverage, not every security in
 every market. International cross-listings can represent the same company.
 Supported adapters cover more than 20 exchange suffixes; the scheduled directory
 currently selects twelve major markets. No penny-stock coverage is promised.
 
-Each scheduled run refreshes up to 3,000 due stocks with bounded concurrency and
+Each scheduled run refreshes up to 3,000 due stocks within 40 minutes, using two
+workers and a delay between requests. A source rate limit stops collection for
+that run. Checkpoints preserve progress every 100 stocks. Code pushes publish
+the existing catalogue immediately; scheduled/manual runs collect new data.
+The morning schedule also runs on weekends. The collector
 preserves successful prior observations on source failure. The catalogue has an
 18-hour refresh threshold; rotation or blocked sources can make individual data
 older. Original observation times remain visible. Valuations older than a day
@@ -59,6 +63,8 @@ Models do not gain accuracy simply by being numerous. Stages 3–4 require more
 specific sourced inputs than generic public financial tables normally provide.
 Historical inflation adjustments, option projects, independent asset appraisals,
 tax shields and segment-specific valuations remain explicit missing inputs.
+Industrial FCF models are excluded for identified banks, insurers and credit
+services; generic FCF cannot represent their lending and regulatory capital.
 
 ## Reference comparisons
 

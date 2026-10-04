@@ -76,7 +76,7 @@ export function calculateFairValue(raw: Record<string, FundamentalDatum>, now = 
   const growth = forecasts.length ? Math.min(0.25, Math.max(-0.3, Math.min(...forecasts))) : 0.02;
   const terminal = 0.025;
   const costEquity = v('costEquity') ?? 0.10;
-  const cashflow = v('normalizedFcfePerShare') ?? v('fcfePerShare');
+  const cashflow = v('financialCompany') === 1 ? undefined : v('normalizedFcfePerShare') ?? v('fcfePerShare');
   const scenarios: NonNullable<FairValueResult['scenarios']> = [];
   if (positive('dividend') || (cashflow ?? 0) > 0) {
     assumptions.push(`DCF: three years at ${(growth * 100).toFixed(1)}% growth (${forecasts.length ? 'lower EPS/revenue forecast used as cashflow proxy, policy cap 25%; raw forecasts shown in inputs' : 'missing-forecast fallback'}), fading over seven years to 2.5%; cost of equity ${(costEquity * 100).toFixed(1)}%${v('costEquity') == null ? ' (assumption; sensitivity shown)' : ''}.`);
@@ -97,7 +97,7 @@ export function calculateFairValue(raw: Record<string, FundamentalDatum>, now = 
       if (Number.isFinite(value) && value > 0) scenarios.push({ name, value, growth: g, discount: r, terminal: t });
     }
   }
-  if (positive('fcff') && positive('shares') && positive('wacc') && v('cash') != null && v('debt') != null) {
+  if (v('financialCompany') !== 1 && positive('fcff') && positive('shares') && positive('wacc') && v('cash') != null && v('debt') != null) {
     put('DCF-FCFF', (fadingCashFlow(v('fcff')!, growth, v('wacc')!, terminal) + v('cash')! - v('debt')!) / v('shares')!);
     assumptions.push(`FCFF uses the same ten-year fade, with WACC and an explicit cash/debt bridge.`);
   }

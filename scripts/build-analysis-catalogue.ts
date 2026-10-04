@@ -44,9 +44,22 @@ async function main() {
       }
     } catch (e) { console.warn(`Directory ${exchange}: ${e instanceof Error ? e.message : 'unavailable'}; retaining previous entries`); }
   }
-  for (const s of cache.stocks) if (!discovered.has(s.ticker)) discovered.set(s.ticker, s);
+  for (const s of cache.stocks) {
+    const ticker = s.ticker.replace(/\.([AB])\.(ST|CO|HE|TO)$/, '-$1.$2');
+    if (!discovered.has(ticker)) discovered.set(ticker, { ...s, ticker });
+  }
   cache.stocks = [...discovered.values()];
   if (!cache.stocks.length) throw new Error('No stock directory or previous catalogue available');
+  function checkpoint() {
+    for (const [ticker, result] of Object.entries(cache.results)) {
+      if (result.valuation.version === 2 && /^[A-Z0-9][A-Z0-9.-]{0,19}$/.test(ticker)) fs.writeFileSync(path.join(root, 'analysis', `${ticker}.json`), JSON.stringify(result));
+    }
+    fs.writeFileSync(path.join(root, 'analysis-index.json'), JSON.stringify({ generatedAt: new Date().toISOString(), stocks: cache.stocks.map(s => ({ ...s, available: cache.results[s.ticker]?.valuation.version === 2, asOf: cache.results[s.ticker]?.valuation.calculatedAt })) }));
+    const bytes = gzipSync(JSON.stringify(cache));
+    fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
+    fs.writeFileSync(`${cacheFile}.tmp`, bytes); fs.renameSync(`${cacheFile}.tmp`, cacheFile);
+    fs.writeFileSync(path.join(root, 'analysis-cache.json.gz'), bytes);
+  }
   const age = (s: CatalogueStock) => cache.results[s.ticker]?.valuation.version === 2 ? Date.parse(cache.results[s.ticker].valuation.calculatedAt) : 0;
   const priorities = new Set(['AAPL','NVDA','MSFT','AMZN','GOOGL','META','TSLA','BRK-B','SAP.DE','ASML.AS','SHEL.L','7203.T','0700.HK']);
   const queue = cache.stocks.filter(s => process.env.ANALYSIS_FORCE === '1' || Date.now() - age(s) > 18 * 3600_000)
@@ -55,19 +68,26 @@ async function main() {
   const selected = queue.slice(0, limit);
   console.log(`Analysis catalogue: ${cache.stocks.length} stocks; refreshing ${selected.length} of ${queue.length} due`);
   let cursor = 0, completed = 0;
-  await Promise.all(Array.from({ length: 6 }, async () => {
-    while (cursor < selected.length) {
+  let rateLimited = false;
+  const deadline = Date.now() + Number(process.env.ANALYSIS_MAX_MINUTES || 40) * 60_000;
+  await Promise.all(Array.from({ length: 2 }, async () => {
+    while (cursor < selected.length && Date.now() < deadline && !rateLimited) {
       const stock = selected[cursor++];
       try {
-        const valuation = await fetchFairValue(stock.ticker);
+        const valuation = await fetchFairValue(stock.ticker, stock.industry);
+        if (valuation.warnings.some(w => /HTTP 429/.test(w))) {
+          rateLimited = true;
+          console.warn('Source rate limit: stopping collection; preserving dated snapshots until the next scheduled run.');
+        }
         const old = cache.results[stock.ticker];
         // Keep a usable prior snapshot, with its original timestamp, after source outages.
         if (valuation.status !== 'unavailable' || !old || old.valuation.version !== 2) cache.results[stock.ticker] = { ticker: stock.ticker, valuation, origin: 'snapshot' };
       } catch { /* retain earlier snapshot */ }
-      if (++completed % 100 === 0) console.log(`Analysis: ${completed}/${selected.length}`);
-      await new Promise(resolve => setTimeout(resolve, 100));
+      if (++completed % 100 === 0) { checkpoint(); console.log(`Analysis: ${completed}/${selected.length}; checkpoint saved`); }
+      await new Promise(resolve => setTimeout(resolve, 1500));
     }
   }));
+  checkpoint();
   // Same-industry medians from this observed universe; require >=5 OTHER companies.
   const groups = new Map<string, CatalogueStock[]>();
   for (const stock of cache.stocks) if (stock.industry) groups.set(stock.industry, [...(groups.get(stock.industry) ?? []), stock]);
@@ -83,10 +103,12 @@ async function main() {
       const values=peers.map(r=>r.inputs[field]?.value).filter((n):n is number=>n!=null && n>0 && n<max).sort((a,b)=>a-b);
       if(values.length>=5)peerInputs[target]={value:(values[Math.floor((values.length-1)/2)]+values[Math.floor(values.length/2)])/2,source:'https://stockanalysis.com/stocks/',fetchedAt:result.valuation.calculatedAt};
     }
-    if (Object.keys(peerInputs).length) {
+    if (Object.keys(peerInputs).length || /\b(banks?|insurance|credit services)\b/i.test(stock.industry || '')) {
       const old = result.valuation;
       const inputs = { ...old.inputs, ...peerInputs };
-      const recalculated = calculateFairValue(inputs, Date.parse(old.calculatedAt), [...old.warnings, `Peer benchmarks: same-industry (${stock.industry}) same-day medians; at least 5 other positive observations per ratio, extreme ratios excluded. Source universe: ${peers.map(p=>p.quote?.name || 'unnamed').slice(0,20).join(', ')}.`]);
+      if (/\b(banks?|insurance|credit services)\b/i.test(stock.industry || '')) inputs.financialCompany = { value: 1, source: 'https://stockanalysis.com/stocks/', fetchedAt: old.calculatedAt };
+      const priorWarnings = old.warnings.filter(w => !w.startsWith('Peer benchmarks:') && !w.startsWith('Model corridor is'));
+      const recalculated = calculateFairValue(inputs, Date.parse(old.calculatedAt), [...priorWarnings, `Peer benchmarks: same-industry (${stock.industry}) same-day medians; at least 5 other positive observations per ratio, extreme ratios excluded. Source universe: ${peers.map(p=>p.quote?.name || 'unnamed').slice(0,20).join(', ')}.`]);
       result.valuation = { ...recalculated, currency: old.currency, quote: old.quote };
     }
   }

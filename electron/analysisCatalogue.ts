@@ -12,6 +12,7 @@ export function parseStockDirectory(html: string, suffix = '', exchange = 'US'):
       const raw: string = JSON.parse(match[1]);
       const name: string = JSON.parse(match[2]);
       let symbol = raw.split('/').at(-1)!;
+      if (['.ST','.CO','.HE','.TO'].includes(suffix)) symbol = symbol.replace(/\.([AB])$/, '-$1');
       if (suffix === '.HK' && /^\d{1,4}$/.test(symbol)) symbol = symbol.padStart(4, '0');
       const ticker = `${symbol}${suffix}`.toUpperCase();
       if (!/^[A-Z0-9][A-Z0-9.-]{0,19}$/.test(ticker) || seen.has(ticker)) continue;

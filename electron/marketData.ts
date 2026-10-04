@@ -4,6 +4,7 @@ import { scopedFetch, checkCancelled } from './scraper/cancellation';
 
 const headers = { 'User-Agent': 'Mozilla/5.0' };
 export function yahooSymbol(ticker: string): string {
+  if (/\.[AB]\.(ST|CO|HE|TO)$/.test(ticker)) return ticker.replace(/\.([AB])\./, '-$1.');
   return /^[A-Z]{1,6}\.[AB]$/.test(ticker) ? ticker.replace('.', '-') : ticker;
 }
 
@@ -51,10 +52,13 @@ export async function searchStocks(input: unknown): Promise<StockSuggestion[]> {
   return results;
 }
 
-const exchanges: Record<string, string> = { DE: 'etr', F: 'fra', L: 'lon', PA: 'epa', AS: 'ams', TO: 'tse', V: 'tsxv', HK: 'hkg', T: 'tyo', SW: 'swx', AX: 'asx', MI: 'bit', MC: 'bme', ST: 'sto', CO: 'cph', HE: 'hel', OL: 'osl', SI: 'sgx', NS: 'nse', BO: 'bom', KS: 'krx', KQ: 'kosdaq', NZ: 'nze', BR: 'ebr', LS: 'eli', WA: 'wse', TA: 'tlv', JO: 'jse' };
+const exchanges: Record<string, string> = { DE: 'etr', F: 'fra', L: 'lon', PA: 'epa', AS: 'ams', TO: 'tsx', V: 'tsxv', HK: 'hkg', T: 'tyo', SW: 'swx', AX: 'asx', MI: 'bit', MC: 'bme', ST: 'sto', CO: 'cph', HE: 'hel', OL: 'osl', SI: 'sgx', NS: 'nse', BO: 'bom', KS: 'krx', KQ: 'kosdaq', NZ: 'nze', BR: 'ebr', LS: 'eli', WA: 'wse', TA: 'tlv', JO: 'jse' };
 export function fundamentalsLocation(ticker: string): { url: string; symbol: string; us: boolean } | null {
   const match = /^(.*)\.([A-Z]+)$/.exec(ticker);
-  if (match && exchanges[match[2]]) return { url: `https://stockanalysis.com/quote/${exchanges[match[2]]}/${encodeURIComponent(match[1])}/statistics/`, symbol: match[1], us: false };
+  if (match && exchanges[match[2]]) {
+    const symbol = ['ST','CO','HE','TO'].includes(match[2]) ? match[1].replace(/-([AB])$/, '.$1') : match[1];
+    return { url: `https://stockanalysis.com/quote/${exchanges[match[2]]}/${encodeURIComponent(symbol)}/statistics/`, symbol, us: false };
+  }
   if (match && !/^[A-Z]{1,6}\.[AB]$/.test(ticker)) return null;
   return { url: `https://stockanalysis.com/stocks/${encodeURIComponent(yahooSymbol(ticker).toLowerCase())}/statistics/`, symbol: ticker, us: true };
 }
