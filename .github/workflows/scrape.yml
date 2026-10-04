@@ -248,7 +248,7 @@ jobs:
       - name: Refresh stock analysis catalogue
         timeout-minutes: 60
         env:
-          ANALYSIS_MAX_REFRESH: ${{ github.event_name == 'push' && '0' || '3000' }}
+          ANALYSIS_MAX_REFRESH: ${{ github.event_name == 'push' && '150' || '3000' }}
         run: npm run analysis:catalogue
 
       - name: Save analysis cache
