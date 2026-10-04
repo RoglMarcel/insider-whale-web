@@ -242,12 +242,13 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: data/analysis-cache.json.gz
-          key: analysis-v3-${{ github.run_id }}
-          restore-keys: analysis-v3-
+          key: analysis-v3-external-v1-${{ github.run_id }}
+          restore-keys: analysis-v3-external-v1-
 
       - name: Refresh stock analysis catalogue
         timeout-minutes: 60
         env:
+          SCRAPLING_ENABLED: '1'
           ANALYSIS_MAX_REFRESH: ${{ github.event_name == 'push' && '150' || '3000' }}
         run: npm run analysis:catalogue
 
@@ -255,7 +256,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: data/analysis-cache.json.gz
-          key: analysis-v3-${{ github.run_id }}
+          key: analysis-v3-external-v1-${{ github.run_id }}
 
       - name: Build web UI with analysis catalogue
         run: npm run build:web
