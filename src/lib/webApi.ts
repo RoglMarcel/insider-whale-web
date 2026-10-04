@@ -10,6 +10,7 @@ import {
 } from '@/types';
 import { emptyPortfolioState } from './portfolio-rules';
 import { mockApi } from './mockApi';
+import { catalogueAnalysis } from './analysisCatalogueApi';
 
 /**
  * Web API (v1.1.2) — the "read-only" InsiderTrackerAPI for the hosted website.
@@ -110,6 +111,7 @@ async function watchlistJoined(): Promise<WatchlistItem[]> {
 
 export const webApi: InsiderTrackerAPI = {
   ...mockApi,
+  analysis: catalogueAnalysis,
   scraper: {
     ...mockApi.scraper,
     getStatus: async () => readStatus(),

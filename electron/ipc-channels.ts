@@ -1,5 +1,7 @@
 /** Single source of truth for IPC channel names (imported by main + preload). */
 export const IPC = {
+  analysisAnalyze: 'analysis:analyze',
+  analysisSearch: 'analysis:search',
   scraperStart: 'scraper:start',
   scraperStatus: 'scraper:status',
   scraperStatusUpdate: 'scraper:status-update',

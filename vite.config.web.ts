@@ -46,6 +46,7 @@ export default defineConfig({
     'import.meta.env.VITE_TARGET': JSON.stringify('web'),
   },
   base: './',
+  server: { proxy: { '/api/analysis': 'http://127.0.0.1:8787' } },
   build: {
     outDir: 'dist-web',
     emptyOutDir: true,

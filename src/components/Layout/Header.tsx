@@ -10,6 +10,7 @@ import { useI18n } from '@/hooks/useI18n';
 import type { TKey } from '@/lib/i18n';
 
 const VIEW_META: Record<string, { title: TKey; subtitle: TKey }> = {
+  analysis: { title: 'view.analysis.title', subtitle: 'view.analysis.subtitle' },
   dashboard: { title: 'view.dashboard.title', subtitle: 'view.dashboard.subtitle' },
   portfolio: { title: 'view.portfolio.title', subtitle: 'view.portfolio.subtitle' },
   news: { title: 'view.news.title', subtitle: 'view.news.subtitle' },

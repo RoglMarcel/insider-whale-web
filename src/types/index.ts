@@ -159,6 +159,8 @@ export interface ScoreBreakdown {
    * re-score derives it from the residual for exactly that reason.
    */
   valuationMultiplier: number;
+  /** Versioned valuation snapshot, persisted with the score breakdown. */
+  fairValue?: import('./fairValue').FairValueResult;
   /** Feature 4 — flat combo bonus added post-normalization (0 or 30). */
   comboBonus: number;
   /** Back-compat alias of optionsScore for older UI paths. */
@@ -286,12 +288,10 @@ export interface TickerAggregate {
   /** Market cap (USD) when known — normalizes buy size by company size. */
   marketCap?: number;
   /**
-   * Fair-value upside% (undervaluation). NO LONGER POPULATED — the two
-   * fair-value providers (AlphaSpread, ValueInvesting.io) were removed, so this
-   * stays undefined and `getValuationMultiplier` resolves to a neutral 1.0.
-   * Kept as the seam a future provider would plug into; see electron/scoring.ts.
+   * Legacy fair-value upside input. New live valuations use the structured snapshot.
    */
   upsidePct?: number;
+  fairValue?: import('./fairValue').FairValueResult;
   /** Feature 6 — sector/industry, when known. */
   sector?: string;
   /**
@@ -1877,6 +1877,10 @@ export interface PortfolioState {
 // ──────────────────────────────────────────────────────────────────────────
 
 export interface InsiderTrackerAPI {
+  analysis: {
+    analyze: (ticker: string) => Promise<import('./analysis').StockAnalysis>;
+    search: (query: string) => Promise<import('./analysis').StockSuggestion[]>;
+  };
   scraper: {
     start: () => Promise<ScrapeResult>;
     getStatus: () => Promise<ScrapeStatus>;

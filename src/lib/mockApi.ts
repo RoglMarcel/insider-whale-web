@@ -1,5 +1,7 @@
 import { DEFAULT_SETTINGS, filterSignals, LOGIN_PLATFORMS, type InsiderTrackerAPI, type AuthStatus } from '@/types';
 import { sampleSignals, sampleWatchlist, sampleLogs, sampleTrackRecord, samplePortfolio } from './sampleData';
+import { requestStockAnalysis } from './analysisApi';
+import { catalogueAnalysis } from './analysisCatalogueApi';
 
 const mockAuthStatus = (): AuthStatus =>
   Object.fromEntries(LOGIN_PLATFORMS.map((p) => [p.key, { loggedIn: false, savedAt: null }]));
@@ -10,6 +12,7 @@ const mockAuthStatus = (): AuthStatus =>
  * Moved out of `ipc.ts` (v1.1.2) so the web API can reuse it as a base.
  */
 export const mockApi: InsiderTrackerAPI = {
+  analysis: { analyze: requestStockAnalysis, search: catalogueAnalysis.search },
   scraper: {
     start: async () => ({
       status: 'failed',

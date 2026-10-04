@@ -48,6 +48,7 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
+    proxy: { '/api/analysis': 'http://127.0.0.1:8787' },
     port: 5173,
     strictPort: false,
   },

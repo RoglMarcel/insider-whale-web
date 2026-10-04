@@ -84,6 +84,8 @@ import {
 } from './capitoltrades';
 import { scrapeCongressWatchers } from './senatewatcher';
 import { fetchStockAnalysisStats, fetchDrawdown52w } from './stockstats';
+import { fetchFairValue } from './fairValue';
+import { calculateFairValue } from '../fairValue';
 
 /** Side-pipeline keys always included in session breakdown + health. */
 const SIDE_KEYS = SIDE_PIPELINE_SOURCES.map((s) => s.key);
@@ -1156,6 +1158,35 @@ async function runScrapeInner(opts: RunScrapeOptions, startedAt: string): Promis
   }
 
   // ── Enrich + score ───────────────────────────────────────────────────────
+  setStatus({ phase: 'Calculating fair values…', currentSource: undefined });
+  // Initialize EVERY candidate, including those beyond the bounded network phase.
+  // The breakdown persists the inputs, provenance and valuation without a schema migration.
+  for (const agg of aggregates) agg.fairValue = calculateFairValue({}, Date.now(), ['Fundamentals not fetched within this run budget']);
+  const valuationCache = new Map<string, Signal>();
+  try { for (const s of getLatestSignals()) valuationCache.set(s.ticker, s); } catch { /* first run */ }
+  const valuationPending: TickerAggregate[] = [];
+  for (const agg of aggregates.filter(a => !tickerIssue(a.ticker))) {
+    const previous = valuationCache.get(agg.ticker)?.breakdown.fairValue;
+    const age = previous ? Date.now() - Date.parse(previous.calculatedAt) : Infinity;
+    if (previous?.version === 2 && age >= 0 && age < (previous.status === 'unavailable' ? 900_000 : 21_600_000)) {
+      agg.fairValue = previous;
+    } else {
+      valuationPending.push(agg);
+    }
+  }
+  // Rotate deferred/failed tickers ahead of recently refreshed ones on subsequent runs.
+  valuationPending.sort((a, b) => {
+    const last = (ticker: string) => {
+      const r = valuationCache.get(ticker)?.breakdown.fairValue;
+      return r && Object.keys(r.inputs).length ? Date.parse(r.calculatedAt) : 0;
+    };
+    return last(a.ticker) - last(b.ticker);
+  });
+  await withTimeout(() => mapLimit(valuationPending, 4, async agg => {
+    const result = await fetchFairValue(agg.ticker);
+    checkCancelled();
+    agg.fairValue = result;
+  }).then(() => true), 90_000, false);
   setStatus({ phase: 'Merging & scoring…', currentSource: undefined });
 
   const scrapedAt = new Date().toISOString();

@@ -466,12 +466,8 @@ export function getTrackRecordMultiplier(
  * independent models call deeply undervalued is a stronger signal; an overvalued
  * one is tempered. `upsidePct` is (fairValue − price)/price × 100.
  *
- * DORMANT: both fair-value providers were removed, so `upsidePct` is always
- * undefined and this returns a neutral 1.0 for every signal. It is deliberately
- * NOT deleted — it is one of the twelve components the backtest framework
- * tracks (scripts/backtest-components.ts), and ripping it out would change the
- * composite formula rather than just switching off an input. Wire a new
- * provider to `TickerAggregate.upsidePct` and it becomes live again.
+ * Legacy multiplier for historical/research inputs. Live scraping supplies a
+ * structured fairValue snapshot with safety margin and confidence weighting.
  */
 export function getValuationMultiplier(upsidePct: number | undefined): number {
   if (upsidePct == null || !Number.isFinite(upsidePct)) return 1.0;
@@ -704,7 +700,8 @@ export function computeConfidence(agg: TickerAggregate, eligible: RawInsiderTrad
   if (agg.earningsDate) conf += 15;
   if (agg.sector) conf += 5;
   if (agg.bestAccuracy3m != null) conf += 10;
-  if (agg.upsidePct != null) conf += 5;
+  if (agg.fairValue) conf += 5 * agg.fairValue.weight;
+  else if (agg.upsidePct != null) conf += 5;
   if (agg.stats) conf += 10;
   const sources = agg.sourceCount ?? 1;
   conf += sources >= 3 ? 25 : sources === 2 ? 15 : 5;
@@ -887,7 +884,7 @@ export function scoreTicker(agg: TickerAggregate, config: ScoringConfig = DEFAUL
   // shadow framework can score the same aggregate under candidate weights).
   const vixMultiplier = getVixMultiplier(agg.vix, config.vixCap);
   const trackRecordMultiplier = getTrackRecordMultiplier(agg.bestAccuracy3m, config.trackRecordSlope);
-  const valuationMultiplier = getValuationMultiplier(agg.upsidePct);
+  const valuationMultiplier = agg.fairValue?.multiplier ?? getValuationMultiplier(agg.upsidePct);
   // Decay each component on its OWN age: the insider leg by the trade date (badge
   // age), the options leg by its live scrape time — so a stale insider buy doesn't
   // unfairly discount fresh options flow, or vice-versa.
@@ -961,7 +958,8 @@ export function scoreTicker(agg: TickerAggregate, config: ScoringConfig = DEFAUL
   if (vixMultiplier > 1) notes.push(`Elevated VIX — insider buying boosted ×${vixMultiplier.toFixed(2)}`);
   if (trackRecordMultiplier > 1) notes.push(`Strong insider track record (×${trackRecordMultiplier.toFixed(2)})`);
   else if (trackRecordMultiplier < 1) notes.push(`Weak insider track record (×${trackRecordMultiplier.toFixed(2)})`);
-  if (valuationMultiplier > 1) notes.push(`Undervalued (~${Math.round(agg.upsidePct ?? 0)}% upside, ×${valuationMultiplier})`);
+  if (agg.fairValue) notes.push(`Fair value: level ${agg.fairValue.level}, ${agg.fairValue.status}, ${agg.fairValue.recommendation}; safety margin ${agg.fairValue.marginOfSafety * 100}%`);
+  if (valuationMultiplier > 1) notes.push(`Undervalued (~${Math.round(agg.fairValue?.upsidePct ?? agg.upsidePct ?? 0)}% upside, ×${valuationMultiplier})`);
   else if (valuationMultiplier < 1) notes.push(`Overvalued — conviction tempered (×${valuationMultiplier})`);
   if (opts.score < 0) notes.push('🐻 Net bearish options flow (put-dominated)');
   if (freshnessMultiplier < 1) notes.push(`Insider signal age decay ×${freshnessMultiplier.toFixed(2)}`);
@@ -1030,10 +1028,7 @@ export function scoreTicker(agg: TickerAggregate, config: ScoringConfig = DEFAUL
   if (agg.vix == null || !Number.isFinite(agg.vix)) {
     dormantFactors.push({ factor: 'vixMultiplier', reason: 'no VIX reading (stale or unfetched)' });
   }
-  if (agg.upsidePct == null || !Number.isFinite(agg.upsidePct)) {
-    // Both fair-value providers were removed, so this is permanent for now. It
-    // also costs a permanently unreachable 5 points in `computeConfidence`,
-    // which is why a fully enriched signal tops out at 95 rather than 100.
+  if (agg.fairValue ? agg.fairValue.weight === 0 : agg.upsidePct == null || !Number.isFinite(agg.upsidePct)) {
     dormantFactors.push({ factor: 'valuationMultiplier', reason: 'no fair-value estimate available' });
   }
   if (classicCombo && !multApplies) {
@@ -1044,6 +1039,7 @@ export function scoreTicker(agg: TickerAggregate, config: ScoringConfig = DEFAUL
   }
 
   const breakdown: ScoreBreakdown = {
+    ...(agg.fairValue ? { fairValue: agg.fairValue } : {}),
     rankWeight,
     dollarVolumePoints,
     typeModifier,

@@ -3,6 +3,7 @@ import { useStore } from '@/store/useStore';
 import { api, isElectron, isWeb } from '@/lib/ipc';
 import { Layout } from '@/components/Layout/Layout';
 import { Dashboard } from '@/components/Dashboard/Dashboard';
+import { AnalysisView } from '@/components/Analysis/AnalysisView';
 import { WatchlistView } from '@/components/Watchlist/WatchlistView';
 import { PortfolioView } from '@/components/Portfolio/PortfolioView';
 import { HistoryView } from '@/components/History/HistoryView';
@@ -119,6 +120,7 @@ export default function App() {
         )}
 
         {view === 'dashboard' && <Dashboard />}
+        {view === 'analysis' && <AnalysisView />}
         {view === 'portfolio' && <PortfolioView />}
         {view === 'watchlist' && <WatchlistView />}
         {view === 'history' && <HistoryView />}

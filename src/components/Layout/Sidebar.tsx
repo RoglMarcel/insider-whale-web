@@ -16,6 +16,7 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { key: 'dashboard', label: 'nav.alerts', icon: GridIcon },
+  { key: 'analysis', label: 'nav.analysis', icon: NewsIcon },
   // The testing portfolio sits directly under the alerts it is built from, and
   // exists in BOTH builds — the hosted one reads the published curve.
   { key: 'portfolio', label: 'nav.portfolio', icon: BriefcaseIcon },

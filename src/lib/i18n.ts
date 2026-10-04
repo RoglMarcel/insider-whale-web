@@ -21,6 +21,9 @@ export const LANGUAGES: { key: Lang; label: string; flag: string }[] = [
 ];
 
 const en = {
+  'nav.analysis': 'Analysis',
+  'view.analysis.title': 'Stock analysis',
+  'view.analysis.subtitle': 'Fair value, fundamentals and a clear assessment',
   'pf.compare.title': 'Three portfolios · one starting capital',
   'pf.compare.market': '1 · S&P 500',
   'pf.compare.overlay': '2 · Small positions + S&P 500',
@@ -602,6 +605,9 @@ const en = {
 export type TKey = keyof typeof en;
 
 const de: Record<TKey, string> = {
+  'nav.analysis': 'Analyse',
+  'view.analysis.title': 'Aktienanalyse',
+  'view.analysis.subtitle': 'Fair Value, Fundamentaldaten und eine nachvollziehbare Einordnung',
   'pf.compare.title': 'Drei Portfolios · gleiches Startkapital',
   'pf.compare.market': '1 · S&P 500',
   'pf.compare.overlay': '2 · Kleine Positionen + S&P 500',

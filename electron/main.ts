@@ -562,6 +562,14 @@ function registerIpc(): void {
     return listener(event, ...args);
   });
   handle(IPC.scraperStart, () => triggerScrape());
+  handle(IPC.analysisAnalyze, async (_e, ticker: unknown) => {
+    const { analyzeStock } = await import('./analysis');
+    return analyzeStock(ticker);
+  });
+  handle(IPC.analysisSearch, async (_e, query: unknown) => {
+    const { searchStocks } = await import('./marketData');
+    return searchStocks(query);
+  });
   handle(IPC.scraperStatus, () => getScrapeStatus());
 
   handle(IPC.signalsGetAll, () => getLatestSignals());

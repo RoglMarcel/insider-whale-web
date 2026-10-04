@@ -34,7 +34,7 @@ function showSingle(signal: Signal, win?: BrowserWindow | null): void {
     signal.convictionLevel === 'WATCH' ? '🟡 WATCH' : '⚪ SIGNAL';
   const n = new Notification({
     title: `${tier} · ${signal.ticker} (${signal.score.toFixed(0)})`,
-    body: `${signal.insiderCount} insider(s)${role} · ${formatUSD(signal.totalDollarVolume)} bought`,
+    body: `${signal.insiderCount} insider(s)${role} · ${formatUSD(signal.totalDollarVolume)} bought${fairValueSummary(signal)}`,
     silent: false,
   });
   n.on('click', () => {
@@ -42,6 +42,13 @@ function showSingle(signal: Signal, win?: BrowserWindow | null): void {
     win?.webContents.send('app:open-ticker', signal.ticker);
   });
   n.show();
+}
+
+function fairValueSummary(signal: Signal): string {
+  const fv = signal.breakdown.fairValue;
+  if (!fv) return '';
+  if (fv.low == null || fv.high == null) return ' · Fair value: insufficient data';
+  return ` · FV ${fv.low.toFixed(2)}–${fv.high.toFixed(2)} ${fv.currency} (L${fv.level}${fv.status === 'fallback' ? ', fallback' : ''}) · ${fv.recommendation}`;
 }
 
 function showSummary(tickers: string[], win?: BrowserWindow | null): void {
@@ -94,7 +101,7 @@ export function notifyCombos(tickers: string[], signals: Signal[], win?: Browser
       : 'Insider buying + unusual options flow on the same ticker';
     const n = new Notification({
       title,
-      body,
+      body: body + (s ? fairValueSummary(s) : ''),
       silent: false,
       urgency: 'critical',
     });

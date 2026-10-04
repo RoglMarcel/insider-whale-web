@@ -10,6 +10,7 @@ import { ConvictionBadge } from '@/components/UI/ConvictionBadge';
 import { ComboBadge } from '@/components/UI/ComboBadge';
 import { PoliticianComboBadge, MegaSignalBanner } from '@/components/UI/PoliticianBadges';
 import { ScoreBreakdown } from './ScoreBreakdown';
+import { FairValuePanel } from './FairValuePanel';
 import { InsiderTable } from './InsiderTable';
 import { InsiderAccuracyPanel, type PanelInsider } from './InsiderAccuracyPanel';
 import { OptionsFlow } from './OptionsFlow';
@@ -496,6 +497,7 @@ export function SignalModal() {
                 politicianTrades={signal.politicianTrades}
                 rawTrades={signal.rawTrades}
               />
+              <FairValuePanel value={signal.breakdown.fairValue} />
               <InsiderAccuracyPanel insiders={insiders} records={records} loading={trLoading} />
               <InsiderTable trades={signal.rawTrades} trackRecords={records} loading={trLoading} />
               <OptionsFlow options={signal.optionsActivity} />

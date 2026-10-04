@@ -209,7 +209,26 @@ jobs:
             echo "No new notable signals this run."
           fi
 
-      - name: Build web UI (bakes in public/data)
+      - name: Restore scheduled analysis cache
+        uses: actions/cache/restore@v4
+        with:
+          path: data/analysis-cache.json.gz
+          key: analysis-v2-${{ github.run_id }}
+          restore-keys: analysis-v2-
+
+      - name: Refresh stock analysis catalogue
+        timeout-minutes: 60
+        env:
+          ANALYSIS_MAX_REFRESH: '3000'
+        run: npm run analysis:catalogue
+
+      - name: Save analysis cache
+        uses: actions/cache/save@v4
+        with:
+          path: data/analysis-cache.json.gz
+          key: analysis-v2-${{ github.run_id }}
+
+      - name: Build web UI with analysis catalogue
         run: npm run build:web
 
       - name: Configure Pages

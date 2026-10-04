@@ -14,6 +14,7 @@ interface Tab {
 /** Same destinations as the sidebar, in the same order. */
 const TABS: Tab[] = [
   { key: 'dashboard', label: 'nav.alerts', icon: GridIcon },
+  { key: 'analysis', label: 'nav.analysis', icon: NewsIcon },
   // Six tabs on the desktop build leaves ~60px each at 360px, so this one uses
   // the SHORT label. Shortening the word is the right trade — shrinking the
   // touch target is not.
@@ -49,7 +50,7 @@ export function BottomTabBar() {
   return (
     <nav
       aria-label={t('nav.main')}
-      className="fixed inset-x-0 bottom-0 z-40 flex md:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 flex overflow-x-auto md:hidden"
       style={{
         paddingBottom: 'var(--sa-bottom)',
         background: 'var(--bg-glass)',
@@ -67,7 +68,7 @@ export function BottomTabBar() {
             type="button"
             aria-current={active ? 'page' : undefined}
             onClick={() => setView(tab.key)}
-            className="relative flex flex-1 flex-col items-center justify-center gap-0.5 transition-colors"
+            className="relative flex min-w-[60px] flex-1 shrink-0 flex-col items-center justify-center gap-0.5 transition-colors"
             style={{
               height: 'var(--tabbar-h)',
               color: active ? 'var(--accent-blue)' : 'var(--text-secondary)',

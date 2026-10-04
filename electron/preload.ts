@@ -12,6 +12,7 @@ import { IPC } from './ipc-channels';
  */
 
 const api: InsiderTrackerAPI = {
+  analysis: { analyze: ticker => ipcRenderer.invoke(IPC.analysisAnalyze, ticker), search: query => ipcRenderer.invoke(IPC.analysisSearch, query) },
   scraper: {
     start: () => ipcRenderer.invoke(IPC.scraperStart),
     getStatus: () => ipcRenderer.invoke(IPC.scraperStatus),
