@@ -242,8 +242,8 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: data/analysis-cache.json.gz
-          key: analysis-v2-${{ github.run_id }}
-          restore-keys: analysis-v2-
+          key: analysis-v3-${{ github.run_id }}
+          restore-keys: analysis-v3-
 
       - name: Refresh stock analysis catalogue
         timeout-minutes: 60
@@ -255,7 +255,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: data/analysis-cache.json.gz
-          key: analysis-v2-${{ github.run_id }}
+          key: analysis-v3-${{ github.run_id }}
 
       - name: Build web UI with analysis catalogue
         run: npm run build:web
