@@ -259,7 +259,10 @@ jobs:
           key: analysis-v3-external-v1-${{ github.run_id }}
 
       - name: Build web UI with analysis catalogue
-        run: npm run build:web
+        run: |
+          npx esbuild scripts/publish-shared-history.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --alias:electron=./scripts/electron-stub.ts --outfile=tmp/publish-shared-history.cjs
+          node tmp/publish-shared-history.cjs
+          npm run build:web
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
