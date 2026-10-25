@@ -1,12 +1,17 @@
 {
   "version": 1,
   "format": "sqlite-gzip",
-  "sha256": "222a0033fd130dfbfc19b4fad7b455b9f251e6f5f148da897eedfa1c9797f23e",
+  "sha256": "dec4806369bd8a0497c7ab2356284e4e4e802c962d6ae7338f261021a7958ba5",
   "parts": [
     {
       "name": "part-000000.gzpart",
-      "bytes": 32479483,
-      "sha256": "222a0033fd130dfbfc19b4fad7b455b9f251e6f5f148da897eedfa1c9797f23e"
+      "bytes": 33554432,
+      "sha256": "72e0927a2cecca3733e383c2b0405813b61aa8970f897cdcf7acc5400d1513f3"
+    },
+    {
+      "name": "part-000001.gzpart",
+      "bytes": 12148599,
+      "sha256": "0f788c27e281d5e5168c222493cfcc1e29a9a3c7920b348a12b8a1e0262bdf5a"
     }
   ]
 }
