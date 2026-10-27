@@ -1,3 +1,4 @@
+import { shouldRefreshPrices } from '../src/lib/price-freshness';
 import { cleanPortfolioCandidates } from '../src/lib/ticker-quality';
 import { recordBacktestBook, recordBacktestClosures, analyzePendingBacktests, getBacktestState } from './backtest';
 import { buildInsiderOnly, INSIDER_ONLY_ID, recoverPortfolioEntryCandidates } from '../src/lib/insider-only';
@@ -172,13 +173,11 @@ interface PriceSyncResult {
 /**
  * Top the adjusted-close cache up.
  *
- * At most ONE request per ticker per calendar day: a delisted symbol never
- * catches up to SPY's newest date, so "refetch until current" would re-hammer
- * the same 404 on every run forever.
+ * Refresh successful series after 30 minutes, or immediately when the
+ * benchmark advances beyond a cached equity. Provider retries remain bounded.
  */
 export async function syncPrices(tickers: readonly string[], fromYmd: string): Promise<PriceSyncResult> {
   const coverage = getPriceCoverage();
-  const today = new Date().toISOString().slice(0, 10);
   let spyLast = coverage[BENCHMARK]?.last ?? '';
   // Benchmark first: other tickers must catch up to the NEW benchmark date.
   const ordered = [BENCHMARK, ...tickers.filter((t) => t !== BENCHMARK)];
@@ -188,9 +187,9 @@ export async function syncPrices(tickers: readonly string[], fromYmd: string): P
 
   for (const ticker of ordered) {
     const cov = coverage[ticker];
-    const triedToday = cov?.fetchedAt?.slice(0, 10) === today;
-    const current = ticker === BENCHMARK ? false : !!cov && !!spyLast && cov.last >= spyLast;
-    if (cov && (triedToday || current)) continue;
+    // Refresh the benchmark independently of cached dates. A successful fetch
+    // of old data must never lock every portfolio price for an entire UTC day.
+    if (!shouldRefreshPrices(cov, new Date(), ticker === BENCHMARK, spyLast)) continue;
 
     if (fetched > 0) await sleep(PRICE_REQUEST_GAP_MS);
     const points = await fetchAdjCloseSeries(ticker, { fromYmd });

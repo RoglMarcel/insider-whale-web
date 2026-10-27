@@ -12,6 +12,7 @@
  * Failures are reported to the workflow; usable data can still be deployed.
  */
 import path from 'node:path';
+import { expectedPriceSession } from '../src/lib/price-freshness';
 import { recordUpdate } from './update-report';
 import fs from 'node:fs';
 import { initDatabase, closeDatabase } from '../electron/database';
@@ -85,7 +86,10 @@ async function main(): Promise<void> {
     ...(state.insiderOnly?.state.open.filter((p) => p.priceStale).map((p) => p.ticker) ?? []),
   ])].sort();
   if (missing.length) console.warn(`[portfolio] incomplete price refresh: ${missing.join(', ')}; cached prices retained`);
-  const incomplete = missing.length > 0 || !state.insiderOnly;
+  const expected = expectedPriceSession(new Date());
+  const stale = !state.meta.priceAsOf || state.meta.priceAsOf < expected || !state.meta.lastDate || state.meta.lastDate < expected;
+  if (stale) console.warn(`[portfolio] stale benchmark: expected ${expected}, prices ${state.meta.priceAsOf}, curve ${state.meta.lastDate}`);
+  const incomplete = stale || missing.length > 0 || !state.insiderOnly;
   recordUpdate(incomplete ? 'partial' : 'success', incomplete ? 'prices_unavailable' : 'updated', missing.length, missing, state.meta.priceAsOf ?? undefined);
   closeDatabase();
 }
