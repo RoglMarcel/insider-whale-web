@@ -9,3 +9,9 @@
 @media(prefers-reduced-motion:reduce){.access-entry{animation:none}.access-spinner{animation-duration:1.5s}.access-input-wrap,.access-submit{transition:none}}
 
 .access-lock-button svg{width:12px;height:12px}
+/* Keep the key register's horizontal scrolling inside its own panel. */
+.access-admin{min-width:0;max-width:100%;overflow-x:hidden}
+.access-admin-body{width:100%;min-width:0}
+.access-panel,.access-generated,.access-generated-heading,.access-register-controls{min-width:0;max-width:100%}
+.access-table-scroll{width:100%;min-width:0;max-width:100%;margin-right:0;padding-right:0}
+@media(max-width:640px){.access-admin-heading{flex-wrap:wrap}.access-admin-summary{padding-top:0;gap:24px}}
