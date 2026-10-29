@@ -31,3 +31,5 @@ Session tokens are random, opaque, stored only as hashes, and sent in Secure, Ht
 After a successful managed-host deployment, the existing GitHub scrape/publish workflow applies `scripts/prepare-pages-entry.mjs` so the original Pages address forwards visitors. Data freshness checks and scheduled scrapes continue using the existing feed URL.
 
 Desktop Electron builds retain their existing behavior and do not require a web key.
+
+`access-entry.yml` can publish a routing-only change immediately by restoring the last retained Pages artifact and replacing its entry page. It preserves all market data and does not wait for or cancel the scheduled analysis refresh. It fails closed if no retained Pages artifact exists.

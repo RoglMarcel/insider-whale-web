@@ -15,3 +15,5 @@
 .access-panel,.access-generated,.access-generated-heading,.access-register-controls{min-width:0;max-width:100%}
 .access-table-scroll{width:100%;min-width:0;max-width:100%;margin-right:0;padding-right:0}
 @media(max-width:640px){.access-admin-heading{flex-wrap:wrap}.access-admin-summary{padding-top:0;gap:24px}}
+/* Anchor the visually hidden Actions header inside the scrolling table. */
+.access-table-scroll{position:relative}

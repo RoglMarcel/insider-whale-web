@@ -1,0 +1,67 @@
+name: Publish protected terminal entry
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/access-entry.yml'
+      - 'access/deployment.json'
+      - 'scripts/prepare-pages-entry.mjs'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: access-entry
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Preserve the full currently published dataset. A UI access change must
+      # not wait for (or cancel) the much longer stock-analysis refresh.
+      - name: Restore the latest published Pages artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p tmp/access-entry dist-web
+          artifact_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=github-pages&per_page=100" --jq '[.artifacts[] | select(.expired == false)] | max_by(.created_at).id')
+          if [[ ! "$artifact_id" =~ ^[0-9]+$ ]]; then
+            echo 'No retained Pages artifact exists; refusing to replace the public data feed.'
+            exit 1
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > tmp/access-entry/current-pages.zip
+          python3 - <<'PY'
+          import pathlib, shutil, tarfile, zipfile
+          work = pathlib.Path('tmp/access-entry')
+          with zipfile.ZipFile(work / 'current-pages.zip') as archive:
+              member = next(name for name in archive.namelist() if pathlib.PurePosixPath(name).name == 'artifact.tar')
+              with archive.open(member) as source, (work / 'artifact.tar').open('wb') as target:
+                  shutil.copyfileobj(source, target)
+          with tarfile.open(work / 'artifact.tar') as archive:
+              archive.extractall('dist-web', filter='data')
+          if not pathlib.Path('dist-web/data/meta.json').is_file():
+              raise SystemExit('Published market data is missing; refusing to deploy.')
+          PY
+      - name: Publish the protected terminal entry
+        run: node scripts/prepare-pages-entry.mjs
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist-web
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
