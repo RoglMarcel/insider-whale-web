@@ -35,3 +35,9 @@ backtest-*-report.md
 __pycache__/
 build/scrapling-runtime/
 *.py[cod]
+
+# Hosted access credentials, local runtime and generated shell
+.dev.vars*
+.wrangler/
+access/generated-assets.mjs
+outputs/

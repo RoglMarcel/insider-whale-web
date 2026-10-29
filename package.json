@@ -40,7 +40,9 @@
     "portfolio:sync": "esbuild scripts/sync-portfolio.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --alias:electron=./scripts/electron-stub.ts --outfile=tmp/sync-portfolio.cjs && node scripts/run-node-or-electron.cjs tmp/sync-portfolio.cjs",
     "portfolio:sweep": "esbuild scripts/portfolio-sweep.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --alias:electron=./scripts/electron-stub.ts --outfile=tmp/portfolio-sweep.cjs && node scripts/run-node-or-electron.cjs tmp/portfolio-sweep.cjs",
     "verify:portfolio": "esbuild scripts/verify-portfolio.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --alias:electron=./scripts/electron-stub.ts --outfile=tmp/verify-portfolio.cjs && node scripts/run-node-or-electron.cjs tmp/verify-portfolio.cjs",
-    "verify:backtest": "esbuild scripts/verify-backtest.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --outfile=tmp/verify-backtest.cjs && node scripts/run-node-or-electron.cjs tmp/verify-backtest.cjs && esbuild scripts/verify-backtest-sync.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --outfile=tmp/verify-backtest-sync.cjs && node scripts/run-node-or-electron.cjs tmp/verify-backtest-sync.cjs"
+    "verify:backtest": "esbuild scripts/verify-backtest.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --outfile=tmp/verify-backtest.cjs && node scripts/run-node-or-electron.cjs tmp/verify-backtest.cjs && esbuild scripts/verify-backtest-sync.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --outfile=tmp/verify-backtest-sync.cjs && node scripts/run-node-or-electron.cjs tmp/verify-backtest-sync.cjs",
+    "build:access": "npm run build:web && node scripts/build-access.mjs",
+    "test:access": "node --test tests/access/*.test.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^11.3.0",
