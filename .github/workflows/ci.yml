@@ -109,6 +109,8 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run build:web
       - run: npx playwright install --with-deps chromium
+      - name: Key access UI on desktop, tablet and phones
+        run: node tests/ui/access-ui.cjs
       - name: Public UI on desktop, tablet and phones
         run: node tests/ui/web-ui.cjs
       - run: npm run build
@@ -120,5 +122,6 @@ jobs:
           name: web-ui-review
           path: |
             tmp/ui
+            tmp/access-ui
             tmp/backtest-ui
           retention-days: 7

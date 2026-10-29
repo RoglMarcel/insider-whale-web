@@ -5,6 +5,7 @@ const path = require('node:path');
 const http = require('node:http');
 const { buildSync } = require('esbuild');
 const { chromium } = require('playwright');
+const { mockMemberAccess } = require('./access-fixture.cjs');
 const root = path.resolve(__dirname, '../..');
 const out = path.join(root, 'tmp/ui');
 fs.mkdirSync(out, { recursive: true });
@@ -74,6 +75,7 @@ async function contextPage(width, mode = 'full') {
   const context = await browser.newContext({ viewport: { width, height: width < 768 ? 844 : 1000 }, locale: 'en-US', reducedMotion: 'reduce' });
   const page = await context.newPage();
   currentPage = page;
+  await mockMemberAccess(page);
   const jsErrors = []; page.on('pageerror', e => jsErrors.push(e.message));
   await page.route('**/data/*.json', async route => {
     const name = new URL(route.request().url()).pathname.split('/').pop();

@@ -57,7 +57,7 @@ export default function AccessGate({ children }: { children: ReactNode }) {
   };
   if (adminPage) return <Suspense fallback={<AccessLoading />}><AdminAccess /></Suspense>;
   if (checking) return <AccessLoading />;
-  if (session) return <>{children}<button className="access-lock-button" type="button" onClick={() => void logout()} disabled={busy} title={error || 'Lock this terminal'}>Lock terminal <span aria-hidden="true">↗</span></button>{error && <div className="access-session-error" role="alert">{error}</div>}</>;
+  if (session) return <>{children}<button className="access-lock-button" type="button" onClick={() => void logout()} disabled={busy} title={error || 'Lock this terminal'}>Lock terminal <Arrow /></button>{error && <div className="access-session-error" role="alert">{error}</div>}</>;
   return <main className="access-screen">
     <header className="access-top"><AccessBrand /><span className="access-private"><span />Private access</span></header>
     <section className="access-entry" aria-labelledby="access-title">

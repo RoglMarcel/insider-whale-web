@@ -1,6 +1,6 @@
 import { createAccessService } from './service.mjs';
 import assets from '@iwt-assets';
-const DATA_FILES = /^(?:meta|signals|portfolio|backtest|history|update-health|analysis-index)\.json$|^analysis\/[A-Z0-9.^_-]{1,32}\.json$/;
+const DATA_FILES = /^(?:meta|signals|portfolio|backtest|history|update-health|valuations|analysis-summary|analysis-index)\.json$|^analysis\/[A-Z0-9.^_-]{1,32}\.json$/;
 let lastCleanup = 0;
 export default {
   async fetch(request, env, ctx) {

@@ -5,6 +5,7 @@ const path = require('node:path');
 const http = require('node:http');
 const { buildSync } = require('esbuild');
 const { chromium } = require('playwright');
+const { mockMemberAccess } = require('./access-fixture.cjs');
 const root = path.resolve(__dirname, '../..');
 const out = path.join(root, 'tmp/backtest-ui');
 fs.mkdirSync(out, { recursive: true });
@@ -28,6 +29,7 @@ let lastPage;
     const context = await browser.newContext({ viewport: { width, height: 1000 }, acceptDownloads: true });
     const page = await context.newPage();
     lastPage = page;
+    if (!desktop) await mockMemberAccess(page);
     const errors = []; page.on('pageerror', e => errors.push(e.message));
     const initialize = ({ desktop }) => {
       localStorage.setItem('language', 'de'); localStorage.setItem('last_seen_version', '1.7.0');
