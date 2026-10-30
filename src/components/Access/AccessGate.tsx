@@ -5,7 +5,7 @@ const AdminAccess = lazy(() => import('./AdminAccess'));
 
 export function Arrow() { return <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>; }
 export function LockMark() { return <div className="access-mark" aria-hidden="true"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></svg></div>; }
-export function AccessBrand() { return <a className="access-brand" href={import.meta.env.BASE_URL}><span className="access-brand-icon">W<span /></span><span>Insider &amp; Whale<span className="access-brand-sub">TERMINAL</span></span></a>; }
+export function AccessBrand() { return <a className="access-brand" href={import.meta.env.BASE_URL}><span>Insider &amp; Whale<span className="access-brand-sub">TERMINAL</span></span></a>; }
 export function AccessLoading() { return <main className="access-screen"><div className="access-loading" role="status"><span className="access-spinner" />Checking access…</div></main>; }
 
 export default function AccessGate({ children }: { children: ReactNode }) {
