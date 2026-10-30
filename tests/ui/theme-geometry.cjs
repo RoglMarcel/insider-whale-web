@@ -37,22 +37,28 @@ async function baselineStyles(){
   })();
 }
 async function measure(page){
-  return page.evaluate(()=>[...document.querySelectorAll('.app-shell, .app-shell *, [role="dialog"], [role="dialog"] *, .access-lock-button')].filter(el=>el.namespaceURI==='http://www.w3.org/1999/xhtml'&&!el.closest('.recharts-wrapper')&&el.tagName!=='STYLE'&&el.getClientRects().length).map(el=>{const r=el.getBoundingClientRect();return{tag:el.tagName,rect:[r.x,r.y,r.width,r.height]};}));
+  return page.evaluate(()=>[...document.querySelectorAll('.app-shell, .app-shell *, [role="dialog"], [role="dialog"] *, .access-lock-button')].filter(el=>el.namespaceURI==='http://www.w3.org/1999/xhtml'&&!el.closest('.recharts-wrapper')&&el.tagName!=='STYLE'&&el.getClientRects().length).map(el=>{const r=el.getBoundingClientRect();return{tag:el.tagName,css:el.getAttribute('class')||'',rect:[r.x,r.y,r.width,r.height]};}));
 }
 async function assertThemeGeometry(page,label){
+  const css=await baselineStyles();
   await page.evaluate(()=>document.fonts.ready);
+  await page.waitForLoadState('networkidle', {timeout:15000});
+  // Compare settled layouts, not the first frame of a newly mounted view.
+  const freeze=await page.addStyleTag({content:'.app-shell, .app-shell *, [role=dialog], [role=dialog] * { animation: none !important; transition: none !important; }'});
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
   const now=await measure(page);let style;
   try{
-    style=await page.addStyleTag({content:await baselineStyles()});
+    style=await page.addStyleTag({content:css});
     await page.evaluate(()=>{
       document.querySelectorAll('link[rel="stylesheet"]').forEach(el=>{if(new URL(el.href).origin===location.origin&&!el.disabled){el.setAttribute('data-theme-check-disabled','');el.disabled=true;}});
       return new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
     });
     const before=await measure(page);
     assert.equal(now.length,before.length,label+': visible element count changed');
-    for(let i=0;i<now.length;i++)for(let j=0;j<4;j++)assert(Math.abs(now[i].rect[j]-before[i].rect[j])<=0.05,`${label}: ${now[i].tag} #${i} moved/resized: ${JSON.stringify(before[i].rect)} -> ${JSON.stringify(now[i].rect)}`);
+    for(let i=0;i<now.length;i++)for(let j=0;j<4;j++)assert(Math.abs(now[i].rect[j]-before[i].rect[j])<=0.05,`${label}: ${now[i].tag}.${now[i].css} #${i} moved/resized: ${JSON.stringify(before[i].rect)} -> ${JSON.stringify(now[i].rect)}`);
   }finally{
     if(style)await style.evaluate(el=>el.remove());
+    await freeze.evaluate(el=>el.remove());
     await page.evaluate(()=>{document.querySelectorAll('[data-theme-check-disabled]').forEach(el=>{el.disabled=false;el.removeAttribute('data-theme-check-disabled');});return new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
   }
 }

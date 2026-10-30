@@ -69,12 +69,12 @@
   --text-secondary: #8d8f9a;      /* Sharp slate gray */
   --accent-green: #00e676;        /* Bright terminal green (gains) */
   --accent-yellow: #d3b875;
-  --accent-red: #ff9393;          /* Vivid red (bearish/puts) */
-  --accent-blue: var(--accent-green);         /* Strong, professional terminal blue */
-  --accent-purple: #b4bdc9;       /* Vivid purple */
+  --accent-red: #ff9393;          /* Negative values and destructive states */
+  --accent-blue: var(--accent-green);         /* Compatibility alias for green primary actions */
+  --accent-purple: #b4bdc9;       /* Neutral secondary category accent */
   --shadow-glass: 0 1px 3px rgb(0 0 0 / 18%), inset 0 1px 0 rgb(255 255 255 / 1%);
   --shadow-glass-hover: 0 4px 16px rgb(0 0 0 / 24%), inset 0 1px 0 rgb(255 255 255 / 2%);
-  /* Faint ambient glow for dark mode */
+  /* Neutral background; the access screen owns its subtle green glow */
   --blob-1: transparent;
   --blob-2: transparent;
   --blob-3: transparent;
