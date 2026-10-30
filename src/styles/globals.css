@@ -689,9 +689,9 @@ tr {
 @media(max-width: 600px) { .valuation-controls { grid-template-columns: repeat(2,minmax(0,1fr)); } .valuation-panel { padding: 12px; } }
 
 /* Access-screen finishes. Paint properties only: dimensions and typography stay fixed. */
-.app-shell .input { background: var(--bg-input); border-color: var(--border-input); }
-.app-shell .input::placeholder { color: var(--text-muted); }
-.app-shell .input:focus { border-color: var(--accent-green); box-shadow: 0 0 0 3px rgb(0 230 118 / 9%); }
+.app-shell .input, [role='dialog'] .input { background: var(--bg-input); border-color: var(--border-input); }
+.app-shell input::placeholder, [role='dialog'] input::placeholder { color: var(--text-muted); }
+.app-shell .input:focus, [role='dialog'] .input:focus { border-color: var(--accent-green); box-shadow: 0 0 0 3px rgb(0 230 118 / 9%); }
 .app-shell input[type='checkbox'], .app-shell input[type='radio'] { accent-color: var(--accent-green); }
 .app-shell .sidebar-item:hover { background: var(--bg-glass-hover); }
 .app-shell .sidebar-item-active { background: rgb(0 230 118 / 7%); border-color: rgb(0 230 118 / 23%); color: var(--accent-green); }

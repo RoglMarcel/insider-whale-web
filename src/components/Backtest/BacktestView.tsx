@@ -62,8 +62,8 @@ export function BacktestView() {
       <p className="mt-2 text-sm text-secondary">USD-Modell · EUR-Umrechnung und separate Gebühren fehlen. Historische Käufe ohne Original-Snapshot sind von Faktorauswertungen auszuschließen.</p>
       {state?.readOnly && <p className="mt-2 text-sm text-secondary">Veröffentlichte Depotdaten. Erneute Analysen werden nur in diesem Browser gespeichert und im JSON-Export mitgeliefert; sie werden nicht zum Server synchronisiert.</p>}
       {state && <p className="mt-2 text-xs text-secondary">Datenstand: {state.generatedAt || 'unbekannt'} · {state.records.length} Positionen archiviert</p>}
-      {error && <p role="alert" className="mt-3 text-red-500">{error}</p>}
-      {state?.localError && <p role="alert" className="mt-3 text-amber-500">{state.localError}</p>}
+      {error && <p role="alert" className="mt-3 text-accent-red">{error}</p>}
+      {state?.localError && <p role="alert" className="mt-3 text-accent-yellow">{state.localError}</p>}
       {!state && busy && <p role="status">Daten werden geladen …</p>}
     </GlassCard>
     <GlassCard>
@@ -85,8 +85,8 @@ export function BacktestView() {
     {record && <GlassCard>
       <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-lg font-bold">{record.portfolio} · {record.position.ticker}</h3><button className="btn" onClick={() => setSelected(null)}>Details schließen</button></div>
       <p className="mt-2 text-sm">{statuses[record.status]} · Kauf: {record.position.entryDate} · Verkauf: {record.position.exitDate ?? 'offen'}</p>
-      {record.snapshot.missingReason && <p className="mt-2 text-sm text-amber-500">{record.snapshot.missingReason}</p>}
-      {record.replayChanged && <p className="mt-2 text-sm text-amber-500">Ein späterer Simulationslauf weicht von diesem archivierten Handelsverlauf ab. Das Original bleibt erhalten; Abweichungen sind im Export dokumentiert.</p>}
+      {record.snapshot.missingReason && <p className="mt-2 text-sm text-accent-yellow">{record.snapshot.missingReason}</p>}
+      {record.replayChanged && <p className="mt-2 text-sm text-accent-yellow">Ein späterer Simulationslauf weicht von diesem archivierten Handelsverlauf ab. Das Original bleibt erhalten; Abweichungen sind im Export dokumentiert.</p>}
       <h4 className="mt-4 font-semibold">Handelsverlauf</h4>
       <ul className="mt-2 space-y-2 text-sm">{record.trades.map(t => <li key={t.key}>{t.date} · {t.side === 'buy' ? 'Kauf' : 'Verkauf'} · {t.shares.toFixed(6)} Stück × {money(t.price)} = {money(t.value)} · {t.reason ?? 'Alert-Einstieg'} · Gebühren: {t.fees == null ? 'nicht erfasst' : money(t.fees)}</li>)}</ul>
       <JsonDetails title={record.snapshot.provenance === 'original' ? 'Originaler Kauf-Snapshot, Gewichte und Quelldaten' : 'Gespeicherte Handelsdaten – historischer Alert-Snapshot fehlt'} data={record.snapshot} />
@@ -94,7 +94,7 @@ export function BacktestView() {
       {record.status !== 'open' && <div className="mt-4 flex flex-wrap gap-3"><button className="btn btn-primary" disabled={busy} onClick={() => void retry()}>Analyse erneut erstellen</button><label>Analyseversion<select aria-label="Analyseversion" className="input ml-2" value={analysisId} onChange={e => setAnalysisId(e.target.value)}><option value="latest">Neueste</option>{record.analyses.map(a => <option key={a.id} value={a.id}>{a.createdAt} · {a.version} · {a.status}</option>)}</select></label></div>}
       {analysis && <div className="mt-4 space-y-4 text-sm">
         <p>Analyse: {analysis.createdAt} · {analysis.version}</p>
-        {analysis.error && <p role="alert" className="text-red-500">{analysis.error}</p>}
+        {analysis.error && <p role="alert" className="text-accent-red">{analysis.error}</p>}
         {analysis.result && <p className="font-semibold">{analysis.result.holdDays} Tage · {money(analysis.result.pnlUsd)} · {pct(analysis.result.returnPct)} · EUR: nicht beurteilbar · SPY: {pct(analysis.result.benchmarkPct)} · Differenz: {pct(analysis.result.alpha)}</p>}
         {([['Belegte Beobachtungen', analysis.observations], ['Mögliche Erklärungen', analysis.explanations], ['Fehlende Daten und Grenzen', analysis.limitations], ['Hypothesen für spätere Optimierung', analysis.hypotheses]] as [string, string[]][]).map(([title, texts]) => <section key={title}><h4 className="font-semibold">{title}</h4><ul className="mt-2 list-disc space-y-1 pl-5">{texts.map((t, i) => <li key={i}>{t}</li>)}</ul></section>)}
         <section><h4 className="font-semibold">Erwartungen</h4><ul className="mt-2 space-y-2">{analysis.expectations.map(e => <li key={e.statement}><strong>{e.statement}: {e.verdict === 'confirmed' ? 'bestätigt' : e.verdict === 'contradicted' ? 'widersprochen' : 'nicht beurteilbar'}</strong><p>{e.evidence}</p></li>)}</ul></section>
