@@ -6,6 +6,7 @@ const http = require('node:http');
 const { buildSync } = require('esbuild');
 const { chromium } = require('playwright');
 const { mockMemberAccess } = require('./access-fixture.cjs');
+const { assertThemeGeometry } = require('./theme-geometry.cjs');
 const root = path.resolve(__dirname, '../..');
 const out = path.join(root, 'tmp/ui');
 fs.mkdirSync(out, { recursive: true });
@@ -61,10 +62,11 @@ async function checkPage(page, label) {
   assert.equal(await page.locator('[role="alert"]').count(), 0, `${label}: status banner`);
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${label}: document overflow`);
   assert(await page.locator('main').evaluate(el => el.scrollWidth <= el.clientWidth + 1), `${label}: main overflow`);
+  await assertThemeGeometry(page, label);
   await page.screenshot({ path: path.join(out, `${label}.png`) });
 }
 async function navigate(page, width, view) {
-  const labels = { dashboard: /^Alerts$/, portfolio: /^(Paper|Portfolio)$/, history: /^(History|Verlauf)$/, settings: /^(Setup|Settings)$/, watchlist: /\b(Watch|Watchlist)\b/ };
+  const labels = { analysis: /^(Analysis|Analyse)$/, dashboard: /^Alerts$/, portfolio: /^(Paper|Portfolio)$/, history: /^(History|Verlauf)$/, settings: /^(Setup|Settings)$/, watchlist: /\b(Watch|Watchlist)\b/ };
   if (width < 768) await page.locator('nav').filter({ has: page.locator('button[aria-current]') }).getByRole('button', { name: labels[view] }).click();
   else {
     if (width < 1024) await page.getByRole('button', { name: /^(Open menu|Menü öffnen)$/, exact: true }).click();
@@ -100,7 +102,7 @@ async function contextPage(width, mode = 'full') {
     await page.locator('main [role="button"][aria-label="NVDA"]').waitFor();
     await page.waitForFunction(()=>document.querySelector('[aria-label="NVDA"] [data-alert-fair-value]')?.innerText.includes('%'));
     assert.equal(await page.locator('[data-alert-fair-value]').count(), await page.locator('.signal-card').count(), 'Every visible alert has a fair-value block');
-    assert.equal(await page.locator('main [aria-label="NVDA"] .font-mono-terminal').first().evaluate(el => getComputedStyle(el).color), 'rgb(237, 237, 241)', 'Ticker text contrast');
+    assert.equal(await page.locator('main [aria-label="NVDA"] .font-mono-terminal').first().evaluate(el => getComputedStyle(el).color), 'rgb(246, 246, 248)', 'Ticker text contrast');
     await checkPage(page, `${width}-alerts`);
     const heights = await page.locator('.signal-card').evaluateAll(cards => cards.map(c => c.getBoundingClientRect().height));
     assert(Math.max(...heights) - Math.min(...heights) < 2, 'Consistent alert card heights');
@@ -156,10 +158,13 @@ async function contextPage(width, mode = 'full') {
     await checkPage(page, `${width}-watchlist`);
     await page.getByRole('button', { name: 'Remove from watchlist', exact: true }).click();
     assert((await page.locator('main').innerText()).includes('Your watchlist is empty'));
+    await navigate(page, width, 'analysis');
+    await page.getByRole('button', { name: 'Analyze stock', exact: true }).waitFor();
+    await checkPage(page, `${width}-analysis`);
     await navigate(page, width, 'portfolio');
     await page.locator('.portfolio-summary').first().waitFor();
     assert.equal(await page.locator('.portfolio-summary').count(), 3);
-    assert.equal(await page.locator('.portfolio-headline').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(23, 23, 28)');
+    assert.equal(await page.locator('.portfolio-headline').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(17, 17, 21)');
     assert.equal(await page.getByRole('checkbox', { name: /cash.drag/i }).count(), 0);
     assert((await page.locator('.portfolio-headline').innerText()).includes('$' + portfolio.equity.at(-1).equity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })));
     await checkPage(page, `${width}-portfolio-2`);

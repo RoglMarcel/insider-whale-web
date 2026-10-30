@@ -103,7 +103,7 @@ export function AnalysisView() {
             <ul id="analysis-suggestions" role="listbox">{suggestions.map((s,i)=><li key={s.ticker} id={`analysis-option-${i}`} role="option" aria-selected={active===i} onMouseDown={e=>e.preventDefault()} onClick={()=>void analyze(s.ticker)} className="cursor-pointer px-4 py-3 text-sm hover:bg-white/10" style={active===i?{background:'rgba(255,255,255,.1)'}:undefined}><div className="flex justify-between gap-2"><strong>{s.ticker}</strong><span className="text-xs text-secondary">{s.exchange}</span></div><div className="truncate text-secondary">{s.name}</div></li>)}</ul>
           </div>}
         </div>
-        <button type="submit" disabled={loading || !query.trim()} className="self-end w-full sm:w-auto rounded-xl px-6 py-3 font-semibold disabled:opacity-50" style={{ background: 'var(--accent-blue)', color: '#fff' }}>{loading ? (de ? 'Wird analysiert …' : 'Analyzing …') : (de ? 'Aktie analysieren' : 'Analyze stock')}</button>
+        <button type="submit" disabled={loading || !query.trim()} className="self-end w-full sm:w-auto rounded-xl px-6 py-3 font-semibold disabled:opacity-50" style={{ background: 'var(--accent-blue)', color: 'var(--text-on-accent)' }}>{loading ? (de ? 'Wird analysiert …' : 'Analyzing …') : (de ? 'Aktie analysieren' : 'Analyze stock')}</button>
       </form>
       <div className="mt-3 flex flex-wrap gap-2">{(recent.length ? recent : ['AAPL', 'MSFT', 'NVDA']).map(ticker => <button key={ticker} type="button" disabled={loading} onClick={() => void analyze(ticker)} className="rounded-full border px-3 py-1 text-xs disabled:opacity-50" style={{ borderColor: 'var(--border-glass)' }}>{ticker}</button>)}</div>
     </section>

@@ -6,6 +6,7 @@ const http = require('node:http');
 const { buildSync } = require('esbuild');
 const { chromium } = require('playwright');
 const { mockMemberAccess } = require('./access-fixture.cjs');
+const { assertThemeGeometry } = require('./theme-geometry.cjs');
 const root = path.resolve(__dirname, '../..');
 const out = path.join(root, 'tmp/backtest-ui');
 fs.mkdirSync(out, { recursive: true });
@@ -84,6 +85,7 @@ let lastPage;
     await page.getByRole('button', { name: 'Hauptdepot · OLD', exact: true }).click();
     assert(await page.locator('main').innerText().then(t => t.includes('Historischer Snapshot fehlt')));
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+    await assertThemeGeometry(page, `backtest-${desktop ? 'desktop' : 'web'}-${width}`);
     await page.screenshot({ path: path.join(out, `${desktop ? 'desktop' : 'web'}-${width}.png`), fullPage: true });
     assert.deepEqual(errors, []);
     if (!desktop) {

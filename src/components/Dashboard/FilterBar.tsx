@@ -130,7 +130,7 @@ export function FilterBar() {
           onClick={() => setFilter({ bigPlayersOnly: !filter.bigPlayersOnly })}
           className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-all duration-150 border select-none ${
             filter.bigPlayersOnly
-              ? 'bg-amber-500/10 text-amber-400 border-amber-500/30 shadow-[0_0_12px_rgba(245,158,11,0.15)]'
+              ? 'bg-[color-mix(in_srgb,var(--accent-green)_8%,transparent)] text-accent-green border-[color-mix(in_srgb,var(--accent-green)_28%,transparent)] shadow-[0_0_12px_rgba(0,230,118,0.08)]'
               : 'text-secondary bg-transparent hover:bg-[rgba(255,255,255,0.04)] hover:text-white border-transparent'
           }`}
         >

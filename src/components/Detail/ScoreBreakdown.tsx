@@ -136,7 +136,7 @@ export function ScoreBreakdown({
       label: t('bd.earningsTiming'),
       display: `× ${b.timingMultiplier.toFixed(2)}`,
       fill: b.timingMultiplier / MAX_INSIDER_TIMING_MULT,
-      color: '#ff9f0a',
+      color: 'var(--accent-orange)',
     },
     {
       label: t('bd.optionsFlow'),
@@ -160,7 +160,7 @@ export function ScoreBreakdown({
       label: t('bd.optionsTiming'),
       display: `× ${b.optionsTimingMultiplier.toFixed(2)}`,
       fill: b.optionsTimingMultiplier / 2,
-      color: '#ff9f0a',
+      color: 'var(--accent-orange)',
     });
   }
 
@@ -283,7 +283,7 @@ export function ScoreBreakdown({
               <KV
                 label={t('bd.shortInterest')}
                 value={t('bd.floatPercent', { n: stats.shortPctFloat.toFixed(1) })}
-                color={stats.shortPctFloat >= 20 ? '#ff9f0a' : undefined}
+                color={stats.shortPctFloat >= 20 ? 'var(--accent-orange)' : undefined}
               />
             )}
             {stats.floatShares != null && <KV label={t('bd.float')} value={t('bd.floatShares', { n: formatCompact(stats.floatShares) })} />}

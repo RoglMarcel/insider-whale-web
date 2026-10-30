@@ -15,7 +15,7 @@ const ScoreTrendChart = lazy(() => import('./ScoreTrendChart'));
 import type { Signal } from '@/types';
 
 const ACCENT_BLUE = 'var(--accent-blue)';
-const GRID = 'rgba(128,128,128,0.2)';
+const GRID = 'var(--border-glass)';
 
 export function WatchlistView() {
   const { t, language } = useI18n();
@@ -152,7 +152,7 @@ export function WatchlistView() {
                 className="rounded-lg px-2.5 py-1 text-xs font-semibold transition-all"
                 style={
                   w.ticker === selectedTicker
-                    ? { background: ACCENT_BLUE, color: '#fff' }
+                    ? { background: ACCENT_BLUE, color: 'var(--text-on-accent)' }
                     : { background: 'var(--bg-glass)', color: 'var(--text-secondary)', border: '1px solid var(--border-glass)' }
                 }
               >

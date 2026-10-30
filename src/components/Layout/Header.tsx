@@ -107,7 +107,7 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
             <BellIcon size={18} />
             {highSignals.length > 0 && (
               <span
-                className="absolute -right-1 -top-1 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1 text-[11px] font-bold text-white"
+                className="absolute -right-1 -top-1 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1 text-[11px] font-bold text-[var(--text-on-accent)]"
                 style={{ background: 'var(--accent-red)' }}
               >
                 {highSignals.length}

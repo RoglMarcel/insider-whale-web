@@ -144,7 +144,7 @@ export function freshnessMeta(ageDays: number | null | undefined): FreshnessMeta
     case 'recent':
       return { level, labelKey: 'fresh.recent', color: 'var(--accent-yellow)' };
     case 'aging':
-      return { level, labelKey: 'fresh.aging', color: '#ff9f0a' };
+      return { level, labelKey: 'fresh.aging', color: 'var(--accent-orange)' };
     default:
       return { level, labelKey: 'fresh.stale', color: 'var(--accent-red)' };
   }

@@ -108,9 +108,9 @@ export function FilterSheet({ open, onClose }: { open: boolean; onClose: () => v
             className="flex items-center justify-between rounded-lg px-3.5 text-[15px] font-semibold"
             style={{
               minHeight: 44,
-              background: filter.bigPlayersOnly ? 'color-mix(in srgb, #f59e0b 14%, transparent)' : 'var(--bg-glass)',
-              color: filter.bigPlayersOnly ? '#fbbf24' : 'var(--text-primary)',
-              border: `1px solid ${filter.bigPlayersOnly ? 'color-mix(in srgb, #f59e0b 35%, transparent)' : 'var(--border-glass)'}`,
+              background: filter.bigPlayersOnly ? 'color-mix(in srgb, var(--accent-green) 8%, transparent)' : 'var(--bg-glass)',
+              color: filter.bigPlayersOnly ? 'var(--accent-green)' : 'var(--text-primary)',
+              border: `1px solid ${filter.bigPlayersOnly ? 'color-mix(in srgb, var(--accent-green) 28%, transparent)' : 'var(--border-glass)'}`,
             }}
           >
             <span> {t('filter.bigPlayersOnly')}</span>

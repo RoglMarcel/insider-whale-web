@@ -9,8 +9,8 @@ import {
   ReferenceLine,
 } from 'recharts';
 
-const ACCENT_BLUE = '#0a84ff';
-const GRID = 'rgba(128,128,128,0.18)';
+const ACCENT_BLUE = 'var(--accent-green)';
+const GRID = 'var(--border-glass)';
 
 export interface ScoreTrendPoint {
   time: string;
@@ -39,8 +39,8 @@ export function ScoreTrendChart({ data, compact }: { data: ScoreTrendPoint[]; co
         />
         <YAxis domain={[0, 100]} tick={{ fontSize: compact ? 10 : 11 }} stroke={GRID} width={compact ? 28 : 60} />
         <Tooltip />
-        <ReferenceLine y={80} stroke="#30d158" strokeDasharray="4 4" />
-        <ReferenceLine y={50} stroke="#ffd60a" strokeDasharray="4 4" />
+        <ReferenceLine y={80} stroke="var(--accent-green)" strokeDasharray="4 4" />
+        <ReferenceLine y={50} stroke="var(--accent-yellow)" strokeDasharray="4 4" />
         <Line
           type="monotone"
           dataKey="score"

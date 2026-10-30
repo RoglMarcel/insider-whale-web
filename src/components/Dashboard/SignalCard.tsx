@@ -235,7 +235,7 @@ export function SignalCard({ signal }: { signal: Signal }) {
             />
           )}
           {shortPct != null && shortPct >= 20 && (
-            <Pill color="#ff9f0a" text={` SI ${shortPct.toFixed(0)}%`} title={t('card.shortInterestTitle', { pct: shortPct.toFixed(1) })} />
+            <Pill color="var(--accent-orange)" text={` SI ${shortPct.toFixed(0)}%`} title={t('card.shortInterestTitle', { pct: shortPct.toFixed(1) })} />
           )}
           {adv != null && adv < 500_000 && (
             <Pill color="var(--accent-red)" text={` ${t('card.lowLiquidity')}`} title={t('card.lowLiquidityTitle', { amount: formatUSD(adv) })} />

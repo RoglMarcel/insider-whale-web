@@ -5,27 +5,33 @@
 @tailwind utilities;
 
 /* ──────────────────────────────────────────────────────────────────────────
-   Apple-inspired glassmorphism design tokens (Precisely calibrated)
+   Terminal surfaces shared with the access screen; layout tokens are retained
    ────────────────────────────────────────────────────────────────────────── */
 :root {
-  --bg-primary: #f5f5f7;
-  --bg-secondary: #e5e5ea;
-  --bg-glass: rgba(255, 255, 255, 0.68);
-  --bg-glass-hover: rgba(255, 255, 255, 0.85);
-  --border-glass: rgba(0, 0, 0, 0.06);
-  --border-active: rgba(0, 0, 0, 0.12);
-  --text-primary: #1d1d1f;
-  --text-secondary: #8e8e93;
-  --accent-green: #34c759;
-  --accent-yellow: #ffcc00;
-  --accent-red: #ff3b30;
-  --accent-blue: #007aff;
-  --accent-purple: #af52de;
-  --shadow-glass: 0 1px 2px rgba(0, 0, 0, 0.01), 0 8px 24px rgba(0, 0, 0, 0.04), inset 0 0 0 1px rgba(255, 255, 255, 0.6);
-  --shadow-glass-hover: 0 4px 8px rgba(0, 0, 0, 0.02), 0 16px 36px rgba(0, 0, 0, 0.06), inset 0 0 0 1px rgba(255, 255, 255, 0.8);
-  --blob-1: rgba(0, 122, 255, 0.12);
-  --blob-2: rgba(52, 199, 89, 0.10);
-  --blob-3: rgba(175, 82, 222, 0.08);
+  --bg-input: #14151a;
+  --bg-elevated: #14151a;
+  --border-input: #32333c;
+  --text-muted: #797b86;
+  --text-on-accent: #04180e;
+  --accent-orange: #d3a677;
+  --bg-primary: #09090c;
+  --bg-secondary: #0c0d11;
+  --bg-glass: #111115;
+  --bg-glass-hover: #16171d;
+  --border-glass: #24242b;
+  --border-active: #32333c;
+  --text-primary: #f6f6f8;
+  --text-secondary: #8d8f9a;
+  --accent-green: #00e676;
+  --accent-yellow: #d3b875;
+  --accent-red: #ff9393;
+  --accent-blue: var(--accent-green);
+  --accent-purple: #b4bdc9;
+  --shadow-glass: 0 1px 3px rgb(0 0 0 / 18%), inset 0 1px 0 rgb(255 255 255 / 1%);
+  --shadow-glass-hover: 0 4px 16px rgb(0 0 0 / 24%), inset 0 1px 0 rgb(255 255 255 / 2%);
+  --blob-1: transparent;
+  --blob-2: transparent;
+  --blob-3: transparent;
 
   /* Mobile shell tokens (DESIGN.md §2, §6). Safe-area insets resolve to 0 on
      devices/browsers without a notch, so these are safe everywhere. */
@@ -53,25 +59,25 @@
 }
 
 [data-theme='dark'] {
-  --bg-primary: #050507;          /* Sleek pitch black/charcoal */
-  --bg-secondary: #0c0c0f;        /* Very dark gray/black secondary */
+  --bg-primary: #09090c;          /* Sleek pitch black/charcoal */
+  --bg-secondary: #0c0d11;        /* Very dark gray/black secondary */
   --bg-glass: #111115;            /* Solid dark terminal panels */
-  --bg-glass-hover: #16161d;      /* Hover panel highlight */
-  --border-glass: #1f1f26;        /* Sharp, clean, subtle border lines */
-  --border-active: #2f2f39;
-  --text-primary: #ffffff;        /* Crisp white text */
-  --text-secondary: #8a8d98;      /* Sharp slate gray */
+  --bg-glass-hover: #16171d;      /* Hover panel highlight */
+  --border-glass: #24242b;        /* Sharp, clean, subtle border lines */
+  --border-active: #32333c;
+  --text-primary: #f6f6f8;        /* Crisp white text */
+  --text-secondary: #8d8f9a;      /* Sharp slate gray */
   --accent-green: #00e676;        /* Bright terminal green (gains) */
-  --accent-yellow: #ffd60a;
-  --accent-red: #ff3b30;          /* Vivid red (bearish/puts) */
-  --accent-blue: #0076ff;         /* Strong, professional terminal blue */
-  --accent-purple: #a855f7;       /* Vivid purple */
-  --shadow-glass: 0 2px 10px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.02);
-  --shadow-glass-hover: 0 4px 20px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --accent-yellow: #d3b875;
+  --accent-red: #ff9393;          /* Vivid red (bearish/puts) */
+  --accent-blue: var(--accent-green);         /* Strong, professional terminal blue */
+  --accent-purple: #b4bdc9;       /* Vivid purple */
+  --shadow-glass: 0 1px 3px rgb(0 0 0 / 18%), inset 0 1px 0 rgb(255 255 255 / 1%);
+  --shadow-glass-hover: 0 4px 16px rgb(0 0 0 / 24%), inset 0 1px 0 rgb(255 255 255 / 2%);
   /* Faint ambient glow for dark mode */
-  --blob-1: rgba(0, 118, 255, 0.04);
-  --blob-2: rgba(0, 230, 118, 0.02);
-  --blob-3: rgba(168, 85, 247, 0.03);
+  --blob-1: transparent;
+  --blob-2: transparent;
+  --blob-3: transparent;
 }
 
 * {
@@ -218,7 +224,7 @@ h1, h2, h3, h4, h5, h6 {
   .btn-primary {
     background: var(--accent-blue);
     border-color: transparent;
-    color: #fff;
+    color: var(--text-on-accent);
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.2);
   }
 
@@ -359,13 +365,13 @@ tr {
 /* Feature 4 — combo signal pulse ring */
 @keyframes combo-pulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(10, 132, 255, 0.45);
+    box-shadow: 0 0 0 0 rgb(0 230 118 / 24%);
   }
   70% {
-    box-shadow: 0 0 0 8px rgba(10, 132, 255, 0);
+    box-shadow: 0 0 0 8px rgb(0 230 118 / 0%);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(10, 132, 255, 0);
+    box-shadow: 0 0 0 0 rgb(0 230 118 / 0%);
   }
 }
 .combo-pulse {
@@ -434,7 +440,7 @@ tr {
     width: 44px;
   }
 
-  /* Dark panels are already opaque (--bg-glass: #111115); the blur only costs
+  /* Dark panels are already opaque (--bg-glass: #111115; the blur only costs
      GPU time while scrolling hundreds of cards. Keep it for fixed chrome only. */
   .glass-card {
     backdrop-filter: none;
@@ -458,22 +464,22 @@ tr {
 
 /* Portfolio workspace: quiet surfaces, consistent series and compact hierarchy. */
 :root {
-  --portfolio-market: #718096;
-  --portfolio-overlay: #407cbf;
-  --portfolio-insider: #8b71b5;
+  --portfolio-market: #8d8f9a;
+  --portfolio-overlay: #00e676;
+  --portfolio-insider: #7fae9b;
 }
 [data-theme='dark'] {
-  --portfolio-market: #98a6ba;
-  --portfolio-overlay: #7aa9df;
-  --portfolio-insider: #b29ad6;
+  --portfolio-market: #8d8f9a;
+  --portfolio-overlay: #00e676;
+  --portfolio-insider: #7fae9b;
 }
 .portfolio-dashboard {
-  --bg-glass: #ffffff;
-  --border-glass: #dfe5ed;
-  --text-secondary: #596779;
-  --accent-blue: #407cbf;
-  --accent-green: #238168;
-  --accent-red: #be555e;
+  --bg-glass: #111115;
+  --border-glass: #24242b;
+  --text-secondary: #8d8f9a;
+  --accent-blue: var(--accent-green);
+  --accent-green: #00e676;
+  --accent-red: #ff9393;
   display: grid;
   gap: 14px;
   max-width: 1560px;
@@ -482,14 +488,14 @@ tr {
   line-height: 1.5;
 }
 [data-theme='dark'] .portfolio-dashboard {
-  --bg-glass: #111923;
-  --bg-glass-hover: #172231;
-  --border-glass: #263242;
-  --text-primary: #e8edf4;
-  --text-secondary: #a2afbf;
-  --accent-blue: #7aa9df;
-  --accent-green: #77bba4;
-  --accent-red: #e28c94;
+  --bg-glass: #111115;
+  --bg-glass-hover: #16171d;
+  --border-glass: #24242b;
+  --text-primary: #f6f6f8;
+  --text-secondary: #8d8f9a;
+  --accent-blue: var(--accent-green);
+  --accent-green: #00e676;
+  --accent-red: #ff9393;
   color: var(--text-primary);
 }
 .portfolio-dashboard > *, .portfolio-dashboard .glass-card { min-width: 0; }
@@ -574,42 +580,42 @@ tr {
 
 /* Shared neutral workspace, including portfolio, history and preferences. */
 [data-theme='dark'] {
-  --bg-primary: #0b0b0e;
-  --bg-secondary: #141418;
-  --bg-glass: #17171c;
-  --bg-glass-hover: #1e1e24;
-  --border-glass: #2b2b33;
-  --border-active: #454550;
-  --text-primary: #ededf1;
-  --text-secondary: #a4a4af;
-  --accent-green: #79b59a;
-  --accent-red: #d9878c;
+  --bg-primary: #09090c;
+  --bg-secondary: #0c0d11;
+  --bg-glass: #111115;
+  --bg-glass-hover: #16171d;
+  --border-glass: #24242b;
+  --border-active: #32333c;
+  --text-primary: #f6f6f8;
+  --text-secondary: #8d8f9a;
+  --accent-green: #00e676;
+  --accent-red: #ff9393;
   --accent-yellow: #d3b875;
-  --accent-blue: #91aac8;
-  --accent-purple: #b1a0c8;
-  --shadow-glass: 0 1px 3px rgb(0 0 0 / 12%);
-  --shadow-glass-hover: 0 3px 12px rgb(0 0 0 / 16%);
+  --accent-blue: var(--accent-green);
+  --accent-purple: #b4bdc9;
+  --shadow-glass: 0 1px 3px rgb(0 0 0 / 18%), inset 0 1px 0 rgb(255 255 255 / 1%);
+  --shadow-glass-hover: 0 4px 16px rgb(0 0 0 / 24%), inset 0 1px 0 rgb(255 255 255 / 2%);
   --blob-1: transparent;
   --blob-2: transparent;
   --blob-3: transparent;
 }
 [data-theme='dark'] .portfolio-dashboard {
-  --bg-glass: #17171c;
-  --bg-glass-hover: #1e1e24;
-  --border-glass: #2b2b33;
-  --text-primary: #ededf1;
-  --text-secondary: #a4a4af;
-  --accent-blue: #91aac8;
-  --accent-green: #79b59a;
-  --accent-red: #d9878c;
+  --bg-glass: #111115;
+  --bg-glass-hover: #16171d;
+  --border-glass: #24242b;
+  --text-primary: #f6f6f8;
+  --text-secondary: #8d8f9a;
+  --accent-blue: var(--accent-green);
+  --accent-green: #00e676;
+  --accent-red: #ff9393;
 }
 .app-shell .glass-card { border-radius: 10px; box-shadow: var(--shadow-glass); backdrop-filter: none; }
 .app-shell header { position: relative; z-index: 45; padding-top: 14px; padding-bottom: 14px; }
 .app-shell h1 { font-size: 21px; font-weight: 650; }
 .app-shell main { scroll-behavior: smooth; }
 .app-shell .btn { min-height: 38px; box-shadow: none; font-weight: 600; }
-.app-shell .btn-primary { background: var(--bg-glass-hover); color: var(--text-primary); border-color: var(--border-active); }
-.app-shell :is(button, a, input, select, summary):focus-visible { outline: 2px solid var(--text-secondary); outline-offset: 3px; }
+.app-shell .btn-primary { background: var(--accent-green); color: var(--text-on-accent); border-color: var(--accent-green); }
+.app-shell :is(button, a, input, select, summary):focus-visible { outline: 2px solid var(--accent-green); outline-offset: 3px; }
 .app-shell input, .app-shell select { border-radius: 7px; }
 .app-shell .glass-card-hover:hover { transform: translateY(-1px); }
 .workspace-view { width: 100%; max-width: 1280px; margin: 0 auto; display: grid; gap: 14px; }
@@ -681,3 +687,13 @@ tr {
 .valuation-model-detail dl > div { display: flex; justify-content: space-between; gap: 12px; }
 .valuation-model-detail dd { text-align: right; font-variant-numeric: tabular-nums; }
 @media(max-width: 600px) { .valuation-controls { grid-template-columns: repeat(2,minmax(0,1fr)); } .valuation-panel { padding: 12px; } }
+
+/* Access-screen finishes. Paint properties only: dimensions and typography stay fixed. */
+.app-shell .input { background: var(--bg-input); border-color: var(--border-input); }
+.app-shell .input::placeholder { color: var(--text-muted); }
+.app-shell .input:focus { border-color: var(--accent-green); box-shadow: 0 0 0 3px rgb(0 230 118 / 9%); }
+.app-shell input[type='checkbox'], .app-shell input[type='radio'] { accent-color: var(--accent-green); }
+.app-shell .sidebar-item:hover { background: var(--bg-glass-hover); }
+.app-shell .sidebar-item-active { background: rgb(0 230 118 / 7%); border-color: rgb(0 230 118 / 23%); color: var(--accent-green); }
+.portfolio-switch .btn[aria-pressed='true'], .portfolio-dashboard[data-portfolio='insider'] .portfolio-switch .btn[aria-pressed='true'] { background: rgb(0 230 118 / 7%); border-color: rgb(0 230 118 / 23%); color: var(--accent-green); }
+.app-shell .recharts-default-tooltip { background: var(--bg-input) !important; color: var(--text-primary); border-color: var(--border-active) !important; }

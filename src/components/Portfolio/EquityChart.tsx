@@ -24,7 +24,7 @@ import {
 
 const BLUE = 'var(--portfolio-overlay, var(--accent-blue))';
 const GREY = 'var(--portfolio-market, var(--text-secondary))';
-const GRID = 'rgba(128,128,128,0.18)';
+const GRID = 'var(--border-glass)';
 const GREEN = 'var(--accent-green)';
 const RED = 'var(--accent-red)';
 

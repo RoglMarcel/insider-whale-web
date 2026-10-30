@@ -79,7 +79,7 @@ export function BottomTabBar() {
               <Icon size={22} />
               {tab.key === 'watchlist' && watchlistCount > 0 && (
                 <span
-                  className="absolute -right-2.5 -top-1.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[11px] font-bold tabular-nums text-white"
+                  className="absolute -right-2.5 -top-1.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[11px] font-bold tabular-nums text-[var(--text-on-accent)]"
                   style={{ background: 'var(--accent-blue)' }}
                 >
                   {watchlistCount > 99 ? '99+' : watchlistCount}
