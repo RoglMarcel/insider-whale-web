@@ -20,7 +20,9 @@ function adapter(sql) {
 }
 beforeEach(() => {
   now = Date.UTC(2026,0,31,14,15,16);
-  sql = new DatabaseSync(':memory:'); sql.exec('PRAGMA foreign_keys=ON'); sql.exec(readFileSync(new URL('../../drizzle/0000_access.sql',import.meta.url),'utf8'));
+  sql = new DatabaseSync(':memory:'); sql.exec('PRAGMA foreign_keys=ON');
+  const journal = JSON.parse(readFileSync(new URL('../../drizzle/meta/_journal.json',import.meta.url),'utf8'));
+  for (const migration of journal.entries) sql.exec(readFileSync(new URL(`../../drizzle/${migration.tag}.sql`,import.meta.url),'utf8'));
   db = adapter(sql); api = createAccessService({ DB: db, ADMIN_PASSWORD_HASH: verifier }, () => now);
 });
 afterEach(() => sql.close());
@@ -76,6 +78,26 @@ test('calendar month/year terms clamp month ends and leap days in UTC',() => {
   assert.equal(expiration('1year',leapDay),Date.UTC(2025,1,28,13,1,2));
   assert.equal(expiration('lifetime',jan31),null);
 });
+test('3-day trials start on first use, cannot restart, and reject every session at 72 hours',async () => {
+  const {keys} = await generate('3days');
+  now += 100*86_400_000;
+  const activated = now, first = await request('access/activate',{key:keys[0].key});
+  assert.equal(first.status,200);
+  const user = cookieOf(first), initial = await first.json(), end = activated+3*86_400_000;
+  assert.equal(initial.session.duration,'3days');assert.equal(initial.session.expiresAt,end);assert.equal(initial.session.sessionExpiresAt,end);
+  now = end-1;
+  assert.equal((await (await request('access/session',undefined,user)).json()).session.duration,'3days');
+  const again = await request('access/activate',{key:keys[0].key});
+  assert.equal((await again.json()).session.expiresAt,end);
+  const renewed = cookieOf(again);
+  now = end;
+  for(const cookie of [user,renewed]) assert.equal((await (await request('access/session',undefined,cookie)).json()).session,null);
+  assert.equal((await request('access/activate',{key:keys[0].key})).status,401);
+  const admin = await login(), overview = await (await request('admin/keys',undefined,admin)).json();
+  const stat = overview.stats.find(p=>p.duration==='3days');
+  assert.deepEqual(stat,{duration:'3days',generated:1,used:1,unused:0,active:0,expired:1,revoked:0});
+  assert.equal(overview.keys[0].duration,'3days');assert.equal(overview.keys[0].status,'expired');
+});
 test('concurrent first uses keep one activation timestamp and one expiry',async () => {
   const {keys} = await generate('1year');
   const replies = await Promise.all([request('access/activate',{key:keys[0].key}),request('access/activate',{key:keys[0].key})]);
@@ -112,9 +134,9 @@ test('login brute-force limit persists across service instances',async () => {
   const blocked = await request('admin/login',{password}); assert.equal(blocked.status,429); assert.equal(blocked.headers.get('retry-after'),'900');
   now+=16*60_000; assert.equal((await request('admin/login',{password})).status,200);
 });
-test('usage statistics distinguish used, unused, expired and revoked in all four plans',async () => {
+test('usage statistics distinguish used, unused, expired and revoked in all five plans',async () => {
   const admin = await login(); const keys=[];
-  for(const duration of ['4weeks','6months','1year','lifetime']) {
+  for(const duration of ['4weeks','6months','1year','lifetime','3days']) {
     const r=await request('admin/keys',{duration,quantity:4},admin); keys.push(...(await r.json()).keys);
   }
   for(let i=0;i<keys.length;i+=4) {
@@ -125,7 +147,7 @@ test('usage statistics distinguish used, unused, expired and revoked in all four
   now+=29*86_400_000; const fresh=await login();
   const overview=await (await request('admin/keys',undefined,fresh)).json();
   for(const stat of overview.stats) { assert.equal(stat.generated,4);assert.equal(stat.used,2);assert.equal(stat.unused,2);assert.equal(stat.revoked,1); }
-  assert.equal(overview.stats[0].expired,1);assert.equal(overview.stats[0].active,0);assert.equal(overview.stats[3].active,1);
+  assert.equal(overview.stats.find(p=>p.duration==='4weeks').expired,1);assert.equal(overview.stats.find(p=>p.duration==='4weeks').active,0);assert.equal(overview.stats.find(p=>p.duration==='lifetime').active,1);assert.equal(overview.stats.find(p=>p.duration==='3days').expired,1);
 });
 test('pagination, literal search, bounds and invalid plans',async () => {
   const {admin}=await generate('lifetime',55);

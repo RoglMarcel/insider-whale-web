@@ -26,7 +26,7 @@ exports.mockAccessWorkflow = async page => {
       keys.push(key);return fulfill(route,{keys:[key]},201);
     }
     if(path.endsWith('/revoke')){keys[0].status='revoked';keys[0].revokedAt=Date.now();return fulfill(route,{ok:true});}
-    if(path==='/api/admin/keys')return fulfill(route,{keys:keys.map(({key,...visible})=>visible),total:keys.length,page:1,pageSize:50,stats:['4weeks','6months','1year','lifetime'].map(duration=>({duration,generated:keys.filter(k=>k.duration===duration).length,used:0,active:0,unused:keys.filter(k=>k.duration===duration&&k.status==='unused').length,expired:0,revoked:keys.filter(k=>k.duration===duration&&k.status==='revoked').length}))});
+    if(path==='/api/admin/keys')return fulfill(route,{keys:keys.map(({key,...visible})=>visible),total:keys.length,page:1,pageSize:50,stats:['4weeks','6months','1year','lifetime','3days'].map(duration=>({duration,generated:keys.filter(k=>k.duration===duration).length,used:0,active:0,unused:keys.filter(k=>k.duration===duration&&k.status==='unused').length,expired:0,revoked:keys.filter(k=>k.duration===duration&&k.status==='revoked').length}))});
     return fulfill(route,{error:'Not found'},404);
   });
   return {revokeSession(){member=null;}};

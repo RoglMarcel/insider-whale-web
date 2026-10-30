@@ -1,4 +1,4 @@
-export type KeyDuration = '4weeks' | '6months' | '1year' | 'lifetime';
+export type KeyDuration = '4weeks' | '6months' | '1year' | 'lifetime' | '3days';
 export interface AccessSession { role: 'member' | 'admin'; expiresAt: number | null; sessionExpiresAt: number; duration: KeyDuration | null }
 export interface AccessKey { id: string; hint: string; duration: KeyDuration; label: string; createdAt: number; activatedAt: number | null; expiresAt: number | null; revokedAt: number | null; status: 'unused' | 'active' | 'expired' | 'revoked' }
 export interface PlanStats { duration: KeyDuration; generated: number; used: number; active: number; unused: number; expired: number; revoked: number }
@@ -9,6 +9,7 @@ export const PLANS: { id: KeyDuration; title: string; term: string }[] = [
   { id: '6months', title: '6 months', term: '6 calendar months' },
   { id: '1year', title: '1 year', term: '12 calendar months' },
   { id: 'lifetime', title: 'Lifetime', term: 'No expiry date' },
+  { id: '3days', title: 'Free trial', term: '3 days from first use' },
 ];
 export async function accessRequest<T>(path: string, data?: unknown): Promise<T> {
   let response: Response;

@@ -1,7 +1,7 @@
 /** Key licensing API. D1 owns all authority; browser state never grants access. */
 const encoder = new TextEncoder();
 const DAY = 86_400_000;
-export const DURATIONS = ['4weeks', '6months', '1year', 'lifetime'];
+export const DURATIONS = ['4weeks', '6months', '1year', 'lifetime', '3days'];
 export class AccessError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
@@ -12,6 +12,7 @@ export async function digest(value) {
 export const normalizeKey = value => typeof value === 'string' ? value.toUpperCase().replace(/[\s-]/g, '') : '';
 export function expiration(duration, now) {
   if (duration === 'lifetime') return null;
+  if (duration === '3days') return now + 3 * DAY;
   if (duration === '4weeks') return now + 28 * DAY;
   const date = new Date(now), day = date.getUTCDate();
   date.setUTCDate(1);
@@ -23,8 +24,11 @@ export function expiration(duration, now) {
 export function keyStatus(key, now) {
   return key.revoked_at !== null ? 'revoked' : key.activated_at === null ? 'unused' : key.expires_at !== null && key.expires_at <= now ? 'expired' : 'active';
 }
+// A nullable trial cap extends the immutable legacy duration constraint without
+// rebuilding keys or their session references. Public/API terms stay explicit.
+const effectiveDuration = key => key.trial_days === 3 ? '3days' : key.duration;
 function publicKey(key, now) {
-  return { id: key.id, hint: key.hint, duration: key.duration, label: key.label,
+  return { id: key.id, hint: key.hint, duration: effectiveDuration(key), label: key.label,
     createdAt: key.created_at, activatedAt: key.activated_at, expiresAt: key.expires_at,
     revokedAt: key.revoked_at, status: keyStatus(key, now) };
 }
@@ -78,13 +82,13 @@ export function createAccessService(env, clock = Date.now) {
   }
   async function sessionFromToken(token, role) {
     if (!/^[a-f0-9]{64}$/.test(token || '')) return null;
-    const row = await db.prepare(`SELECT s.role,s.key_id,s.expires_at AS session_expiry,k.duration,k.expires_at,k.revoked_at,k.activated_at
+    const row = await db.prepare(`SELECT s.role,s.key_id,s.expires_at AS session_expiry,k.duration,k.trial_days,k.expires_at,k.revoked_at,k.activated_at
       FROM access_sessions s LEFT JOIN access_keys k ON k.id=s.key_id
       WHERE s.token_hash=? AND s.role=? AND s.expires_at>?`).bind(await digest(token), role, clock()).first();
     if (!row) return null;
     if (role === 'member' && (row.activated_at === null || row.revoked_at !== null || (row.expires_at !== null && row.expires_at <= clock()))) return null;
     return { role: row.role, expiresAt: role === 'admin' ? row.session_expiry : row.expires_at,
-      sessionExpiresAt: row.session_expiry, duration: row.duration ?? null };
+      sessionExpiresAt: row.session_expiry, duration: effectiveDuration(row) ?? null };
   }
   async function session(request, adminOnly = false) {
     const c = cookies(request);
@@ -116,20 +120,20 @@ export function createAccessService(env, clock = Date.now) {
         const data = await body(request), normalized = normalizeKey(data.key);
         if (!/^IWT[A-HJ-NP-Z2-9]{32}$/.test(normalized)) throw new AccessError(401, 'This key is invalid, expired or revoked.');
         const hash = await digest(normalized);
-        const existing = await db.prepare('SELECT duration FROM access_keys WHERE key_hash=?').bind(hash).first();
+        const existing = await db.prepare('SELECT duration,trial_days FROM access_keys WHERE key_hash=?').bind(hash).first();
         if (!existing) throw new AccessError(401, 'This key is invalid, expired or revoked.');
         // Single conditional update: concurrent first-use requests cannot restart the term.
         const key = await db.prepare(`UPDATE access_keys SET activated_at=COALESCE(activated_at,?),
           expires_at=CASE WHEN activated_at IS NULL THEN ? ELSE expires_at END
           WHERE key_hash=? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>?) RETURNING *`)
-          .bind(now, expiration(existing.duration, now), hash, now).first();
+          .bind(now, expiration(effectiveDuration(existing), now), hash, now).first();
         if (!key) throw new AccessError(401, 'This key is invalid, expired or revoked.');
         const token = randomToken(), ends = Math.min(now + 30 * DAY, key.expires_at ?? Infinity);
         await db.prepare('INSERT INTO access_sessions(token_hash,role,key_id,expires_at) VALUES(?,\'member\',?,?)').bind(await digest(token), key.id, ends).run();
         // Replace this browser's old session rather than accumulating it on every login.
         const old = cookies(request).iwt_session;
         if (old) await db.prepare('DELETE FROM access_sessions WHERE token_hash=?').bind(await digest(old)).run();
-        return json({ session: { role: 'member', duration: key.duration, expiresAt: key.expires_at, sessionExpiresAt: ends } }, 200, { 'Set-Cookie': cookie('iwt_session', token, ends - now) });
+        return json({ session: { role: 'member', duration: effectiveDuration(key), expiresAt: key.expires_at, sessionExpiresAt: ends } }, 200, { 'Set-Cookie': cookie('iwt_session', token, ends - now) });
       }
       if (path === '/api/admin/login' && request.method === 'POST') {
         await throttle(request, 'admin-login', 10);
@@ -159,8 +163,8 @@ export function createAccessService(env, clock = Date.now) {
             const plaintext = 'IWT-' + text.match(/.{8}/g).join('-');
             const key = { id: crypto.randomUUID(), key: plaintext, duration: data.duration, label: (data.label || '').trim() };
             keys.push(key);
-            statements.push(db.prepare('INSERT INTO access_keys(id,key_hash,hint,duration,label,created_at) VALUES(?,?,?,?,?,?)')
-              .bind(key.id, await digest(normalizeKey(plaintext)), `IWT-••••-${text.slice(-6)}`, key.duration, key.label, now));
+            statements.push(db.prepare('INSERT INTO access_keys(id,key_hash,hint,duration,trial_days,label,created_at) VALUES(?,?,?,?,?,?,?)')
+              .bind(key.id, await digest(normalizeKey(plaintext)), `IWT-••••-${text.slice(-6)}`, key.duration === '3days' ? '4weeks' : key.duration, key.duration === '3days' ? 3 : null, key.label, now));
           }
           await db.batch(statements);
           return json({ keys }, 201);
@@ -179,11 +183,11 @@ export function createAccessService(env, clock = Date.now) {
           const [list, count, totals] = await db.batch([
             db.prepare(`SELECT * FROM access_keys WHERE ${where} ORDER BY created_at DESC,id DESC LIMIT 50 OFFSET ?`).bind(...bindings, (page - 1) * 50),
             db.prepare(`SELECT COUNT(*) AS count FROM access_keys WHERE ${where}`).bind(...bindings),
-            db.prepare(`SELECT duration,COUNT(*) AS generated,SUM(activated_at IS NOT NULL) AS used,
+            db.prepare(`SELECT CASE WHEN trial_days=3 THEN '3days' ELSE duration END AS duration,COUNT(*) AS generated,SUM(activated_at IS NOT NULL) AS used,
               SUM(revoked_at IS NULL AND activated_at IS NULL) AS unused,
               SUM(revoked_at IS NULL AND activated_at IS NOT NULL AND (expires_at IS NULL OR expires_at>?)) AS active,
               SUM(revoked_at IS NULL AND expires_at IS NOT NULL AND expires_at<=?) AS expired,
-              SUM(revoked_at IS NOT NULL) AS revoked FROM access_keys GROUP BY duration`).bind(now, now),
+              SUM(revoked_at IS NOT NULL) AS revoked FROM access_keys GROUP BY CASE WHEN trial_days=3 THEN '3days' ELSE duration END`).bind(now, now),
           ]);
           return json({ keys: list.results.map(k => publicKey(k, now)), total: count.results[0].count, page, pageSize: 50,
             stats: DURATIONS.map(duration => ({ duration, generated: 0, used: 0, unused: 0, active: 0, expired: 0, revoked: 0, ...totals.results.find(k => k.duration === duration) })) });

@@ -8,9 +8,9 @@ The hosted terminal and owner dashboard run on a managed Worker with a persisten
 
 ## Owner workflow
 
-Sign in to `/admin` using the separately configured owner password. Select **4 weeks**, **6 months**, **1 year**, or **Lifetime**, choose 1–100 keys, optionally add a label, and generate. Copy/save the full keys immediately: the database stores only SHA-256 digests and masked hints, so full keys cannot be recovered later. The overview shows generated, ever used, active, unused, expired and revoked counts for each plan. Keys can be revoked immediately, including all existing sessions.
+Sign in to `/admin` using the separately configured owner password. Select **4 weeks**, **6 months**, **1 year**, **Lifetime**, or **Free trial**, choose 1–100 keys, optionally add a label, and generate. Copy/save the full keys immediately: the database stores only SHA-256 digests and masked hints, so full keys cannot be recovered later. The overview shows generated, ever used, active, unused, expired and revoked counts for each plan. Keys can be revoked immediately, including all existing sessions.
 
-A generated key remains unused indefinitely. Its first successful use atomically sets its activation/expiry; entering it again never extends or resets its term. Four weeks means 28 days. Six months and one year use UTC calendar arithmetic, clamping month ends/leap days. Lifetime keys have no license expiry. A key can be used on multiple browsers; it is a bearer credential, not tied to an email or device. Browser sessions last at most 30 days and can be renewed by entering the same still-valid key. Admin sessions last eight hours.
+A generated key remains unused indefinitely. Its first successful use atomically sets its activation/expiry; entering it again never extends or resets its term. Free trial means exactly 72 hours from first use. Four weeks means 28 days. Six months and one year use UTC calendar arithmetic, clamping month ends/leap days. Lifetime keys have no license expiry. A key can be used on multiple browsers; it is a bearer credential, not tied to an email or device. Browser sessions last at most 30 days and can be renewed by entering the same still-valid key. Admin sessions last eight hours.
 
 Every protected `/data/*` request checks the server session, key revocation, and current expiry before handing off to the existing public, CORS-enabled market-data feed. Browser credentials are not forwarded to that origin. Open tabs recheck every 15 seconds, on focus, and at expiry. Expired access is rejected immediately by server time even if the page is closed or the browser clock is wrong. Expired/revoked session records are cleaned up opportunistically; key audit rows remain for accurate counts. A cleanup cron is not needed for enforcement.
 
@@ -33,3 +33,5 @@ After a successful managed-host deployment, the existing GitHub scrape/publish w
 Desktop Electron builds retain their existing behavior and do not require a web key.
 
 `access-entry.yml` can publish a routing-only change immediately by restoring the last retained Pages artifact and replacing its entry page. It preserves all market data and does not wait for or cancel the scheduled analysis refresh. It fails closed if no retained Pages artifact exists.
+
+Trial terms use the nullable `trial_days` cap added by migration 0001. Existing keys and session references are preserved; API responses and usage totals expose trials separately as `3days`. Do not roll the access service back to a version that predates trial support while trial keys exist.

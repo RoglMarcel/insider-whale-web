@@ -59,7 +59,7 @@ export default function AccessGate({ children }: { children: ReactNode }) {
   if (checking) return <AccessLoading />;
   if (session) return <>{children}<button className="access-lock-button" type="button" onClick={() => void logout()} disabled={busy} title={error || 'Lock this terminal'}>Lock terminal <Arrow /></button>{error && <div className="access-session-error" role="alert">{error}</div>}</>;
   return <main className="access-screen">
-    <header className="access-top"><AccessBrand /><span className="access-private"><span />Private access</span></header>
+    <header className="access-top"><span className="access-private"><span />Private access</span></header>
     <section className="access-entry" aria-labelledby="access-title">
       <LockMark /><span className="access-eyebrow">THE EDGE STARTS HERE</span>
       <h1 id="access-title">Insider &amp; Whale<br /><span>Terminal access.</span></h1>
