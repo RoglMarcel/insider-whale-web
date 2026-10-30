@@ -37,30 +37,43 @@ async function baselineStyles(){
   })();
 }
 async function measure(page){
-  return page.evaluate(()=>[...document.querySelectorAll('.app-shell, .app-shell *, [role="dialog"], [role="dialog"] *, .access-lock-button')].filter(el=>el.namespaceURI==='http://www.w3.org/1999/xhtml'&&!el.closest('.recharts-wrapper')&&el.tagName!=='STYLE'&&el.getClientRects().length).map(el=>{const r=el.getBoundingClientRect();return{tag:el.tagName,css:el.getAttribute('class')||'',rect:[r.x,r.y,r.width,r.height]};}));
+  return page.evaluate(()=>[...document.querySelectorAll('.app-shell, .app-shell *, [role="dialog"], [role="dialog"] *, .access-lock-button')].filter(el=>{
+    if(el.namespaceURI!=='http://www.w3.org/1999/xhtml'||el.closest('.recharts-wrapper')||el.tagName==='STYLE'||el.classList.contains('sr-only')||getComputedStyle(el).visibility!=='visible'||!el.getClientRects().length)return false;
+    // Closed details can retain cached descendant rectangles; those are not visible boxes.
+    for(let parent=el.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS'&&!parent.open&&!parent.querySelector(':scope > summary')?.contains(el))return false;
+    return true;
+  }).map(el=>{const r=el.getBoundingClientRect();return{tag:el.tagName,css:el.getAttribute('class')||'',rect:[r.x,r.y,r.width,r.height]};}));
+}
+function same(a,b){return a.length===b.length&&a.every((node,i)=>node.tag===b[i].tag&&node.css===b[i].css&&node.rect.every((n,j)=>Math.abs(n-b[i].rect[j])<=0.05));}
+async function restoreCurrent(page){
+  await page.evaluate(()=>{document.querySelectorAll('[data-theme-check-disabled]').forEach(el=>{el.disabled=false;el.removeAttribute('data-theme-check-disabled');});return new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
 }
 async function assertThemeGeometry(page,label){
   const css=await baselineStyles();
   await page.evaluate(()=>document.fonts.ready);
   await page.waitForLoadState('networkidle', {timeout:15000});
-  // Compare settled layouts, not the first frame of a newly mounted view.
   const freeze=await page.addStyleTag({content:'.app-shell, .app-shell *, [role=dialog], [role=dialog] * { animation: none !important; transition: none !important; }'});
   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
-  const now=await measure(page);let style;
   try{
-    style=await page.addStyleTag({content:css});
-    await page.evaluate(()=>{
-      document.querySelectorAll('link[rel="stylesheet"]').forEach(el=>{if(new URL(el.href).origin===location.origin&&!el.disabled){el.setAttribute('data-theme-check-disabled','');el.disabled=true;}});
-      return new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
-    });
-    const before=await measure(page);
-    assert.equal(now.length,before.length,label+': visible element count changed');
-    for(let i=0;i<now.length;i++)for(let j=0;j<4;j++)assert(Math.abs(now[i].rect[j]-before[i].rect[j])<=0.05,`${label}: ${now[i].tag}.${now[i].css} #${i} moved/resized: ${JSON.stringify(before[i].rect)} -> ${JSON.stringify(now[i].rect)}`);
-  }finally{
-    if(style)await style.evaluate(el=>el.remove());
-    await freeze.evaluate(el=>el.remove());
-    await page.evaluate(()=>{document.querySelectorAll('[data-theme-check-disabled]').forEach(el=>{el.disabled=false;el.removeAttribute('data-theme-check-disabled');});return new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
-  }
+    for(let attempt=0;attempt<3;attempt++){
+      const now=await measure(page);let style,before;
+      try{
+        style=await page.addStyleTag({content:css});
+        await page.evaluate(()=>{document.querySelectorAll('link[rel="stylesheet"]').forEach(el=>{if(new URL(el.href).origin===location.origin&&!el.disabled){el.setAttribute('data-theme-check-disabled','');el.disabled=true;}});return new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
+        before=await measure(page);
+      }finally{if(style)await style.evaluate(el=>el.remove());await restoreCurrent(page);}
+      const after=await measure(page);
+      // An unrelated async update is not a palette difference. Require a stable
+      // current -> previous -> current round trip before asserting old/new equality.
+      if(!same(now,after)){
+        assert(attempt<2,label+': view kept updating during the geometry comparison');
+        await page.waitForLoadState('networkidle',{timeout:15000});continue;
+      }
+      assert.equal(now.length,before.length,label+': visible element count changed: '+JSON.stringify({current:now.map(n=>n.tag+'.'+n.css),previous:before.map(n=>n.tag+'.'+n.css)}));
+      for(let i=0;i<now.length;i++)for(let j=0;j<4;j++)assert(Math.abs(now[i].rect[j]-before[i].rect[j])<=0.05,`${label}: ${now[i].tag}.${now[i].css} #${i} moved/resized: ${JSON.stringify(before[i].rect)} -> ${JSON.stringify(now[i].rect)}`);
+      return;
+    }
+  }finally{await freeze.evaluate(el=>el.remove());await restoreCurrent(page);}
 }
 module.exports={verifyLayoutContract,assertThemeGeometry};
 if(require.main===module)console.log(`Theme contract passed: ${preserved} layout and typography declarations preserved.`);
