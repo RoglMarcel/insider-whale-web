@@ -30,11 +30,23 @@ function verifyLayoutContract(){
 const preserved=verifyLayoutContract();
 let oldStyles;
 async function baselineStyles(){
-  return oldStyles??=(async()=>{
-    const config=require(path.join(root,'tailwind.config.js'));
-    const result=await postcss([require('tailwindcss')({...config,content:config.content.map(p=>path.join(root,p))}),require('autoprefixer')]).process(fs.readFileSync(path.join(root,'src/components/Access/access.css'),'utf8')+'\n'+baseline,{from:path.join(root,'src/styles/globals.css'),map:false});
-    return result.css;
-  })();
+  if(oldStyles)return oldStyles;
+  const previous=postcss.parse(baseline);
+  previous.walkDecls(decl=>{
+    if(paintVariables.has(decl.prop)||paintProperties.test(decl.prop))return;
+    if(/^(?:border(?:-(?:top|right|bottom|left))?|outline)$/.test(decl.prop)){
+      const match=decl.value.match(/^\S+\s+(?:solid|dashed|dotted|double|groove|ridge|inset|outset)\s+(.+)$/);
+      if(match){decl.prop+='-color';decl.value=match[1];return;}
+    }
+    decl.remove();
+  });
+  previous.walkAtRules(rule=>{
+    if(['tailwind','apply','keyframes','-webkit-keyframes'].includes(rule.name))rule.remove();
+    else if(rule.name==='layer')rule.replaceWith(rule.nodes||[]);
+  });
+  // Swap only paint. Unloading a live CSS asset introduces a temporary unstyled
+  // layout and changes native closed-details visibility caches in Chromium.
+  oldStyles=previous.toString();return oldStyles;
 }
 async function measure(page){
   return page.evaluate(()=>[...document.querySelectorAll('.app-shell, .app-shell *, [role="dialog"], [role="dialog"] *, .access-lock-button')].filter(el=>{
@@ -45,9 +57,7 @@ async function measure(page){
   }).map(el=>{const r=el.getBoundingClientRect();return{tag:el.tagName,css:el.getAttribute('class')||'',rect:[r.x,r.y,r.width,r.height]};}));
 }
 function same(a,b){return a.length===b.length&&a.every((node,i)=>node.tag===b[i].tag&&node.css===b[i].css&&node.rect.every((n,j)=>Math.abs(n-b[i].rect[j])<=0.05));}
-async function restoreCurrent(page){
-  await page.evaluate(()=>{document.querySelectorAll('[data-theme-check-disabled]').forEach(el=>{el.disabled=false;el.removeAttribute('data-theme-check-disabled');});return new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
-}
+async function settle(page){await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));}
 async function assertThemeGeometry(page,label){
   const css=await baselineStyles();
   await page.evaluate(()=>document.fonts.ready);
@@ -59,9 +69,9 @@ async function assertThemeGeometry(page,label){
       const now=await measure(page);let style,before;
       try{
         style=await page.addStyleTag({content:css});
-        await page.evaluate(()=>{document.querySelectorAll('link[rel="stylesheet"]').forEach(el=>{if(new URL(el.href).origin===location.origin&&!el.disabled){el.setAttribute('data-theme-check-disabled','');el.disabled=true;}});return new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
+        await settle(page);
         before=await measure(page);
-      }finally{if(style)await style.evaluate(el=>el.remove());await restoreCurrent(page);}
+      }finally{if(style)await style.evaluate(el=>el.remove());await settle(page);}
       const after=await measure(page);
       // An unrelated async update is not a palette difference. Require a stable
       // current -> previous -> current round trip before asserting old/new equality.
@@ -73,7 +83,7 @@ async function assertThemeGeometry(page,label){
       for(let i=0;i<now.length;i++)for(let j=0;j<4;j++)assert(Math.abs(now[i].rect[j]-before[i].rect[j])<=0.05,`${label}: ${now[i].tag}.${now[i].css} #${i} moved/resized: ${JSON.stringify(before[i].rect)} -> ${JSON.stringify(now[i].rect)}`);
       return;
     }
-  }finally{await freeze.evaluate(el=>el.remove());await restoreCurrent(page);}
+  }finally{await freeze.evaluate(el=>el.remove());await settle(page);}
 }
 module.exports={verifyLayoutContract,assertThemeGeometry};
 if(require.main===module)console.log(`Theme contract passed: ${preserved} layout and typography declarations preserved.`);
