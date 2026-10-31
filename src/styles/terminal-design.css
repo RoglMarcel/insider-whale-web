@@ -1,0 +1,109 @@
+/* Terminal design system. See docs/design-refresh.md for references and audit. */
+:root, [data-theme='dark'] {
+  --bg-primary: #0c0e10;
+  --bg-secondary: #101315;
+  --bg-glass: #14181b;
+  --bg-glass-hover: #1b2023;
+  --bg-input: #101416;
+  --bg-elevated: #1b2023;
+  --border-glass: #293034;
+  --border-active: #45514f;
+  --border-input: #35403e;
+  --text-primary: #eef2ef;
+  --text-secondary: #a0aaa6;
+  --text-muted: #8b9792;
+  --accent-green: #5de2b3;
+  --accent-blue: var(--accent-green);
+  --shadow-glass: none;
+  --shadow-glass-hover: none;
+  --motion-ease: cubic-bezier(.2,.8,.2,1);
+}
+body { letter-spacing: 0; font-variant-numeric: tabular-nums; }
+h1,h2,h3,h4,h5,h6 { font-weight: 600; }
+.font-mono-terminal { letter-spacing: 0; }
+#root::before { display: none; }
+.terminal-logo { width: 64px; height: 64px; object-fit: contain; flex-shrink: 0; display: block; user-select: none; }
+.app-shell header > .terminal-logo { width: 52px; height: 52px; margin-left: 20px; }
+.app-shell header { border-bottom: 1px solid var(--border-glass); margin-bottom: 24px; min-height: 88px; }
+.app-shell header h1 { font-weight: 500; letter-spacing: -.025em; }
+.app-shell header h1 + p { margin-top: 4px; }
+.app-shell > aside { background: var(--bg-secondary); border-radius: 0; box-shadow: none; border-width: 0 1px 0 0; border-color: var(--border-glass); }
+.app-shell > aside > div:first-child { min-height: 64px; margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid var(--border-glass); }
+.app-shell > aside .font-extrabold { font-weight: 600; }
+.app-shell .sidebar-item { min-height: 44px; border: 1px solid transparent; position: relative; transition: background-color .16s var(--motion-ease), color .16s var(--motion-ease), border-color .16s var(--motion-ease); }
+.app-shell .sidebar-item-active { background: #1c2522; border-color: #34463f; color: var(--text-primary); box-shadow: none; }
+.app-shell .sidebar-item-active::before { content: ''; position: absolute; left: -9px; width: 2px; height: 16px; border-radius: 2px; background: var(--accent-green); }
+.glass, .glass-card { backdrop-filter: none; -webkit-backdrop-filter: none; border-radius: 12px; }
+.glass-card-hover:hover, .glass-card-hover:active { transform: none; }
+.glass-card-hover:hover { border-color: var(--border-active); }
+.btn, .icon-btn, .input { transition-property: background-color, border-color, color, opacity, transform; transition-timing-function: var(--motion-ease); box-shadow: none; }
+.btn, .icon-btn { min-height: 40px; }
+.icon-btn { min-width: 40px; }
+button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent-green); outline-offset: 3px; }
+.app-shell .badge { letter-spacing: 0; text-transform: none; font-weight: 500; }
+.app-shell th { text-transform: none !important; letter-spacing: 0 !important; font-size: 12px !important; }
+.app-shell td { font-variant-numeric: tabular-nums; }
+.summary-stat { padding: 20px; min-height: 124px; }
+.summary-stat-label { font-size: 12px; color: var(--text-secondary); margin-bottom: 12px; }
+.summary-stat-value { font: 500 30px/1.1 'JetBrains Mono', monospace; letter-spacing: -.04em; }
+.summary-stat-context { font-size: 12px; color: var(--text-secondary); margin-top: 12px; line-height: 1.5; }
+.data-notes { border-top: 1px solid var(--border-glass); margin-top: 32px; padding-top: 20px; }
+
+/* Access and administration share the same quiet surfaces as the terminal. */
+.access-screen,.access-admin { --access-bg: #0c0e10; --access-panel: #14181b; --access-border: #293034; --access-muted: #a0aaa6; --access-green: #5de2b3; letter-spacing: 0; }
+.access-screen { background-image: none; }
+.access-top { justify-content: space-between; padding: 24px 48px; min-height: 112px; }
+.access-private { font-size: 12px; }
+.access-entry { text-align: left; width: min(560px,calc(100% - 48px)); padding: 56px 0 64px; animation-duration: .24s; animation-timing-function: var(--motion-ease); }
+.access-eyebrow { font-size: 12px; letter-spacing: 0; font-weight: 500; margin-bottom: 24px; }
+.access-entry h1 { font-size: clamp(36px,4.3vw,56px); line-height: 1.14; font-weight: 500; letter-spacing: -.045em; }
+.access-entry h1 > span { color: #a0aaa6; }
+.access-description { color: #a0aaa6; font-size: 15px; line-height: 1.7; max-width: 440px; margin: 24px 0 36px; }
+.access-key-form { max-width: none; }
+.access-key-label { display: block; font-size: 12px; font-weight: 500; color: #d7dfdb; margin-bottom: 12px; }
+.access-input-wrap { border-color: #35403e; background: #14181b; border-radius: 12px; padding: 8px 8px 8px 20px; }
+.access-input-wrap input { font-size: 15px; letter-spacing: 0; }
+.access-input-wrap input::placeholder { color: #909c96; }
+.access-submit { height: 44px; min-width: 44px; border-radius: 6px; }
+.access-input-wrap:focus-within { border-color: var(--access-green); box-shadow: 0 0 0 3px #5de2b315; }
+.access-help,.access-error { font-size: 12px; line-height: 1.65; letter-spacing: 0; margin-left: 0; margin-right: 0; }
+.access-help { color: #96a39c; }
+.access-remember { font-size: 13px; margin-top: 24px; }
+.access-entry-rule { background: #293034; width: 100%; margin: 32px 0 24px; }
+.access-benefits { justify-content: flex-start; gap: 20px; font-size: 12px; color: #a0aaa6; letter-spacing: 0; }
+.access-benefits span+span::before { margin-right: 20px; }
+.access-footer { border-top: 1px solid #222a27; margin: 0 48px; padding: 24px 0; font-size: 11px; color: #8b9792; }
+.access-footer a { font-size: 12px; }
+.access-mark { background: #14181b; box-shadow: none; border-color: #35403e; }
+.access-admin-top { border-color: #293034; }
+.access-admin-top > .terminal-logo { margin-left: 24px; }
+.access-admin-heading h1 { font-weight: 500; letter-spacing: -.035em; }
+.access-admin .access-eyebrow { letter-spacing: 0; font-size: 12px; }
+.access-panel-note,.access-field,.access-quiet-button,.access-plan-stat > p,.access-plan-breakdown,.access-table,.access-table th,.access-table code,.access-table-label,.access-status { font-size: 12px; }
+.access-plan-grid { gap: 16px; }
+.access-panel { padding: 24px; }
+.access-lock-button { font-size: 12px; }
+@media(min-width:1024px) {
+  .app-shell > aside { margin: 0; width: 248px; padding: 24px 20px; }
+}
+@media(max-width:767px) {
+  .app-shell header { margin-bottom: 16px; min-height: 76px; }
+  .app-shell header > .terminal-logo { width: 44px; height: 44px; margin-left: 4px; }
+  .app-shell header h1 { font-size: 18px; }
+  .summary-stat { padding: 16px; min-height: 108px; }
+  .summary-stat-value { font-size: 26px; }
+  .summary-stat-context { font-size: 11px; }
+  .access-top { padding: 20px 24px; min-height: 96px; }
+  .terminal-logo { width: 56px; height: 56px; }
+  .access-entry { padding: 32px 0 48px; }
+  .access-description { font-size: 14px; margin-bottom: 28px; }
+  .access-footer { margin: 0 24px; gap: 20px; flex-wrap: wrap; }
+  .access-benefits { flex-wrap: wrap; gap: 12px; font-size: 11px; }
+  .access-benefits span+span::before { margin-right: 12px; }
+  .access-admin-top { padding: 20px; flex-wrap: wrap; }
+  .access-admin-top > .terminal-logo { margin-left: auto; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .access-entry { animation: none; }
+  .access-submit:hover:not(:disabled) { transform: none; }
+}

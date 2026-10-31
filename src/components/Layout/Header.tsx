@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
+import { TerminalLogo } from '@/components/UI/TerminalLogo';
 import { useStore } from '@/store/useStore';
 import { useSignals } from '@/hooks/useSignals';
 import { Sheet } from '@/components/UI/Sheet';
@@ -139,6 +140,7 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
           </button>
         )}
       </div>
+      <TerminalLogo />
     </header>
   );
 }

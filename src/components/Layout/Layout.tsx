@@ -7,12 +7,14 @@ import { UpdateHealth } from '@/components/UI/UpdateHealth';
 import { useStore } from '@/store/useStore';
 import { useI18n } from '@/hooks/useI18n';
 import { isWeb } from '@/lib/ipc';
+import { ViewTransition } from '@/components/UI/ViewTransition';
 
 export function Layout({ children }: { children: ReactNode }) {
   // Drawer state applies to the md–lg band only; below md the bottom tab bar
   // navigates directly, above lg the sidebar is a static column.
   const [navOpen, setNavOpen] = useState(false);
   const dataError = useStore((s) => s.scrapeStatus.error);
+  const view = useStore((s) => s.view);
   const { t } = useI18n();
 
   return (
@@ -40,7 +42,7 @@ export function Layout({ children }: { children: ReactNode }) {
             scrollPaddingBottom: 'calc(var(--tabbar-h) + var(--sa-bottom))',
           }}
         >
-          {children}
+          <ViewTransition view={view}>{children}</ViewTransition>
           <footer className="data-notes">
             <UpdateHealth />
             {isWeb && dataError && <p className="text-xs text-secondary">{t('ui.loadError')}</p>}

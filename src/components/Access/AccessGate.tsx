@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { accessRequest, type AccessSession } from '@/lib/accessApi';
 import './access.css';
+import { TerminalLogo } from '@/components/UI/TerminalLogo';
 const AdminAccess = lazy(() => import('./AdminAccess'));
 
 export function Arrow() { return <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>; }
@@ -60,15 +61,15 @@ export default function AccessGate({ children }: { children: ReactNode }) {
   if (checking) return <AccessLoading />;
   if (session) return <>{children}<button className="access-lock-button" type="button" onClick={() => void logout()} disabled={busy} title={error || 'Sign out and forget this device'}>Lock terminal <Arrow /></button>{error && <div className="access-session-error" role="alert">{error}</div>}</>;
   return <main className="access-screen">
-    <header className="access-top"><span className="access-private"><span />Private access</span></header>
+    <header className="access-top"><span className="access-private"><span />Private access</span><TerminalLogo /></header>
     <section className="access-entry" aria-labelledby="access-title">
-      <LockMark /><span className="access-eyebrow">THE EDGE STARTS HERE</span>
-      <h1 id="access-title">Insider &amp; Whale<br /><span>Terminal access.</span></h1>
-      <p className="access-description">Your key to the signals that matter.</p>
+      <span className="access-eyebrow">Insider activity. Unusual flow.</span>
+      <h1 id="access-title">Insider &amp; Whale<br /><span>Terminal access</span></h1>
+      <p className="access-description">Follow insider activity and whale signals in one workspace. Enter your access key to continue.</p>
       <form onSubmit={activate} className="access-key-form">
-        <label className="sr-only" htmlFor="terminal-key">Access key</label>
+        <label className="access-key-label" htmlFor="terminal-key">Access key</label>
         <div className={`access-input-wrap ${error ? 'has-error' : ''}`}>
-          <input id="terminal-key" name="key" value={key} onChange={event => setKey(event.target.value)} placeholder="Insert your Key here" autoComplete="off" autoCapitalize="characters" spellCheck={false} required maxLength={100} aria-describedby={error ? 'access-error' : 'access-help'} aria-invalid={!!error} disabled={busy} />
+          <input id="terminal-key" name="key" value={key} onChange={event => setKey(event.target.value)} placeholder="Enter your access key" autoComplete="off" autoCapitalize="characters" spellCheck={false} required maxLength={100} aria-describedby={error ? 'access-error' : 'access-help'} aria-invalid={!!error} disabled={busy} />
           <button type="submit" className="access-submit" aria-label="Enter terminal" disabled={busy || !key.trim()}>{busy ? <span className="access-spinner" /> : <Arrow />}</button>
         </div>
         <label className="access-remember"><input type="checkbox" checked={rememberDevice} onChange={event => setRememberDevice(event.target.checked)} disabled={busy} aria-describedby="remember-device-help" />Remember this device</label>
