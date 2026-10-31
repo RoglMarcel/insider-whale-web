@@ -41,7 +41,7 @@ jobs:
   # Reads the LIVE site (public/data is gitignored, so the repo can't answer
   # this) and fails open — an unreachable site must never freeze publishing.
   gate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       go: ${{ steps.check.outputs.go }}
     steps:
@@ -76,7 +76,7 @@ jobs:
   scrape-and-deploy:
     needs: gate
     if: needs.gate.outputs.go == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
