@@ -177,3 +177,49 @@ test('password derivation stays within the hosted WebCrypto iteration cap',async
   try { assert.equal((await request('admin/login',{password})).status,200); }
   finally { crypto.subtle.deriveBits=derive; }
 });
+
+test('remembered device returns without a key for up to one year and can be forgotten',async () => {
+  const {keys} = await generate('lifetime');
+  const first = await request('access/activate',{key:keys[0].key,rememberDevice:true});
+  assert.equal(first.status,200);
+  assert.match(first.headers.get('set-cookie'),/HttpOnly; Secure; SameSite=Strict; Max-Age=31536000/);
+  assert(!first.headers.get('set-cookie').includes(keys[0].key));
+  const saved = cookieOf(first);
+  now += 180*86_400_000;
+  // A new service instance represents a later visit; only the cookie is sent.
+  api = createAccessService({DB:db,ADMIN_PASSWORD_HASH:verifier},()=>now);
+  assert.equal((await (await request('access/session',undefined,saved)).json()).session.role,'member');
+  const logout = await request('access/logout',{},saved);
+  assert.match(logout.headers.get('set-cookie'),/Max-Age=0/);
+  assert.equal((await (await request('access/session',undefined,saved)).json()).session,null);
+});
+
+test('remembered access remains capped by key expiry and revocation',async () => {
+  const {admin,keys} = await generate('4weeks',2);
+  const first = await request('access/activate',{key:keys[0].key,rememberDevice:true});
+  assert.match(first.headers.get('set-cookie'),/Max-Age=2419200/);
+  const saved = cookieOf(first);
+  const second = cookieOf(await request('access/activate',{key:keys[1].key,rememberDevice:true}));
+  await request(`admin/keys/${keys[1].id}/revoke`,{},admin);
+  assert.equal((await (await request('access/session',undefined,second)).json()).session,null);
+  now += 28*86_400_000;
+  assert.equal((await (await request('access/session',undefined,saved)).json()).session,null);
+});
+
+test('opting out uses a session cookie and expires server-side after eight hours',async () => {
+  const {keys} = await generate('lifetime');
+  const response = await request('access/activate',{key:keys[0].key,rememberDevice:false});
+  assert.equal(response.status,200);
+  assert(!/Max-Age|Expires/i.test(response.headers.get('set-cookie')));
+  const saved = cookieOf(response);
+  now += 8*60*60_000;
+  assert.equal((await (await request('access/session',undefined,saved)).json()).session,null);
+});
+
+test('remember-device accepts only boolean choices and remembered lifetime sessions still expire',async () => {
+  const {keys} = await generate('lifetime');
+  assert.equal((await request('access/activate',{key:keys[0].key,rememberDevice:'true'})).status,400);
+  const saved = cookieOf(await request('access/activate',{key:keys[0].key,rememberDevice:true}));
+  now += 365*86_400_000;
+  assert.equal((await (await request('access/session',undefined,saved)).json()).session,null);
+});

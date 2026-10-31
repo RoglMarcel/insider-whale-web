@@ -46,8 +46,8 @@ async function passwordMatches(password, verifier) {
 function cookies(request) {
   return Object.fromEntries((request.headers.get('Cookie') || '').split(';').map(p => p.trim().split('=')).filter(p => p.length === 2));
 }
-function cookie(name, token, maxAge) {
-  return `${name}=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${Math.max(0, Math.floor(maxAge / 1000))}`;
+function cookie(name, token, maxAge, persistent = true) {
+  return `${name}=${token}; Path=/; HttpOnly; Secure; SameSite=Strict${persistent ? `; Max-Age=${Math.max(0, Math.floor(maxAge / 1000))}` : ''}`;
 }
 function json(value, status = 200, headers = {}) {
   return Response.json(value, { status, headers: { 'Cache-Control': 'no-store, private', 'X-Content-Type-Options': 'nosniff', ...headers } });
@@ -118,6 +118,7 @@ export function createAccessService(env, clock = Date.now) {
       if (path === '/api/access/activate' && request.method === 'POST') {
         await throttle(request, 'activate', 30);
         const data = await body(request), normalized = normalizeKey(data.key);
+        if (data.rememberDevice !== undefined && typeof data.rememberDevice !== 'boolean') throw new AccessError(400, 'Choose whether to remember this device.');
         if (!/^IWT[A-HJ-NP-Z2-9]{32}$/.test(normalized)) throw new AccessError(401, 'This key is invalid, expired or revoked.');
         const hash = await digest(normalized);
         const existing = await db.prepare('SELECT duration,trial_days FROM access_keys WHERE key_hash=?').bind(hash).first();
@@ -128,12 +129,15 @@ export function createAccessService(env, clock = Date.now) {
           WHERE key_hash=? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>?) RETURNING *`)
           .bind(now, expiration(effectiveDuration(existing), now), hash, now).first();
         if (!key) throw new AccessError(401, 'This key is invalid, expired or revoked.');
-        const token = randomToken(), ends = Math.min(now + 30 * DAY, key.expires_at ?? Infinity);
+        // Preserve the legacy 30-day session for older clients. Explicit opt-out
+        // uses a browser-session cookie and an eight-hour server-side limit.
+        const lifetime = data.rememberDevice === true ? 365 * DAY : data.rememberDevice === false ? 8 * 60 * 60_000 : 30 * DAY;
+        const token = randomToken(), ends = Math.min(now + lifetime, key.expires_at ?? Infinity);
         await db.prepare('INSERT INTO access_sessions(token_hash,role,key_id,expires_at) VALUES(?,\'member\',?,?)').bind(await digest(token), key.id, ends).run();
         // Replace this browser's old session rather than accumulating it on every login.
         const old = cookies(request).iwt_session;
         if (old) await db.prepare('DELETE FROM access_sessions WHERE token_hash=?').bind(await digest(old)).run();
-        return json({ session: { role: 'member', duration: effectiveDuration(key), expiresAt: key.expires_at, sessionExpiresAt: ends } }, 200, { 'Set-Cookie': cookie('iwt_session', token, ends - now) });
+        return json({ session: { role: 'member', duration: effectiveDuration(key), expiresAt: key.expires_at, sessionExpiresAt: ends } }, 200, { 'Set-Cookie': cookie('iwt_session', token, ends - now, data.rememberDevice !== false) });
       }
       if (path === '/api/admin/login' && request.method === 'POST') {
         await throttle(request, 'admin-login', 10);

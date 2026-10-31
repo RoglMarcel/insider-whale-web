@@ -13,6 +13,7 @@ export default function AccessGate({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AccessSession | null>(null);
   const [checking, setChecking] = useState(true);
   const [key, setKey] = useState('');
+  const [rememberDevice, setRememberDevice] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -46,7 +47,7 @@ export default function AccessGate({ children }: { children: ReactNode }) {
   const activate = async (event: FormEvent) => {
     event.preventDefault(); if (!key.trim() || busy) return;
     setBusy(true); setError(''); setNotice('');
-    try { const result = await accessRequest<{ session: AccessSession }>('access/activate', { key }); setKey(''); setSession(result.session); }
+    try { const result = await accessRequest<{ session: AccessSession }>('access/activate', { key, rememberDevice }); setKey(''); setSession(result.session); }
     catch (err) { setError((err as Error).message); }
     finally { setBusy(false); }
   };
@@ -57,7 +58,7 @@ export default function AccessGate({ children }: { children: ReactNode }) {
   };
   if (adminPage) return <Suspense fallback={<AccessLoading />}><AdminAccess /></Suspense>;
   if (checking) return <AccessLoading />;
-  if (session) return <>{children}<button className="access-lock-button" type="button" onClick={() => void logout()} disabled={busy} title={error || 'Lock this terminal'}>Lock terminal <Arrow /></button>{error && <div className="access-session-error" role="alert">{error}</div>}</>;
+  if (session) return <>{children}<button className="access-lock-button" type="button" onClick={() => void logout()} disabled={busy} title={error || 'Sign out and forget this device'}>Lock terminal <Arrow /></button>{error && <div className="access-session-error" role="alert">{error}</div>}</>;
   return <main className="access-screen">
     <header className="access-top"><span className="access-private"><span />Private access</span></header>
     <section className="access-entry" aria-labelledby="access-title">
@@ -70,6 +71,8 @@ export default function AccessGate({ children }: { children: ReactNode }) {
           <input id="terminal-key" name="key" value={key} onChange={event => setKey(event.target.value)} placeholder="Insert your Key here" autoComplete="off" autoCapitalize="characters" spellCheck={false} required maxLength={100} aria-describedby={error ? 'access-error' : 'access-help'} aria-invalid={!!error} disabled={busy} />
           <button type="submit" className="access-submit" aria-label="Enter terminal" disabled={busy || !key.trim()}>{busy ? <span className="access-spinner" /> : <Arrow />}</button>
         </div>
+        <label className="access-remember"><input type="checkbox" checked={rememberDevice} onChange={event => setRememberDevice(event.target.checked)} disabled={busy} aria-describedby="remember-device-help" />Remember this device</label>
+        <p id="remember-device-help" className="access-help">Sign in automatically for up to one year, or until your key expires. Lock terminal to forget this device.</p>
         {error ? <p id="access-error" className="access-error" role="alert">{error}</p> : <p id="access-help" className="access-help">{notice || 'Your access period begins when you first use your key.'}</p>}
       </form>
       <div className="access-entry-rule" /><div className="access-benefits"><span>Insider activity</span><span>Whale signals</span><span>One terminal</span></div>
