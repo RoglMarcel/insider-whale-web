@@ -126,8 +126,10 @@ async function contextPage(width, mode = 'full') {
     await checkPage(page, `${width}-alerts`);
     const heights = await page.locator('.signal-card').evaluateAll(cards => cards.map(c => c.getBoundingClientRect().height));
     assert(Math.max(...heights) - Math.min(...heights) < 2, 'Consistent alert card heights');
-    const icons = await page.getByTestId('summary-stats').locator('svg').evaluateAll(icons => icons.map(i => i.innerHTML));
-    assert.notEqual(icons[0], icons[3], 'Combo and total signal icons are distinct');
+    const stats = page.getByTestId('summary-stats').locator('.summary-stat');
+    assert.equal(await stats.count(), 4, 'Four summary stats are displayed');
+    const labels = await stats.locator('.summary-stat-label').allTextContents();
+    assert.equal(new Set(labels.map(label => label.trim())).size, 4, 'Summary stat labels are distinct');
     await page.locator('main [role="button"][aria-label="NVDA"]').click();
     await page.getByText('Additional valuation models', {exact:true}).click();
     await page.locator('.valuation-models details').last().waitFor();
