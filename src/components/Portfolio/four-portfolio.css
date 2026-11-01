@@ -1,0 +1,17 @@
+.portfolio-dashboard { --portfolio-above80: #d6ac63; }
+.four-portfolios .portfolio-comparison-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.four-portfolios .portfolio-summary-label { text-transform: none; letter-spacing: normal; font-size: 12px; }
+.portfolio-dashboard .portfolio-switch { flex-wrap: wrap; }
+.portfolio-dashboard[data-portfolio='above80'] .portfolio-switch .btn[aria-pressed='true'] {
+  color: var(--portfolio-above80);
+  background: color-mix(in srgb, var(--portfolio-above80) 13%, transparent);
+  border-color: color-mix(in srgb, var(--portfolio-above80) 35%, transparent);
+}
+@media (min-width: 1280px) {
+  .four-portfolios .portfolio-comparison-grid { grid-template-columns: 1fr; }
+  .four-portfolios .portfolio-comparison-chart { height: 460px; }
+}
+@media (max-width: 767px) {
+  .four-portfolios .portfolio-comparison-grid { grid-template-columns: 1fr; }
+  .portfolio-dashboard .portfolio-switch .btn { flex-basis: 100%; }
+}

@@ -1,5 +1,7 @@
 # Simulation integrity and exit decision — 2026-11-01
 
+> Subsequent owner decision: apply 15% / 10% with next-close execution to the signal books and add a strict >80 comparison. See [four-portfolio rollout](FOUR-PORTFOLIO-DECISION-2026-11-01.md). This report preserves the initial research and repair decision below.
+
 **Decision:** complete the verified integrity/replay repairs and retain legacy default exit thresholds. Provide versioned alternatives and delayed execution for research. This evidence does not establish optimized parameters, perfect alerts, or exits as the sole cause of losses.
 
 ## Evidence and reproduction

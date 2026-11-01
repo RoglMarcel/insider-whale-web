@@ -44,7 +44,7 @@ describe('profit protection and executable timing', () => {
     expect(earliestEntryDate('2026-02-30')).toBe('9999-12-31');
   });
   it('shares the activated floor between the UI and engine, with stop precedence and overshoot', () => {
-    const c = { ...cfg, profitFloor: .1 };
+    const c = { ...cfg, trailArm: .25, trailDistance: .2, profitFloor: .1 };
     const ctx = { entryPrice: 100, highWaterClose: 125, close: 109, holdDays: 5 };
     expect(evaluateExit({ ...ctx, highWaterClose: 124.99 }, c)).toBeNull();
     expect(evaluateExit(ctx, c)).toBe('trailing');

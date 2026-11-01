@@ -31,7 +31,7 @@ let browser;
     await page.addInitScript(lang=>localStorage.setItem('language',lang),language);
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     await page.getByRole('button',{name:language==='en'?/Rules & assumptions/:/Regelwerk & Annahmen/}).click();
-    assert((await page.locator('main').innerText()).includes(language==='en'?'nominal trigger return is 0%':'nominelle Auslöseschwelle bei 0 %'));
+    assert((await page.locator('main').innerText()).includes(language==='en'?'nominal trigger return is 3.5%':'nominelle Auslöseschwelle bei 3.5 %'));
     await page.getByRole('button',{name:language==='en'?'Edit rules':'Regeln ändern',exact:true}).click();
     await page.locator('select[name=researchPolicy]').selectOption('trail-15-10-v1');
     assert.equal(await page.locator('input[name=trailArm]').inputValue(),'15');

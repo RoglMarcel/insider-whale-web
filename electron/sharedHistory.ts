@@ -22,7 +22,9 @@ function columns(db: Database.Database, schema: string, table: string): string[]
 function copy(db: Database.Database, table: string, identity?: string[]): number {
   const source = columns(db, 'incoming', table);
   if (!source.length) return 0; // exports from older versions
-  const cols = columns(db, 'main', table).filter(c => (c !== 'id' || table === 'price_vintages') && source.includes(c));
+  // String IDs identify whole vintages/experiments across machines. Only local
+  // autoincrement row IDs are discarded during transport.
+  const cols = columns(db, 'main', table).filter(c => (c !== 'id' || table === 'price_vintages' || table === 'portfolio_experiments') && source.includes(c));
   if (!cols.length || identity?.some(c => !cols.includes(c))) throw new Error(`Incompatible shared table: ${table}`);
   // signal_id refers to a machine-local autoincrement key, never to the same
   // signal on another machine. Historical decision evidence has its own key.

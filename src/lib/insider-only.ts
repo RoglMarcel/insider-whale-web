@@ -19,12 +19,16 @@ export function recoverPortfolioEntryCandidates(positions: readonly {
  * A hard 20% minimum rejects the fifth trade after fees or earlier gains.
  */
 export function insiderOnlyConfig(base: PortfolioConfig): PortfolioConfig {
-  return { ...base, startingCash: 10_000, cashPolicy: 'idle',
+  return { ...base, cashPolicy: 'idle',
     baseWeight: 0.2, maxWeight: 0.2, minWeight: 0, maxPositions: 5 };
 }
 
 export function buildInsiderOnly(input: PortfolioSimInput, builtAt: string): PortfolioExperiment {
-  const config = insiderOnlyConfig(input.config);
+  return buildComparisonPortfolio(input, builtAt, insiderOnlyConfig(input.config), INSIDER_ONLY_ID, INSIDER_ONLY_DEFINED_AT);
+}
+
+export function buildComparisonPortfolio(input: PortfolioSimInput, builtAt: string,
+  config: PortfolioConfig, id: string, definedAt: string): PortfolioExperiment {
   const sim = simulatePortfolio({ ...input, config });
   const last = sim.equity.at(-1);
   const open = last ? sim.positions.filter((p) => !p.exitDate).map((p) => {
@@ -43,10 +47,10 @@ export function buildInsiderOnly(input: PortfolioSimInput, builtAt: string): Por
     config, equity: sim.equity, open, closed, events: sim.events,
     stats: computeStats(sim.equity, closed, open, config),
     meta: { available: !!last, firstDate: sim.equity[0]?.date ?? null, lastDate: last?.date ?? null,
-      backfillStart: sim.equity[0]?.date ?? null, liveStart: INSIDER_ONLY_DEFINED_AT, lastRun: builtAt,
+      backfillStart: sim.equity[0]?.date ?? null, liveStart: definedAt, lastRun: builtAt,
       skippedNoCash: count('skipped_no_cash'), skippedCap: count('skipped_cap'), missingPrices: count('data_missing'),
       suspectPrices: 0, untradableTickers: sim.untradable, restatedDays: 0, priceAsOf: last?.date ?? null,
       readOnly: true, note: null },
   };
-  return { id: INSIDER_ONLY_ID, definedAt: INSIDER_ONLY_DEFINED_AT, state };
+  return { id, definedAt, state };
 }

@@ -20,7 +20,7 @@ async function verify(): Promise<void> {
         metadata: { symbol: ticker, currency: 'USD', exchangeName: 'NMS' }, basis: 'yahoo-adjusted-close', corporateActions: null, issues: [],
         points: [{ date: date(1), px: ticker === 'SPY' ? 500 : 100 }, ...(later ? [{ date: date(11), px: ticker === 'SPY' ? 525 : 110 }] : [])] }));
     };
-    setPortfolioConfig({ inceptionDate: date(0), maxHoldDays: 5 });
+    setPortfolioConfig({ inceptionDate: date(0), maxHoldDays: 5, exitExecution: 'same_close' });
     insertSignal({ ...sampleSignals[0], ticker: 'TEST', scrapedAt: date(0) + 'T12:00:00Z', score: 80 });
     seed(false);
     assert.equal((await syncPortfolio()).ok, true);

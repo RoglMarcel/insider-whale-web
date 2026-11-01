@@ -249,7 +249,7 @@ describe('triple barrier', () => {
   });
 });
 
-describe('shipped exit rules (v1.5.0)', () => {
+describe('owner-selected exit rules (policy v2)', () => {
   const base = { entryPrice: 100, close: 100, highWaterClose: 100, holdDays: 1 };
 
   it('has NO take-profit — the upside is genuinely uncapped, not set to 999%', () => {
@@ -266,9 +266,9 @@ describe('shipped exit rules (v1.5.0)', () => {
     expect(evaluateExit({ ...base, holdDays: 90 })).toBe('time');
   });
 
-  it('trails 20% below the high water once +25%', () => {
-    expect(evaluateExit({ ...base, highWaterClose: 124, close: 99.2 })).toBeNull(); // not armed
-    expect(evaluateExit({ ...base, highWaterClose: 125, close: 100 })).toBe('trailing');
+  it('trails 10% below the high water once +15%', () => {
+    expect(evaluateExit({ ...base, highWaterClose: 114.99, close: 103.5 })).toBeNull();
+    expect(evaluateExit({ ...base, highWaterClose: 115, close: 103.5 })).toBe('trailing');
   });
 });
 
@@ -663,14 +663,14 @@ describe('price gaps', () => {
 
   it('executes a real stop only when a quote returns after a long gap', () => {
     const long = calendar('2026-01-05', 25);
-    const px = { ...flat(long.slice(0, 6), 100), [long[20]]: 60 };
+    const px = { ...flat(long.slice(0, 6), 100), [long[20]]: 60, [long[22]]: 55 };
     const res = simulatePortfolio(input({
       tradingDays: long, spy: flat(long, 500), prices: { AAA: px },
       candidates: [cand({ earliestDate: long[0] })],
     }));
     expect(res.positions[0].exitReason).toBe('stop_loss');
-    expect(res.positions[0].exitDate).toBe(long[20]);
-    expect(res.positions[0].exitPrice).toBeCloseTo(applySlippage(60, 'sell', 5), 10);
+    expect(res.positions[0].exitDate).toBe(long[22]);
+    expect(res.positions[0].exitPrice).toBeCloseTo(applySlippage(55, 'sell', 5), 10);
   });
 
   it('does not mark a ticker untradable when another sighting of it did trade', () => {
@@ -736,10 +736,10 @@ describe('trade alpha', () => {
     const closed = toClosedPosition(res.positions[0]);
     expect(closed.exitReason).toBe('take_profit');
     expect(closed.spyEntry).toBe(500);
-    expect(closed.spyExit).toBe(520);
-    // Position ≈ +24.9% after two-sided slippage, SPY +4% over the same 4 days.
-    expect(closed.tradeAlpha).toBeCloseTo(closed.returnPct - 0.04, 10);
-    expect(closed.holdDays).toBe(diffDaysYmd(days[0], days[4]));
+    expect(closed.spyExit).toBe(525);
+    // The trigger is on day 4; the next-close fill uses day 5 for BOTH assets.
+    expect(closed.tradeAlpha).toBeCloseTo(closed.returnPct - 0.05, 10);
+    expect(closed.holdDays).toBe(diffDaysYmd(days[0], days[5]));
   });
 });
 

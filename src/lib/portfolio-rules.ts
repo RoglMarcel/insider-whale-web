@@ -109,7 +109,7 @@ export function positionSize(
   equity: number,
   config: PortfolioConfig = DEFAULT_PORTFOLIO_CONFIG,
 ): PositionSizing {
-  if (!(score >= config.entryScore)) return { targetWeight: 0, value: 0 };
+  if (!(config.entryScoreStrict ? score > config.entryScore : score >= config.entryScore)) return { targetWeight: 0, value: 0 };
   const scoreFactor = 1 + (score - config.entryScore) / config.scoreSpan;
   const targetWeight = clamp(config.baseWeight * scoreFactor, config.minWeight, config.maxWeight);
   return { targetWeight, value: Math.max(0, equity) * targetWeight };
@@ -419,7 +419,7 @@ export function simulatePortfolio(input: PortfolioSimInput): PortfolioSimResult 
   for (const c of [...input.candidates].sort(
     (a, b) => a.earliestDate.localeCompare(b.earliestDate) || b.score - a.score || a.ticker.localeCompare(b.ticker),
   )) {
-    if (c.score < cfg.entryScore) continue;
+    if (cfg.entryScoreStrict ? c.score <= cfg.entryScore : c.score < cfg.entryScore) continue;
     // A signal from before inception is DROPPED, not deferred. Resolving it
     // forward would buy a seven-week-old sighting on opening day at a price
     // that already moved — the one thing `earliestEntryDate` exists to prevent.

@@ -4,9 +4,11 @@ import { digest, makePriceVintage, reusablePriceReview } from './priceCache';
 import { cleanPortfolioCandidates } from '../src/lib/ticker-quality';
 import { recordBacktestBook, recordBacktestClosures, analyzePendingBacktests, getBacktestState } from './backtest';
 import { buildInsiderOnly, INSIDER_ONLY_ID, recoverPortfolioEntryCandidates } from '../src/lib/insider-only';
+import { alertsAbove80Config, buildAlertsAbove80, ALERTS_ABOVE_80_ID } from '../src/lib/alerts-above-80';
 import nodeFs from 'node:fs';
 import nodePath from 'node:path';
 import {
+  PORTFOLIO_EXIT_POLICY_ID, PORTFOLIO_EXIT_POLICY_DEFINED_AT, PORTFOLIO_SELECTED_EXIT_POLICY,
   type PortfolioCandidate,
   type PortfolioClosedPosition,
   type PortfolioConfig,
@@ -32,6 +34,7 @@ import {
   archiveExperimentCandidates,
   clearPortfolioEquity,
   getPortfolioConfig,
+  migratePortfolioConfig,
   getPortfolioEquity,
   getPortfolioEvents,
   getPortfolioHistoryStart,
@@ -91,7 +94,8 @@ const todayYmd = (): string => new Date().toISOString().slice(0, 10);
 // 4: enforce the funded weight floor; replay affected entries and equity together.
 // 5: verified ticker identity repair; retain the previous book in portfolio_revisions.
 // 6: complete price vintages and coherent, versioned replay snapshots.
-const CURVE_BUILDER_VERSION = 6;
+// 7: owner-selected exit policy, first-qualified clocks and aligned fourth book.
+const CURVE_BUILDER_VERSION = 7;
 
 let runInFlight = false;
 
@@ -139,7 +143,7 @@ function sameConfig(a: PortfolioConfig, b: PortfolioConfig): boolean {
  */
 export function buildCandidates(config: PortfolioConfig): PortfolioCandidate[] {
   const out: PortfolioCandidate[] = [];
-  for (const r of getPortfolioSignalCandidates(config.entryScore)) {
+  for (const r of getPortfolioSignalCandidates(config.entryScore, config.entryScoreStrict)) {
     out.push({
       ticker: r.ticker,
       earliestDate: earliestEntryDate(r.seenAt),
@@ -148,7 +152,7 @@ export function buildCandidates(config: PortfolioConfig): PortfolioCandidate[] {
       source: 'signal',
     });
   }
-  for (const r of getPortfolioOutcomeCandidates(config.entryScore)) {
+  for (const r of getPortfolioOutcomeCandidates(config.entryScore, config.entryScoreStrict)) {
     out.push({
       ticker: r.ticker,
       earliestDate: addDaysYmd(r.seenAt.slice(0, 10), 1),
@@ -231,13 +235,16 @@ export async function syncPortfolio(): Promise<PortfolioSyncReport> {
 }
 
 async function runSync(): Promise<PortfolioSyncReport> {
+  // A legacy device import may bring back a v3 overlay between app starts.
+  migratePortfolioConfig();
   const config = getPortfolioConfig();
   const priorState = getPortfolioState();
   const priorMeta = getPortfolioRunMeta();
   if (priorMeta && (priorMeta.curveVersion ?? 1) < 5) archivePortfolioRevision('ticker-cleanup-v1', getPortfolioState());
   const previousExperiment = getPortfolioExperiment(INSIDER_ONLY_ID);
+  const previousAbove80 = getPortfolioExperiment(ALERTS_ABOVE_80_ID);
   const firstSignal = [getPortfolioHistoryStart(config.entryScore), priorMeta?.backfillStart,
-    previousExperiment?.state.meta.firstDate].filter((d): d is string => !!d).sort()[0];
+    previousExperiment?.state.meta.firstDate, previousAbove80?.state.meta.firstDate].filter((d): d is string => !!d).sort()[0];
   if (!firstSignal) {
     return { ok: false, reason: 'no signal has ever reached the entry threshold', daysWritten: 0, restatedDays: 0, rebuilt: false, pricesFetched: 0, suspectPoints: 0 };
   }
@@ -255,6 +262,7 @@ async function runSync(): Promise<PortfolioSyncReport> {
   if (config.inceptionDate && config.inceptionDate > todayYmd()) {
     if (priorState.equity.length) archivePortfolioRevision(`before-future-inception:${digest(priorState)}`, priorState);
     clearPortfolio();
+    getDb().prepare('DELETE FROM portfolio_experiments WHERE id IN (?,?)').run(INSIDER_ONLY_ID, ALERTS_ABOVE_80_ID);
     setPortfolioRunMeta({
       config,
       curveVersion: CURVE_BUILDER_VERSION,
@@ -298,13 +306,20 @@ async function runSync(): Promise<PortfolioSyncReport> {
   // rather than vanish from a replay when its source row expires.
   const candidates = cleanPortfolioCandidates(archiveExperimentCandidates('main-backtest-v1.7', [...retainedEntries, ...sourceCandidates]));
   const experimentCandidates = cleanPortfolioCandidates(archiveExperimentCandidates(INSIDER_ONLY_ID, [...candidates, ...retainedEntries]));
-  const universe = [...new Set([...candidates, ...experimentCandidates].map((c) => c.ticker))].sort();
+  const above80Sources = buildCandidates(alertsAbove80Config(config));
+  const above80Retained = recoverPortfolioEntryCandidates([...(previousAbove80?.state.open ?? []), ...(previousAbove80?.state.closed ?? [])]);
+  const above80Candidates = cleanPortfolioCandidates(archiveExperimentCandidates(ALERTS_ABOVE_80_ID,
+    [...above80Retained, ...above80Sources, ...experimentCandidates.filter(c => c.score > 80)]));
+  const universe = [...new Set([...candidates, ...experimentCandidates, ...above80Candidates].map((c) => c.ticker))].sort();
   // Preserve the experiment's calendar even after rolling source rows expire.
   const retainedStart = experimentCandidates.reduce((first, c) => c.earliestDate < first ? c.earliestDate : first, start);
   const priorStart = previousExperiment?.state.meta.firstDate ?? start;
   const archivedStart = retainedStart < priorStart ? retainedStart : priorStart;
   const experimentStart = config.inceptionDate && config.inceptionDate > archivedStart ? config.inceptionDate : archivedStart;
-  const fetchStart = experimentStart < start ? experimentStart : start;
+  const above80Start = above80Candidates.reduce((first,c) => c.earliestDate < first ? c.earliestDate : first,
+    previousAbove80?.state.meta.firstDate ?? start);
+  const earliestStart = [start,experimentStart,above80Start].sort()[0];
+  const fetchStart = config.inceptionDate && config.inceptionDate > earliestStart ? config.inceptionDate : earliestStart;
   const priceSync = await syncPrices([BENCHMARK, ...universe.filter((t) => t !== BENCHMARK)], fetchStart);
 
   const spy = getPriceBook([BENCHMARK], fetchStart)[BENCHMARK];
@@ -316,32 +331,42 @@ async function runSync(): Promise<PortfolioSyncReport> {
   const prices = getPriceBook(universe, fetchStart);
   const allTradingDays = Object.keys(spy).sort().filter(d => d < todayYmd() ||
     (d === todayYmd() && Date.now() >= usSessionCloseUtc(d)));
-  const tradingDays = allTradingDays.filter((d) => d >= start);
+  const tradingDays = allTradingDays.filter((d) => d >= fetchStart);
   if (!tradingDays.length || (priorMeta && sameConfig(priorMeta.config, config) && priorState.meta.firstDate && tradingDays[0] > priorState.meta.firstDate)) {
     return { ok: false, reason: 'No complete benchmark history for this book — previous result retained', daysWritten: 0,
       restatedDays: 0, rebuilt: false, pricesFetched: priceSync.fetched, suspectPoints: priceSync.suspect.length };
   }
 
   const sim = simulatePortfolio({ config, tradingDays, spy, prices, candidates });
-  const experiment = buildInsiderOnly({ config, tradingDays: allTradingDays.filter((d) => d >= experimentStart), spy, prices, candidates: experimentCandidates }, new Date().toISOString());
+  const builtAt = new Date().toISOString();
+  const experiment = buildInsiderOnly({ config, tradingDays, spy, prices, candidates: experimentCandidates }, builtAt);
+  const above80 = buildAlertsAbove80({ config, tradingDays, spy, prices, candidates: above80Candidates }, builtAt);
   const previousPoints = new Map(previousExperiment?.state.equity.map((p) => [p.date, p.equity]) ?? []);
   experiment.state.meta.restatedDays = experiment.state.equity.filter((p) => previousPoints.has(p.date) && Math.abs(previousPoints.get(p.date)! - p.equity) > 0.01).length;
   experiment.state.meta.suspectPrices = priceSync.suspect.length;
+  const previousAbove80Points = new Map(previousAbove80?.state.equity.map(p => [p.date,p.equity]) ?? []);
+  above80.state.meta.restatedDays = above80.state.equity.filter(p => previousAbove80Points.has(p.date) && Math.abs(previousAbove80Points.get(p.date)! - p.equity) > .01).length;
+  above80.state.meta.suspectPrices = priceSync.suspect.length;
 
   // A run is one coherent snapshot. Preserve the previous result instead of
   // welding its settled equity onto positions from a different replay.
   const priceVintages = getPriceVintageIds();
   const usedVintages = Object.fromEntries([BENCHMARK, ...universe].map(t => [t, priceVintages[t] ?? 'legacy-unverified']));
-  const inputHash = digest({ config, tradingDays, spy, prices, candidates, experimentCandidates });
-  const builtAt = new Date().toISOString();
+  const inputHash = digest({ config, tradingDays, spy, prices, candidates, experimentCandidates, above80Candidates });
+  const selectedPolicy = Object.entries(PORTFOLIO_SELECTED_EXIT_POLICY).every(([key,value]) => config[key as keyof PortfolioConfig] === value);
+  const policyDefinedAt = selectedPolicy ? PORTFOLIO_EXIT_POLICY_DEFINED_AT : builtAt.slice(0,10);
   const provenance = { engineVersion: CURVE_BUILDER_VERSION,
+    policyId: selectedPolicy ? PORTFOLIO_EXIT_POLICY_ID : `custom:${digest(config)}`, policyDefinedAt,
     runId: digest({ inputHash, priceVintages: usedVintages, engineVersion: CURVE_BUILDER_VERSION }), inputHash,
     configHash: digest(config), priceBasis: 'yahoo-adjusted-close',
     exitExecution: config.exitExecution ?? 'same_close',
     priceVintages: usedVintages };
-  experiment.state.meta.provenance = { ...provenance,
-    configHash: digest(experiment.state.config),
-    runId: digest({ inputHash, priceVintages: usedVintages, experiment: INSIDER_ONLY_ID, engineVersion: CURVE_BUILDER_VERSION }) };
+  for (const comparison of [experiment,above80]) {
+    comparison.state.meta.provenance = { ...provenance,
+      configHash: digest(comparison.state.config),
+      runId: digest({ inputHash, priceVintages: usedVintages, experiment: comparison.id, engineVersion: CURVE_BUILDER_VERSION }) };
+    comparison.state.meta.liveStart = policyDefinedAt;
+  }
   const positionMarks: Record<string, { date: string; px: number }> = {};
   const entrySigmas: Record<string, number | null> = {};
   for (const p of sim.positions.filter(p => !p.exitDate)) {
@@ -366,10 +391,11 @@ async function runSync(): Promise<PortfolioSyncReport> {
     recordBacktestBook('Hauptdepot', config, sim.positions);
     recordBacktestClosures('Hauptdepot', config, sim.positions);
     setPortfolioExperiment(experiment);
+    setPortfolioExperiment(above80);
     setPortfolioRunMeta({ config, provenance, positionMarks, entrySigmas, pendingExits: sim.pendingExits,
       curveVersion: CURVE_BUILDER_VERSION, builtAt,
       backfillStart: sim.equity[0]?.date ?? null,
-      liveStart: liveBoundary(sim.equity[0]?.date ?? null),
+      liveStart: policyDefinedAt,
       skippedNoCash: counts.skippedNoCash, skippedCap: counts.skippedCap,
       missingPrices: counts.dataMissing,
       suspectPrices: getPortfolioEvents(5000).filter(e => e.kind === 'suspect_price').length,
@@ -386,22 +412,6 @@ async function runSync(): Promise<PortfolioSyncReport> {
     suspectPoints: priceSync.suspect.length,
     missingPriceTickers: priceSync.missing,
   };
-}
-
-/**
- * The backfill → live boundary, or `null` when there is no backfilled portion.
- *
- * After the 2026-09-01 reset the book opens WEEKS after the live `signals`
- * table started covering it, so every day of the curve is live. Reporting
- * 2026-08-15 then would draw a "Live from Aug 15" divider on the very first
- * point of a curve that begins in September — a boundary marked inside a window
- * that does not contain it. `null` is what the UI reads as "all of this is
- * live", and the divider is simply not drawn.
- */
-function liveBoundary(firstDay: string | null): string | null {
-  const live = getPortfolioLiveStart();
-  if (!live || !firstDay) return live;
-  return live <= firstDay ? null : live;
 }
 
 function countEvents(events: readonly PortfolioEvent[]): {
@@ -512,6 +522,7 @@ export function getPortfolioState(): PortfolioState {
     // The parameters the STORED curve was built with — never the current draft.
     config: runMeta?.config ?? config,
     insiderOnly: getPortfolioExperiment(INSIDER_ONLY_ID),
+    alertsAbove80: getPortfolioExperiment(ALERTS_ABOVE_80_ID),
     meta: {
       provenance: runMeta?.provenance,
       available: equity.length > 0,

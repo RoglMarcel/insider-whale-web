@@ -1461,11 +1461,11 @@ export const PORTFOLIO_STOP_LOSS: number | null = 0.25;
 /** Legacy time stop in calendar days. Ninety days is a testable hypothesis;
  * heterogeneous insider studies do not establish this book's daily drift. */
 export const PORTFOLIO_MAX_HOLD_DAYS = 90;
-/** Legacy trailing geometry: +25% activates a 20%-below-peak PRICE trigger.
- * At activation the trigger is approximately breakeven before sale costs.
- * Neither activation nor trigger guarantees a fill or an optimal policy. */
-export const PORTFOLIO_TRAIL_ARM = 0.25;
-export const PORTFOLIO_TRAIL_DISTANCE = 0.2;
+/** Owner-selected experiment: +15% activates a 10%-below-peak close trigger.
+ * At activation the trigger is +3.5% before costs. Next-close execution can
+ * overshoot it; neither the trigger nor the policy guarantees a profit. */
+export const PORTFOLIO_TRAIL_ARM = 0.15;
+export const PORTFOLIO_TRAIL_DISTANCE = 0.1;
 /**
  * Lookback for the realised-volatility estimate that the OPTIONAL sigma-scaled
  * barriers use. 60 trading days is the conventional window: long enough to be
@@ -1482,12 +1482,9 @@ export const PORTFOLIO_STARTING_CASH = 10_000;
  * The day the book opens. Nothing before it exists: no curve, no positions, and
  * no signal older than it is bought late.
  *
- * Set to 2026-09-01 for the reset. Everything before it was a BACKFILL — the
- * strategy replayed over signal history that had already happened, which can
- * only ever be a rehearsal: the rules were chosen while that history was
- * visible, so it cannot also be the evidence for them. From here the book only
- * ever acts on signals it did not know about in advance, which is the only
- * version of this number worth quoting.
+ * Historical curves begin at the reset, 2026-09-01. Policy v2 was selected on
+ * 2026-11-01 after that history was visible. Those earlier dates are therefore
+ * retrospective; provenance records the later policy boundary separately.
  */
 export const PORTFOLIO_INCEPTION = '2026-09-01';
 /**
@@ -1546,6 +1543,8 @@ export interface PortfolioConfig {
    */
   inceptionDate: string | null;
   entryScore: number;
+  /** True means strictly greater than entryScore, including decimal scores. */
+  entryScoreStrict?: boolean;
   scoreSpan: number;
   baseWeight: number;
   minWeight: number;
@@ -1593,8 +1592,19 @@ export const DEFAULT_PORTFOLIO_CONFIG: PortfolioConfig = {
   trailDistance: PORTFOLIO_TRAIL_DISTANCE,
   slippageBps: PORTFOLIO_SLIPPAGE_BPS,
   sigmaBarriers: null,
+  profitFloor: null,
+  exitExecution: 'next_close',
   cashPolicy: 'spy',
 };
+
+/** Owner-selected experiment, not an optimized or validated trading policy. */
+export const PORTFOLIO_EXIT_POLICY_ID = 'trail15-10-nextclose-v2';
+export const PORTFOLIO_EXIT_POLICY_DEFINED_AT = '2026-11-01';
+export const PORTFOLIO_SELECTED_EXIT_POLICY = {
+  trailArm: PORTFOLIO_TRAIL_ARM, trailDistance: PORTFOLIO_TRAIL_DISTANCE,
+  stopLoss: PORTFOLIO_STOP_LOSS, takeProfit: null, maxHoldDays: PORTFOLIO_MAX_HOLD_DAYS,
+  profitFloor: null, exitExecution: 'next_close', sigmaBarriers: null,
+} satisfies Partial<PortfolioConfig>;
 
 /**
  * Bumped whenever a SHIPPED default changes in a way that an already-stored
@@ -1607,8 +1617,11 @@ export const DEFAULT_PORTFOLIO_CONFIG: PortfolioConfig = {
  * default the rules editor has written back into the overlay, which is why the
  * migration now reads PORTFOLIO_SUPERSEDED_DEFAULTS rather than the exit rules
  * alone.
+ * 4: Explicit owner rollout of 15% activation / 10% distance and next-close
+ * execution. Archive prior books and override exit settings once, while
+ * preserving unrelated capital, allocation, entry and inception settings.
  */
-export const PORTFOLIO_CONFIG_VERSION = 3;
+export const PORTFOLIO_CONFIG_VERSION = 4;
 
 /**
  * The v1 (v1.4.0) exit rules, kept verbatim so the migration can tell an
@@ -1783,6 +1796,8 @@ export const PORTFOLIO_SMALL_SAMPLE_N = 20;
 
 export interface PortfolioMeta {
   provenance?: {
+    policyId?: string;
+    policyDefinedAt?: string;
     engineVersion: number;
     runId: string;
     inputHash: string;
@@ -1820,6 +1835,7 @@ export interface PortfolioMeta {
 
 export interface PortfolioExperiment {
   id: string;
+  name?: string;
   /** Earlier results are retrospective simulations, not a live track record. */
   definedAt: string;
   state: PortfolioState;
@@ -1827,6 +1843,7 @@ export interface PortfolioExperiment {
 
 export interface PortfolioState {
   insiderOnly?: PortfolioExperiment | null;
+  alertsAbove80?: PortfolioExperiment | null;
   config: PortfolioConfig;
   meta: PortfolioMeta;
   equity: PortfolioEquityPoint[];

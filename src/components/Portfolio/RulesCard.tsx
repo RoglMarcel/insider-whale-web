@@ -74,7 +74,7 @@ export function RulesCard({
           {description && <p className="portfolio-description">{description}</p>}
           <dl className="flex flex-col">
             <Line label={t('pf.rules.capital')} value={`$${config.startingCash.toLocaleString('en-US')}`} />
-            <Line label={t('pf.rules.entry')} value={t('pf.rules.entryValue', { score: config.entryScore })} />
+            <Line label={t('pf.rules.entry')} value={t(config.entryScoreStrict ? 'pf.rules.entryStrict' : 'pf.rules.entryValue', { score: config.entryScore })} />
             <Line
               label={t('pf.rules.sizing')}
               value={config.baseWeight === config.maxWeight && config.minWeight === config.baseWeight ? t('pf.rules.fixedSizing', { weight: p1(config.baseWeight) }) : t('pf.rules.sizingValue', {
@@ -128,6 +128,7 @@ export function RulesCard({
           })}</p>}
           {config.profitFloor != null && <p className="mt-2 text-xs text-secondary">{t('pf.rules.profitFloor', { floor: p1(config.profitFloor) })}</p>}
           <p className="mt-2 text-xs text-secondary">{t(config.exitExecution === 'next_close' ? 'pf.rules.nextClose' : 'pf.rules.sameClose')}</p>
+          {meta.provenance?.policyId && <p className="mt-2 text-xs text-secondary">{t('pf.rules.selectedPolicy', { id: meta.provenance.policyId, date: meta.provenance.policyDefinedAt ?? '—' })}</p>}
           {meta.provenance && <p className="mt-2 break-all text-xs text-secondary">{t('pf.rules.run')}: {meta.provenance.runId} · {meta.provenance.priceBasis}</p>}
           {!meta.provenance && <p className="mt-2 text-xs text-secondary">{t('pf.rules.legacyEvidence')}</p>}
 

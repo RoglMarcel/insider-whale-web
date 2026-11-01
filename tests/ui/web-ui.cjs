@@ -14,16 +14,17 @@ const bundle = buildSync({ stdin: { contents: `
   export { sampleSignals, sampleLogs } from './src/lib/sampleData';
   export { simulatePortfolio, emptyPortfolioState, computeStats, toOpenPosition, toClosedPosition } from './src/lib/portfolio-rules';
   export { buildInsiderOnly } from './src/lib/insider-only';
+  export { buildAlertsAbove80 } from './src/lib/alerts-above-80';
   export { DEFAULT_PORTFOLIO_CONFIG } from './src/types';
   export { summarizeAlertSources } from './src/lib/alert-sources';
   export { calculateFairValue } from './electron/fairValue';
 `, resolveDir: root }, bundle: true, platform: 'node', format: 'cjs', write: false, alias: { '@': path.join(root, 'src') } });
 const fixtureFile = path.join(root, 'tmp/ui-fixtures.cjs');
 fs.writeFileSync(fixtureFile, bundle.outputFiles[0].text);
-const { sampleSignals, sampleLogs, simulatePortfolio, emptyPortfolioState, computeStats, toOpenPosition, toClosedPosition, buildInsiderOnly, DEFAULT_PORTFOLIO_CONFIG, summarizeAlertSources, calculateFairValue } = require(fixtureFile);
+const { sampleSignals, sampleLogs, simulatePortfolio, emptyPortfolioState, computeStats, toOpenPosition, toClosedPosition, buildInsiderOnly, buildAlertsAbove80, DEFAULT_PORTFOLIO_CONFIG, summarizeAlertSources, calculateFairValue } = require(fixtureFile);
 const dates = Array.from({ length: 32 }, (_, i) => new Date(Date.UTC(2026, 8, 1 + i)).toISOString().slice(0, 10));
 const series = (fn) => Object.fromEntries(dates.map((d, i) => [d, fn(i)]));
-const input = { config: { ...DEFAULT_PORTFOLIO_CONFIG, inceptionDate: dates[0], slippageBps: 0 }, tradingDays: dates, spy: series(i => 100 + i * .2), prices: { AAA: series(i => 100 + i * .4) }, candidates: [{ ticker: 'AAA', score: 80, earliestDate: dates[0], signalId: null, source: 'signal' }] };
+const input = { config: { ...DEFAULT_PORTFOLIO_CONFIG, inceptionDate: dates[0], slippageBps: 0 }, tradingDays: dates, spy: series(i => 100 + i * .2), prices: { AAA: series(i => 100 + i * .4), HGH: series(i => 100 + i * .3) }, candidates: [{ ticker: 'AAA', score: 80, earliestDate: dates[0], signalId: null, source: 'signal' }, { ticker: 'HGH', score: 81, earliestDate: dates[0], signalId: null, source: 'signal' }] };
 const simulated = simulatePortfolio(input);
 const last = simulated.equity.at(-1);
 const open = simulated.positions.filter(p => !p.exitDate).map(p => toOpenPosition(p, input.prices[p.ticker][last.date], last.date, last.equity, input.config));
@@ -33,6 +34,8 @@ Object.assign(portfolio.meta, { available: true, readOnly: true, firstDate: date
 portfolio.meta.note = 'Computed by the scheduled run — hosted build reads the published result.';
 portfolio.insiderOnly = buildInsiderOnly(input, '2026-09-23T12:00:00Z');
 portfolio.insiderOnly.state.meta.readOnly = true;
+portfolio.alertsAbove80 = buildAlertsAbove80(input, '2026-11-01T12:00:00Z');
+portfolio.alertsAbove80.state.meta.readOnly = true;
 const fixtures = {
   'signals.json': sampleSignals.map(s => ({ ...s, breakdown: { ...s.breakdown, notes: [...s.breakdown.notes, '⚡ Recorded insider buying ×1.2'] } })),
   'meta.json': { version: 'ui-test', generatedAt: '2026-10-02T12:00:00Z', runs: sampleLogs, vix: null },
@@ -66,7 +69,7 @@ async function checkPage(page, label) {
   await page.screenshot({ path: path.join(out, `${label}.png`) });
 }
 async function navigate(page, width, view) {
-  const labels = { analysis: /^(Analysis|Analyse)$/, dashboard: /^Alerts$/, portfolio: /^(Paper|Portfolio)$/, history: /^(History|Verlauf)$/, settings: /^(Setup|Settings)$/, watchlist: /\b(Watch|Watchlist)\b/ };
+  const labels = { analysis: /^(Analysis|Analyse)$/, dashboard: /^Alerts$/, portfolio: /^(Paper|Portfolio|Depot)$/, history: /^(History|Verlauf)$/, settings: /^(Setup|Settings)$/, watchlist: /\b(Watch|Watchlist)\b/ };
   if (width < 768) await page.locator('nav').filter({ has: page.locator('button[aria-current]') }).getByRole('button', { name: labels[view] }).click();
   else {
     if (width < 1024) await page.getByRole('button', { name: /^(Open menu|Menü öffnen)$/, exact: true }).click();
@@ -83,6 +86,12 @@ async function contextPage(width, mode = 'full') {
     const name = new URL(route.request().url()).pathname.split('/').pop();
     if (mode === 'error' && ['signals.json', 'meta.json', 'portfolio.json'].includes(name)) return route.fulfill({ status: 503, body: 'Service unavailable' });
     let data = fixtures[name];
+    if (name === 'portfolio.json' && ['legacy-three', 'mismatched-fourth', 'mismatched-policy'].includes(mode)) {
+      data = JSON.parse(JSON.stringify(data));
+      if (mode === 'legacy-three') delete data.alertsAbove80;
+      else if (mode === 'mismatched-policy') data.alertsAbove80.state.config.trailArm = .25;
+      else data.alertsAbove80.state.equity.splice(10, 1);
+    }
     if (mode === 'sales' && name === 'signals.json') {
       const date = new Date(Date.now() - 23 * 86400000).toISOString().slice(0, 10);
       data = [{ ...sampleSignals[0], ticker: 'SMCI', companyName: 'Super Micro Computer', insiderCount: 0, totalDollarVolume: 0, topInsiderRole: null, tradeDate: null, filingDate: null, insiderFlow: undefined,
@@ -185,7 +194,7 @@ async function contextPage(width, mode = 'full') {
     await checkPage(page, `${width}-analysis`);
     await navigate(page, width, 'portfolio');
     await page.locator('.portfolio-summary').first().waitFor();
-    assert.equal(await page.locator('.portfolio-summary').count(), 3);
+    assert.equal(await page.locator('.portfolio-summary').count(), 4);
     assert.equal(await page.locator('.portfolio-headline').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(17, 17, 21)');
     assert.equal(await page.getByRole('checkbox', { name: /cash.drag/i }).count(), 0);
     assert((await page.locator('.portfolio-headline').innerText()).includes('$' + portfolio.equity.at(-1).equity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })));
@@ -195,6 +204,15 @@ async function contextPage(width, mode = 'full') {
     assert.equal(await page.locator('.portfolio-description').count(), 1);
     assert.equal(await page.locator('main').evaluate(el => el.innerText.split('Concentrated signals: $10,000 start').length - 1), 1);
     await checkPage(page, `${width}-portfolio-3`);
+    await page.getByRole('button', { name: '4 · alerts >80 only', exact: true }).click();
+    const fourthRules = page.getByRole('button', { name: /Rules.*Assumptions/i });
+    if (await fourthRules.getAttribute('aria-expanded') !== 'true') await fourthRules.click();
+    const fourthText = await page.locator('main').innerText();
+    assert(fourthText.includes('exactly 80 does not qualify'));
+    assert(fourthText.includes('Score > 80; exactly 80 is excluded'));
+    assert(fourthText.includes('HGH'));
+    assert(!fourthText.includes('AAA'), 'Fourth details exclude the exact-80 position');
+    await checkPage(page, `${width}-portfolio-4`);
     await page.getByRole('button', { name: '$', exact: true }).click();
     await page.getByRole('button', { name: 'Log', exact: true }).click();
     await page.getByRole('checkbox', { name: 'Trade markers', exact: true }).uncheck();
@@ -214,6 +232,12 @@ async function contextPage(width, mode = 'full') {
     await checkPage(page, `${width}-settings-de`);
     await navigate(page, width, 'history');
     assert(!/\bOct\b|\bSep\b|\bAM\b|\bPM\b/.test(await page.locator('main').innerText()), 'German dates and time format in history');
+    await navigate(page, width, 'portfolio');
+    await page.getByRole('button', { name: '4 · alerts >80 only', exact: true }).click();
+    const germanRules = page.getByRole('button', { name: /Regel.*Annahmen/i });
+    if (await germanRules.getAttribute('aria-expanded') !== 'true') await germanRules.click();
+    assert((await page.locator('main').innerText()).includes('Score > 80; genau 80 ist ausgeschlossen'));
+    await checkPage(page, `${width}-portfolio-4-de`);
     await navigate(page, width, 'dashboard');
     await page.locator('main [role="button"][aria-label="NVDA"]').click();
     await page.getByText('Weitere Bewertungsmodelle',{exact:true}).click();
@@ -225,6 +249,17 @@ async function contextPage(width, mode = 'full') {
     await page.getByRole('button', {name:'Schließen',exact:true}).click();
     assert.equal(jsErrors.length, 0, jsErrors.join('\n'));
     results.push({ width, result: 'passed' });
+    await context.close();
+  }
+  for (const mode of ['legacy-three', 'mismatched-fourth', 'mismatched-policy']) {
+    const { page, context, jsErrors } = await contextPage(390, mode);
+    await navigate(page, 390, 'portfolio');
+    await page.locator('.portfolio-summary').first().waitFor();
+    assert.equal(await page.locator('.portfolio-summary').count(), 4);
+    assert((await page.locator('.portfolio-summary').nth(3).innerText()).includes('Awaiting a matching replay'));
+    if (mode === 'legacy-three') assert(await page.getByRole('button', { name: '4 · alerts >80 only', exact: true }).isDisabled());
+    assert.equal(jsErrors.length, 0, jsErrors.join('\n'));
+    await checkPage(page, `390-${mode}`);
     await context.close();
   }
   for (const mode of ['empty', 'no-high', 'error']) {
