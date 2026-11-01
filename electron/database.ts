@@ -1,6 +1,8 @@
 import { summarizeInsiderTrades, mergeInsiderSaleVolume } from '../src/lib/insider-summary';
 import { utcInstantMs } from '../src/lib/utcDate';
 import { BACKTEST_SCHEMA } from './backtestSchema';
+import { PRICE_CACHE_SCHEMA, storePriceVintage, type PriceVintage } from './priceCache';
+import type { PortfolioState, PortfolioExitReason } from '../src/types';
 import { captureDecision, recordBacktestBook, recordBacktestClosures, analyzePendingBacktests } from './backtest';
 import type { DecisionContext } from '../src/types/backtest';
 import { tickerIssue, resolvedTicker } from '../src/lib/ticker-quality';
@@ -100,6 +102,7 @@ function backupDatabaseBeforeMigration(dbPath: string): void {
  * appear there.
  */
 export const PORTFOLIO_SCHEMA = `
+${PRICE_CACHE_SCHEMA}
 CREATE TABLE IF NOT EXISTS ticker_quarantine (
  ticker TEXT PRIMARY KEY, reason TEXT NOT NULL, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL
 );
@@ -2080,8 +2083,8 @@ export interface PriceRow {
  * REPLACE, not DO NOTHING: adjusted closes are restated for the WHOLE history
  * whenever a split or dividend happens, so keeping old rows and appending new
  * ones would weld a pre-split series onto a post-split one and manufacture a
- * −50% gap that trips every stop. A ticker's rows therefore always come from a
- * single fetch and are internally consistent.
+ * −50% gap that trips every stop. This legacy helper remains for fixtures and
+ * old importers only; versioned tickers require replacePriceSeries instead.
  */
 export function upsertPriceRows(rows: readonly PriceRow[]): number {
   if (!rows.length) return 0;
@@ -2092,10 +2095,33 @@ export function upsertPriceRows(rows: readonly PriceRow[]): number {
   );
   const now = new Date().toISOString();
   const tx = getDb().transaction((batch: readonly PriceRow[]) => {
-    for (const r of batch) stmt.run(r.ticker, r.date, r.adjClose, now);
+    for (const r of batch) {
+      if (getDb().prepare('SELECT 1 FROM price_vintages WHERE ticker=? LIMIT 1').get(r.ticker)) throw new Error('Versioned prices require a complete price vintage');
+      stmt.run(r.ticker, r.date, r.adjClose, now);
+    }
   });
   tx(rows);
   return rows.length;
+}
+
+export function replacePriceSeries(vintage: PriceVintage): string {
+  return storePriceVintage(getDb(), vintage);
+}
+
+export function getReviewedPriceVintage(ticker: string): PriceVintage | null {
+  const row = getDb().prepare(`SELECT id,payload FROM price_vintages WHERE ticker=?
+    AND json_extract(payload,'$.review.reviewer') IS NOT NULL ORDER BY julianday(recorded_at) DESC,id DESC LIMIT 1`)
+    .get(ticker) as { id:string; payload:string } | undefined;
+  if (!row) return null;
+  const vintage = JSON.parse(row.payload) as PriceVintage;
+  return { ...vintage, review: { ...vintage.review!, sourceVintageId: row.id } };
+}
+
+export function getPriceVintageIds(): Record<string, string> {
+  const rows = getDb().prepare(`SELECT ticker,id FROM (
+    SELECT ticker,id,ROW_NUMBER() OVER(PARTITION BY ticker ORDER BY julianday(recorded_at) DESC,id DESC) AS rn FROM price_vintages
+  ) WHERE rn=1`).all() as { ticker: string; id: string }[];
+  return Object.fromEntries(rows.map(r => [r.ticker, r.id]));
 }
 
 /** ticker → (date → adjusted close), from `date >= fromYmd`. */
@@ -2103,7 +2129,10 @@ export function getPriceBook(tickers: readonly string[], fromYmd: string): Recor
   const out: Record<string, Record<string, number>> = {};
   if (!tickers.length) return out;
   const stmt = getDb().prepare(
-    `SELECT date, adj_close FROM price_history WHERE ticker = ? AND date >= ? ORDER BY date`,
+    `SELECT date, adj_close FROM price_history p WHERE ticker = ? AND date >= ?
+     AND (EXISTS (SELECT 1 FROM price_vintages v WHERE v.ticker=p.ticker)
+       OR NOT EXISTS (SELECT 1 FROM portfolio_events e WHERE e.ticker=p.ticker AND e.kind='suspect_price'))
+     ORDER BY date`,
   );
   for (const t of tickers) {
     const rows = stmt.all(t, fromYmd) as { date: string; adj_close: number }[];
@@ -2342,7 +2371,8 @@ export function getPortfolioPositions(): PortfolioPosition[] {
 /**
  * Positions and events are a PROJECTION of the same deterministic simulation
  * the curve comes from, not an independent record, so they are rewritten whole
- * on every run. The curve itself stays append-only (see insertPortfolioEquity).
+ * on every run. The orchestrator replaces the curve in the same transaction
+ * and archives the previous complete result before a changed replay.
  */
 export function replacePortfolioPositions(positions: readonly PortfolioPosition[]): void {
   const db = getDb();
@@ -2533,6 +2563,8 @@ export function migratePortfolioConfig(): { migrated: string[]; kept: string[] }
 
 export function setPortfolioConfig(partial: Partial<PortfolioConfig>): PortfolioConfig {
   const merged: PortfolioConfig = { ...getPortfolioConfig(), ...partial };
+  if (merged.exitExecution != null && !['same_close', 'next_close'].includes(merged.exitExecution)) throw new Error('Invalid exit execution');
+  if (merged.profitFloor != null && (!Number.isFinite(merged.profitFloor) || merged.profitFloor < 0 || merged.profitFloor >= merged.trailArm)) throw new Error('Profit floor must be nonnegative and below trailing activation');
   getDb()
     .prepare(
       `INSERT INTO app_settings (key, value) VALUES (?, ?)
@@ -2548,6 +2580,10 @@ export function setPortfolioConfig(partial: Partial<PortfolioConfig>): Portfolio
  * not computed with.
  */
 export interface PortfolioRunMeta {
+  provenance?: PortfolioState['meta']['provenance'];
+  positionMarks?: Record<string, { date: string; px: number }>;
+  entrySigmas?: Record<string, number | null>;
+  pendingExits?: Record<string, PortfolioExitReason>;
   config: PortfolioConfig;
   /**
    * Which builder produced the stored curve. Absent on curves written before

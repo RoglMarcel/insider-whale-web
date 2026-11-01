@@ -32,6 +32,7 @@ DESKTOP_TABLES = {
     'insider_trades': ['ticker', 'insider_key', 'trade_date', 'value_cents'],
     'signal_outcomes': ['ticker', 'entry_date', 'horizon'],
     'price_history': ['ticker', 'date'],
+    'price_vintages': ['id'],
     'portfolio_experiment_candidates': ['experiment_id', 'ticker', 'earliest_date'],
 }
 
@@ -119,13 +120,13 @@ def merge_desktop(target, incoming):
             source = [r[1] for r in db.execute(f'PRAGMA desktop.table_info("{table}")')]
             if not source:
                 continue
-            if not columns and table in ('signal_outcomes', 'price_history', 'portfolio_experiment_candidates'):
+            if not columns and table in ('signal_outcomes', 'price_history', 'price_vintages', 'portfolio_experiment_candidates'):
                 # A release from an older app is migrated by the Node runner;
                 # retain the incoming table's schema so its evidence survives.
                 schema = db.execute("SELECT sql FROM desktop.sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()[0]
                 db.execute(schema)
                 columns = [r[1] for r in db.execute(f'PRAGMA main.table_info("{table}")')]
-            cols = [c for c in columns if c != 'id' and c in source]
+            cols = [c for c in columns if (c != 'id' or table == 'price_vintages') and c in source]
             if not all(c in cols for c in identity):
                 raise RuntimeError(f'Cannot safely merge desktop table {table}')
             names = ', '.join('"' + c.replace('"', '""') + '"' for c in cols)
@@ -139,6 +140,18 @@ def merge_desktop(target, incoming):
                 db.execute('''UPDATE price_history AS t SET adj_close=s.adj_close, fetched_at=s.fetched_at
                     FROM desktop.price_history AS s WHERE t.ticker=s.ticker AND t.date=s.date
                     AND julianday(s.fetched_at)>COALESCE(julianday(t.fetched_at),0) AND s.adj_close>0''')
+        # Complete vintages win over all legacy per-row copies, including
+        # quarantines with zero accepted prices. Same ordering as priceCache.ts.
+        if list(db.execute('PRAGMA main.table_info(price_vintages)')):
+            latest = list(db.execute('''SELECT ticker,payload FROM (
+                SELECT ticker,payload,ROW_NUMBER() OVER(PARTITION BY ticker
+                    ORDER BY julianday(recorded_at) DESC,id DESC) AS rn FROM price_vintages
+            ) WHERE rn=1'''))
+            for ticker, payload in latest:
+                vintage = json.loads(payload)
+                db.execute('DELETE FROM price_history WHERE ticker=?', (ticker,))
+                db.executemany('INSERT INTO price_history(ticker,date,adj_close,fetched_at) VALUES(?,?,?,?)',
+                               [(ticker, p['date'], p['px'], vintage['fetchedAt']) for p in vintage['clean']])
         db.commit()
 
 

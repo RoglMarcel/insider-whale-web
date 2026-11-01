@@ -190,10 +190,10 @@ async function contextPage(width, mode = 'full') {
     assert.equal(await page.getByRole('checkbox', { name: /cash.drag/i }).count(), 0);
     assert((await page.locator('.portfolio-headline').innerText()).includes('$' + portfolio.equity.at(-1).equity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })));
     await checkPage(page, `${width}-portfolio-2`);
-    await page.getByRole('button', { name: '3 · Insider-only', exact: true }).click();
+    await page.getByRole('button', { name: '3 · Concentrated signals', exact: true }).click();
     await page.getByRole('button', { name: /Rules.*Assumptions/i }).click();
     assert.equal(await page.locator('.portfolio-description').count(), 1);
-    assert.equal(await page.locator('main').evaluate(el => el.innerText.split('Insider-only: $10,000 start').length - 1), 1);
+    assert.equal(await page.locator('main').evaluate(el => el.innerText.split('Concentrated signals: $10,000 start').length - 1), 1);
     await checkPage(page, `${width}-portfolio-3`);
     await page.getByRole('button', { name: '$', exact: true }).click();
     await page.getByRole('button', { name: 'Log', exact: true }).click();

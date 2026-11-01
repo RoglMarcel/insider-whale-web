@@ -1436,8 +1436,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
  *    observed maximum, which is where a ramp should end.
  *
  * This is a decision about statistical power, NOT a claim that 70-scored
- * signals beat 74-scored ones. Revisit when the closed-trade count reaches ~20,
- * which is the first point at which the alpha question has an answer.
+ * signals beat 74-scored ones. No fixed closed-trade count establishes alpha;
+ * required evidence depends on effect size, variance, overlap and selection.
  */
 export const PORTFOLIO_ENTRY_SCORE = 70;
 /** Score points above the threshold that double the base weight. */
@@ -1450,58 +1450,20 @@ export const PORTFOLIO_MAX_POSITIONS = 20;
 export const PORTFOLIO_MIN_TICKET = 100;
 /** Same ticker is locked out for this long after a sale (kills alarm loops). */
 export const PORTFOLIO_REENTRY_COOLDOWN_DAYS = 10;
-/**
- * Take-profit: DISABLED (v1.5.0). Not "set very high" — genuinely off, because a
- * fixed cap on the upside is a structural error rather than a badly tuned number.
- *
- * Individual stock returns are strongly right-skewed (Bessembinder 2018), so the
- * minority of positions that run far past any round-number target carry more than
- * the whole expected return of the book — modelled at 90 days and 50% annualised
- * vol, paths above +20% contribute +10.2pp against a +5.0pp total, and a hard
- * +20% cap turns that +5.0% into −0.2%. Selling winners on a fixed rung while
- * losers run to the full stop is also the disposition effect (Odean 1998) written
- * into code. The upside exit is the TRAILING stop, which is path-dependent and
- * therefore cannot truncate a trend that is still going.
- *
- * Full derivation and sources: docs/portfolio/EXIT-STRATEGY.md.
- */
+/** Disabled legacy target, retained for continuity, not because research proves
+ * profit taking is wrong. A first-passage target differs from capping terminal
+ * returns. Compare path-based policies with costs and cash reuse; see
+ * docs/portfolio/SIMULATION-DECISION-2026-11-01.md. */
 export const PORTFOLIO_TAKE_PROFIT: number | null = null;
-/**
- * Magnitude, not a signed number: a -25% stop is `0.25`.
- *
- * Widened from 10%. A stop only adds expected return where returns are positively
- * serially correlated (Kaminski & Lo 2014); at the 1-month horizon individual
- * stocks are in the short-term REVERSAL regime (Jegadeesh 1990), which is exactly
- * where a tight stop sells the bottom. −10% is also inside one horizon sigma for
- * almost every ticker this terminal surfaces, so it fired on noise rather than on
- * the thesis being wrong. What is left at −25% ≈ 1 sigma over a 90-day hold is a
- * tail-risk brake (fraud, dilution, delisting), not an alpha rule.
- */
+/** Positive magnitude: 0.25 = a -25% trigger. Legacy, unvalidated threshold.
+ * Daily-close execution may overshoot it; it is not a guaranteed loss limit. */
 export const PORTFOLIO_STOP_LOSS: number | null = 0.25;
-/**
- * Time stop, calendar days. Raised from 30.
- *
- * The insider-purchase drift is measured over SIX to TWELVE months across every
- * large study (Jeng/Metrick/Zeckhauser 2003; Lakonishok/Lee 2001; Cohen/Malloy/
- * Pomorski 2012). Half of the six-month abnormal return accrues in the first
- * month, but the other half accrues over months two to six at a roughly CONSTANT
- * ~1.5-2 bps per trading day — it does not decay to zero at day 30. Because our
- * qualifying signals are scarce relative to the 20 position slots, the capital
- * freed by an early exit parks in SPY at zero alpha by construction, so every
- * extra day held at positive marginal alpha is a gain rather than an opportunity
- * cost. 90 days is the conservative end of the literature's range, and the
- * longest horizon this database can ever validate in-sample.
- */
+/** Legacy time stop in calendar days. Ninety days is a testable hypothesis;
+ * heterogeneous insider studies do not establish this book's daily drift. */
 export const PORTFOLIO_MAX_HOLD_DAYS = 90;
-/**
- * Trailing stop — now the ONLY upside exit, so both legs were widened.
- *
- * At +15%/10% the trail gave back barely 0.4 horizon sigma, which on a 45%-vol
- * ticker is noise; it would have closed most positions inside the first month and
- * re-created the take-profit through the back door. This is the least
- * evidence-backed pair in the set (see EXIT-STRATEGY.md §"what would change our
- * mind") — no study tests trailing-stop geometry on insider signals.
- */
+/** Legacy trailing geometry: +25% activates a 20%-below-peak PRICE trigger.
+ * At activation the trigger is approximately breakeven before sale costs.
+ * Neither activation nor trigger guarantees a fill or an optimal policy. */
 export const PORTFOLIO_TRAIL_ARM = 0.25;
 export const PORTFOLIO_TRAIL_DISTANCE = 0.2;
 /**
@@ -1599,6 +1561,10 @@ export interface PortfolioConfig {
   trailArm: number;
   trailDistance: number;
   slippageBps: number;
+  /** Floor activated at trailArm; a trigger level, never a guaranteed fill. */
+  profitFloor?: number | null;
+  /** Omitted in historical books = legacy same-close execution. */
+  exitExecution?: 'same_close' | 'next_close';
   /** `null` = fixed percentages (the shipped default). */
   sigmaBarriers?: PortfolioSigmaBarriers | null;
   /**
@@ -1707,6 +1673,7 @@ export interface PortfolioPosition {
 
 /** An open position enriched with today's mark — never stored, always derived. */
 export interface PortfolioOpenPosition extends PortfolioPosition {
+  pendingExitReason?: PortfolioExitReason | null;
   /** Date of the actual quote; optional for older static payloads. */
   priceAsOf?: string | null;
   priceStale?: boolean;
@@ -1815,6 +1782,15 @@ export const PORTFOLIO_MIN_DAYS_SHARPE = 60;
 export const PORTFOLIO_SMALL_SAMPLE_N = 20;
 
 export interface PortfolioMeta {
+  provenance?: {
+    engineVersion: number;
+    runId: string;
+    inputHash: string;
+    configHash: string;
+    priceBasis: string;
+    exitExecution: 'same_close' | 'next_close';
+    priceVintages: Record<string, string>;
+  };
   /** False until a run has actually produced a curve. */
   available: boolean;
   firstDate: string | null;
@@ -1831,9 +1807,8 @@ export interface PortfolioMeta {
   /** Tickers that qualified but had no usable price series. */
   untradableTickers: string[];
   /**
-   * Stored days whose re-simulation no longer matches, because Yahoo restated
-   * the adjusted closes (a split/dividend rescales the WHOLE history). The
-   * stored curve is authoritative and stays frozen; this counts the drift.
+   * Days changed versus the previous archived run. The active curve and
+   * positions are replaced together; previous results remain in revisions.
    */
   restatedDays: number;
   /** Newest close available from the price cache. */

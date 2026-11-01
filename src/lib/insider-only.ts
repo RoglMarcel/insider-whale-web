@@ -1,5 +1,5 @@
 import type { PortfolioConfig, PortfolioExperiment, PortfolioState } from '../types';
-import { computeStats, simulatePortfolio, toClosedPosition, toOpenPosition, type PortfolioSimInput } from './portfolio-rules';
+import { computeStats, simulatePortfolio, toClosedPosition, toOpenPosition, realizedDailyVol, type PortfolioSimInput } from './portfolio-rules';
 
 export const INSIDER_ONLY_ID = 'insider-only-v1';
 export const INSIDER_ONLY_DEFINED_AT = '2026-09-23';
@@ -30,9 +30,10 @@ export function buildInsiderOnly(input: PortfolioSimInput, builtAt: string): Por
   const open = last ? sim.positions.filter((p) => !p.exitDate).map((p) => {
     const series = input.prices[p.ticker] ?? {};
     const priceAsOf = Object.keys(series).filter((d) => d >= p.entryDate && d <= last.date && series[d] > 0 && Number.isFinite(series[d])).sort().at(-1) ?? null;
-    const position = toOpenPosition(p, priceAsOf ? series[priceAsOf] : null, last.date, last.equity, config);
+    const position = toOpenPosition(p, priceAsOf ? series[priceAsOf] : null, last.date, last.equity, config,
+      config.sigmaBarriers ? realizedDailyVol(series, p.entryDate) : null);
     const priceStale = priceAsOf !== last.date;
-    return { ...position, priceAsOf, priceStale,
+    return { ...position, priceAsOf, priceStale, pendingExitReason: sim.pendingExits?.[p.ticker] ?? null,
       nearestBarrier: priceStale ? null : position.nearestBarrier,
       nearestBarrierPct: priceStale ? null : position.nearestBarrierPct };
   }) : [];

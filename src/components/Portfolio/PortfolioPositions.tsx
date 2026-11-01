@@ -124,7 +124,9 @@ export function OpenPositionsTable({ positions }: { positions: PortfolioOpenPosi
                     {t('pf.trades.days', { n: p.holdDays })}
                   </td>
                   <td className="py-2 text-right whitespace-nowrap">
-                    {p.nearestBarrier ? (
+                    {p.pendingExitReason ? (
+                      <span>{t('pf.rules.pendingExit')} <ExitBadge reason={p.pendingExitReason} /></span>
+                    ) : p.nearestBarrier ? (
                       <span className="inline-flex items-center gap-1.5">
                         <span className="tabular-nums text-secondary">{pct(p.nearestBarrierPct, 1)}</span>
                         <ExitBadge reason={p.nearestBarrier} />

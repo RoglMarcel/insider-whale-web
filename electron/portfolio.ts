@@ -1,4 +1,6 @@
 import { shouldRefreshPrices } from '../src/lib/price-freshness';
+import { usSessionCloseUtc } from '../src/lib/marketSession';
+import { digest, makePriceVintage, reusablePriceReview } from './priceCache';
 import { cleanPortfolioCandidates } from '../src/lib/ticker-quality';
 import { recordBacktestBook, recordBacktestClosures, analyzePendingBacktests, getBacktestState } from './backtest';
 import { buildInsiderOnly, INSIDER_ONLY_ID, recoverPortfolioEntryCandidates } from '../src/lib/insider-only';
@@ -17,6 +19,7 @@ import {
   computeStats,
   earliestEntryDate,
   simulatePortfolio,
+  realizedDailyVol,
   toClosedPosition,
   toOpenPosition,
 } from '../src/lib/portfolio-rules';
@@ -28,7 +31,6 @@ import {
   setPortfolioExperiment,
   archiveExperimentCandidates,
   clearPortfolioEquity,
-  deletePortfolioEquityDay,
   getPortfolioConfig,
   getPortfolioEquity,
   getPortfolioEvents,
@@ -38,19 +40,19 @@ import {
   getPortfolioPositions,
   getPortfolioRunMeta,
   getPortfolioSignalCandidates,
-  getPriceAsOf,
   getPriceBook,
   getPriceCoverage,
+  getPriceVintageIds,
+  replacePriceSeries,
+  getReviewedPriceVintage,
   insertPortfolioEquity,
   insertPortfolioSuspectEvents,
   replacePortfolioEvents,
   replacePortfolioPositions,
   setPortfolioConfig,
   setPortfolioRunMeta,
-  upsertPriceRows,
-  type PriceRow,
 } from './database';
-import { PRICE_REQUEST_GAP_MS, fetchAdjCloseSeries, screenSeries, sleep } from './prices';
+import { PRICE_REQUEST_GAP_MS, fetchPriceSnapshot, sleep } from './prices';
 
 /**
  * Testing portfolio — I/O side (v1.4.0).
@@ -60,14 +62,9 @@ import { PRICE_REQUEST_GAP_MS, fetchAdjCloseSeries, screenSeries, sleep } from '
  * cache covers the window, run the simulation, persist the result.
  *
  * Two invariants are enforced here rather than in the rules:
- *  - SETTLED days are APPEND-ONLY. A settled day that has been written is never
- *    rewritten, so a later price restatement cannot retroactively move a point
- *    somebody has already looked at. Drift is counted and reported, not silently
- *    applied. Two things are deliberately NOT covered by that rule, because
- *    applying it to them produced a curve that contradicted itself (see the
- *    comment in `runSync`): the newest day, which is provisional intraday data,
- *    and the whole curve when the config changes, which makes the stored rows a
- *    different strategy rather than older history of this one.
+ *  - A run's curve, holdings, marks and configuration are one transaction.
+ *    Earlier results are preserved in portfolio_revisions; changes are counted
+ *    and identified by frozen input/run hashes instead of spliced into history.
  *  - SPY is mandatory. A curve without its benchmark is worthless, so a run that
  *    cannot resolve SPY writes nothing at all.
  */
@@ -93,7 +90,8 @@ const todayYmd = (): string => new Date().toISOString().slice(0, 10);
 // 3: repair synthetic exits caused by missing quotes; no trade without a price.
 // 4: enforce the funded weight floor; replay affected entries and equity together.
 // 5: verified ticker identity repair; retain the previous book in portfolio_revisions.
-const CURVE_BUILDER_VERSION = 5;
+// 6: complete price vintages and coherent, versioned replay snapshots.
+const CURVE_BUILDER_VERSION = 6;
 
 let runInFlight = false;
 
@@ -178,6 +176,7 @@ interface PriceSyncResult {
  */
 export async function syncPrices(tickers: readonly string[], fromYmd: string): Promise<PriceSyncResult> {
   const coverage = getPriceCoverage();
+  const vintages = getPriceVintageIds();
   let spyLast = coverage[BENCHMARK]?.last ?? '';
   // Benchmark first: other tickers must catch up to the NEW benchmark date.
   const ordered = [BENCHMARK, ...tickers.filter((t) => t !== BENCHMARK)];
@@ -189,32 +188,30 @@ export async function syncPrices(tickers: readonly string[], fromYmd: string): P
     const cov = coverage[ticker];
     // Refresh the benchmark independently of cached dates. A successful fetch
     // of old data must never lock every portfolio price for an entire UTC day.
-    if (!shouldRefreshPrices(cov, new Date(), ticker === BENCHMARK, spyLast)) continue;
+    if (vintages[ticker] && !shouldRefreshPrices(cov, new Date(), ticker === BENCHMARK, spyLast)) continue;
 
     if (fetched > 0) await sleep(PRICE_REQUEST_GAP_MS);
-    const points = await fetchAdjCloseSeries(ticker, { fromYmd });
+    const snapshot = await fetchPriceSnapshot(ticker, { fromYmd });
     fetched++;
-    if (!points?.length) {
+    if (!snapshot) {
       missing.push(ticker);
       continue;
     }
-    const screened = screenSeries(points);
-    for (const s of screened.suspect) {
+    const vintage = makePriceVintage(snapshot, reusablePriceReview(snapshot, getReviewedPriceVintage(ticker)));
+    replacePriceSeries(vintage);
+    if (vintage.issues.length) {
+      missing.push(ticker);
       suspect.push({
-        date: s.date,
+        date: snapshot.points.at(-1)?.date ?? todayYmd(),
         kind: 'suspect_price',
         ticker,
         score: null,
-        amount: s.px,
-        note: Number.isFinite(s.movePct)
-          ? `${(s.movePct * 100).toFixed(1)}% single-session move — ignored`
-          : 'non-finite adjusted close — ignored',
+        amount: null,
+        note: `Complete price vintage quarantined: ${vintage.issues.join('; ')}. No cached prices remain usable.`,
       });
     }
-    const rows: PriceRow[] = screened.clean.map((p) => ({ ticker, date: p.date, adjClose: p.px }));
-    upsertPriceRows(rows);
-    if (ticker === BENCHMARK && rows.length) {
-      spyLast = rows.reduce((latest, row) => row.date > latest ? row.date : latest, spyLast);
+    if (ticker === BENCHMARK && vintage.clean.length) {
+      spyLast = vintage.clean.at(-1)!.date;
     }
   }
 
@@ -235,6 +232,7 @@ export async function syncPortfolio(): Promise<PortfolioSyncReport> {
 
 async function runSync(): Promise<PortfolioSyncReport> {
   const config = getPortfolioConfig();
+  const priorState = getPortfolioState();
   const priorMeta = getPortfolioRunMeta();
   if (priorMeta && (priorMeta.curveVersion ?? 1) < 5) archivePortfolioRevision('ticker-cleanup-v1', getPortfolioState());
   const previousExperiment = getPortfolioExperiment(INSIDER_ONLY_ID);
@@ -255,6 +253,7 @@ async function runSync(): Promise<PortfolioSyncReport> {
   // arriving through a different door. Writing meta keeps the stored parameters
   // matching the active config, which `verify:portfolio` asserts.
   if (config.inceptionDate && config.inceptionDate > todayYmd()) {
+    if (priorState.equity.length) archivePortfolioRevision(`before-future-inception:${digest(priorState)}`, priorState);
     clearPortfolio();
     setPortfolioRunMeta({
       config,
@@ -315,8 +314,13 @@ async function runSync(): Promise<PortfolioSyncReport> {
   }
 
   const prices = getPriceBook(universe, fetchStart);
-  const allTradingDays = Object.keys(spy).sort();
+  const allTradingDays = Object.keys(spy).sort().filter(d => d < todayYmd() ||
+    (d === todayYmd() && Date.now() >= usSessionCloseUtc(d)));
   const tradingDays = allTradingDays.filter((d) => d >= start);
+  if (!tradingDays.length || (priorMeta && sameConfig(priorMeta.config, config) && priorState.meta.firstDate && tradingDays[0] > priorState.meta.firstDate)) {
+    return { ok: false, reason: 'No complete benchmark history for this book — previous result retained', daysWritten: 0,
+      restatedDays: 0, rebuilt: false, pricesFetched: priceSync.fetched, suspectPoints: priceSync.suspect.length };
+  }
 
   const sim = simulatePortfolio({ config, tradingDays, spy, prices, candidates });
   const experiment = buildInsiderOnly({ config, tradingDays: allTradingDays.filter((d) => d >= experimentStart), spy, prices, candidates: experimentCandidates }, new Date().toISOString());
@@ -324,75 +328,54 @@ async function runSync(): Promise<PortfolioSyncReport> {
   experiment.state.meta.restatedDays = experiment.state.equity.filter((p) => previousPoints.has(p.date) && Math.abs(previousPoints.get(p.date)! - p.equity) > 0.01).length;
   experiment.state.meta.suspectPrices = priceSync.suspect.length;
 
-  // A stored curve belongs to the config that built it. Append new rules onto
-  // rows simulated under old ones and the chart becomes a splice of two
-  // strategies — a line no strategy ever followed.
-  //
-  // Measured on the live site 2026-08-31, and the reason this exists: the
-  // v1.5.0 exit rules (no take-profit, −25% stop, 90 days) were appended to a
-  // curve built under v1.4.0's. Four July positions the old rules had closed
-  // reappeared on 2026-08-24 with weeks of accumulated gain booked into that
-  // single day — the book went from 1 open position to 7 with no buy or sell
-  // recorded, +2.90pp against SPY in one day. That artifact was 7.4× the entire
-  // +0.39% lead the page was reporting; chain it out and the same curve TRAILS
-  // SPY by 2.49pp. The equity rows also stopped matching the position table
-  // they are displayed beside ($3,802.66 vs $4,122.89), because positions are
-  // REPLACEd from the fresh simulation while the rows were not.
-  const storedMeta = getPortfolioRunMeta();
-  const staleBuilder = !!storedMeta && (storedMeta.curveVersion ?? 1) !== CURVE_BUILDER_VERSION;
-  const configChanged = !!storedMeta && !sameConfig(storedMeta.config, config);
-  const rebuilt = staleBuilder || configChanged;
-  if (rebuilt) {
-    const why = staleBuilder ? `built by curve builder v${storedMeta?.curveVersion ?? 1}` : 'config changed';
-    console.log(`[portfolio] stored curve ${why} — rebuilding it from scratch`);
-    clearPortfolioEquity();
+  // A run is one coherent snapshot. Preserve the previous result instead of
+  // welding its settled equity onto positions from a different replay.
+  const priceVintages = getPriceVintageIds();
+  const usedVintages = Object.fromEntries([BENCHMARK, ...universe].map(t => [t, priceVintages[t] ?? 'legacy-unverified']));
+  const inputHash = digest({ config, tradingDays, spy, prices, candidates, experimentCandidates });
+  const builtAt = new Date().toISOString();
+  const provenance = { engineVersion: CURVE_BUILDER_VERSION,
+    runId: digest({ inputHash, priceVintages: usedVintages, engineVersion: CURVE_BUILDER_VERSION }), inputHash,
+    configHash: digest(config), priceBasis: 'yahoo-adjusted-close',
+    exitExecution: config.exitExecution ?? 'same_close',
+    priceVintages: usedVintages };
+  experiment.state.meta.provenance = { ...provenance,
+    configHash: digest(experiment.state.config),
+    runId: digest({ inputHash, priceVintages: usedVintages, experiment: INSIDER_ONLY_ID, engineVersion: CURVE_BUILDER_VERSION }) };
+  const positionMarks: Record<string, { date: string; px: number }> = {};
+  const entrySigmas: Record<string, number | null> = {};
+  for (const p of sim.positions.filter(p => !p.exitDate)) {
+    const date = Object.keys(prices[p.ticker] ?? {}).filter(d => d >= p.entryDate && d <= (sim.equity.at(-1)?.date ?? '')).sort().at(-1);
+    if (date) positionMarks[p.ticker] = { date, px: prices[p.ticker][date] };
+    entrySigmas[p.ticker] = config.sigmaBarriers ? realizedDailyVol(prices[p.ticker], p.entryDate) : null;
   }
-
-  // The newest day is provisional: it is marked from intraday prices, so every
-  // later run of the same day has to be allowed to correct it. Freezing it is
-  // what left the last row disagreeing with its own position table. Only
-  // SETTLED days stay append-only — that is what keeps a Yahoo price
-  // restatement reported rather than silently applied.
-  const provisional = sim.equity[sim.equity.length - 1]?.date;
-  if (!rebuilt && provisional) deletePortfolioEquityDay(provisional);
-
-  // Whatever survived the two steps above is real history. Compare it against
-  // the fresh simulation so a restatement on a settled day is still REPORTED.
-  const stored = new Map(getPortfolioEquity().map((p) => [p.date, p]));
-  let restatedDays = 0;
-  for (const p of sim.equity) {
-    const old = stored.get(p.date);
-    if (old && Math.abs(old.equity - p.equity) > 0.01) restatedDays++;
-  }
-  const daysWritten = insertPortfolioEquity(sim.equity);
-
+  const oldPoints = new Map(priorState.equity.map(p => [p.date, p.equity]));
+  const restatedDays = sim.equity.filter(p => oldPoints.has(p.date) && Math.abs(oldPoints.get(p.date)! - p.equity) > .01).length;
+  const rebuilt = !!priorMeta && ((priorMeta.curveVersion ?? 1) !== CURVE_BUILDER_VERSION || !sameConfig(priorMeta.config, config));
+  const counts = countEvents(sim.events);
+  let daysWritten = 0;
   getDb().transaction(() => {
+    if (priorState.equity.length && priorMeta?.provenance?.runId !== provenance.runId) {
+      archivePortfolioRevision(`before-replay:${priorMeta?.provenance?.runId ?? digest(priorState)}`, priorState);
+    }
+    clearPortfolioEquity();
+    daysWritten = insertPortfolioEquity(sim.equity);
     replacePortfolioPositions(sim.positions);
     replacePortfolioEvents(sim.events);
+    insertPortfolioSuspectEvents(priceSync.suspect);
     recordBacktestBook('Hauptdepot', config, sim.positions);
     recordBacktestClosures('Hauptdepot', config, sim.positions);
     setPortfolioExperiment(experiment);
-    // Comparison depots do not archive a second copy of the purchased alert.
+    setPortfolioRunMeta({ config, provenance, positionMarks, entrySigmas, pendingExits: sim.pendingExits,
+      curveVersion: CURVE_BUILDER_VERSION, builtAt,
+      backfillStart: sim.equity[0]?.date ?? null,
+      liveStart: liveBoundary(sim.equity[0]?.date ?? null),
+      skippedNoCash: counts.skippedNoCash, skippedCap: counts.skippedCap,
+      missingPrices: counts.dataMissing,
+      suspectPrices: getPortfolioEvents(5000).filter(e => e.kind === 'suspect_price').length,
+      untradableTickers: sim.untradable, restatedDays });
   })();
   analyzePendingBacktests();
-  insertPortfolioSuspectEvents(priceSync.suspect);
-
-  const counts = countEvents(sim.events);
-  setPortfolioRunMeta({
-    config,
-    curveVersion: CURVE_BUILDER_VERSION,
-    builtAt: new Date().toISOString(),
-    backfillStart: sim.equity[0]?.date ?? null,
-    liveStart: liveBoundary(sim.equity[0]?.date ?? null),
-    skippedNoCash: counts.skippedNoCash,
-    skippedCap: counts.skippedCap,
-    missingPrices: counts.dataMissing,
-    suspectPrices: getPortfolioEvents(5000).filter((e) => e.kind === 'suspect_price').length,
-    untradableTickers: sim.untradable,
-    restatedDays,
-  });
-
-  setPortfolioExperiment(experiment);
 
   return {
     ok: true,
@@ -443,7 +426,7 @@ function countEvents(events: readonly PortfolioEvent[]): {
  * the UI solely through an explicitly confirmed button.
  */
 export async function rebuildPortfolio(): Promise<PortfolioSyncReport> {
-  clearPortfolio();
+  // runSync archives and replaces the complete previous book atomically.
   return syncPortfolio();
 }
 
@@ -469,10 +452,12 @@ export function writePortfolioJson(outDir: string): number {
   try {
     const state = getPortfolioState();
     nodeFs.mkdirSync(outDir, { recursive: true });
+    const temporary = nodePath.join(outDir, 'portfolio.json.tmp');
     nodeFs.writeFileSync(
-      nodePath.join(outDir, 'portfolio.json'),
+      temporary,
       JSON.stringify({ ...state, meta: { ...state.meta, readOnly: true } }),
     );
+    nodeFs.renameSync(temporary, nodePath.join(outDir, 'portfolio.json'));
     writeBacktestJson(outDir);
     return state.equity.length;
   } catch (err) {
@@ -491,8 +476,8 @@ export function writeBacktestJson(outDir: string): void {
 // ── Read model ────────────────────────────────────────────────────────────
 
 export function getPortfolioState(): PortfolioState {
-  const config = getPortfolioConfig();
   const runMeta = getPortfolioRunMeta();
+  const config = runMeta?.config ?? getPortfolioConfig();
   const equity = getPortfolioEquity();
   const positions = getPortfolioPositions();
   const events = getPortfolioEvents();
@@ -505,14 +490,15 @@ export function getPortfolioState(): PortfolioState {
   const open: PortfolioOpenPosition[] = last
     ? openRaw.map((p) => {
         const series = marks[p.ticker] ?? {};
-        const priceAsOf = Object.keys(series)
+        const frozenMark = runMeta?.positionMarks?.[p.ticker];
+        const priceAsOf = frozenMark?.date ?? Object.keys(series)
           .filter((d) => d >= p.entryDate && d <= last.date && Number.isFinite(series[d]) && series[d] > 0)
           .sort().at(-1) ?? null;
         // A high-water mark is not the last traded price. Keep the same
         // carry-forward mark as the simulator and disclose its age.
-        const mark = priceAsOf ? series[priceAsOf] : null;
-        const position = toOpenPosition(p, mark, last.date, last.equity, config);
-        return { ...position, priceAsOf, priceStale: priceAsOf !== last.date,
+        const mark = frozenMark?.px ?? (priceAsOf ? series[priceAsOf] : null);
+        const position = toOpenPosition(p, mark, last.date, last.equity, config, runMeta?.entrySigmas?.[p.ticker] ?? null);
+        return { ...position, priceAsOf, priceStale: priceAsOf !== last.date, pendingExitReason: runMeta?.pendingExits?.[p.ticker] ?? null,
           nearestBarrier: priceAsOf === last.date ? position.nearestBarrier : null,
           nearestBarrierPct: priceAsOf === last.date ? position.nearestBarrierPct : null };
       })
@@ -527,6 +513,7 @@ export function getPortfolioState(): PortfolioState {
     config: runMeta?.config ?? config,
     insiderOnly: getPortfolioExperiment(INSIDER_ONLY_ID),
     meta: {
+      provenance: runMeta?.provenance,
       available: equity.length > 0,
       firstDate: equity[0]?.date ?? null,
       lastDate: last?.date ?? null,
@@ -539,7 +526,7 @@ export function getPortfolioState(): PortfolioState {
       suspectPrices: runMeta?.suspectPrices ?? 0,
       untradableTickers: runMeta?.untradableTickers ?? [],
       restatedDays: runMeta?.restatedDays ?? 0,
-      priceAsOf: getPriceAsOf(),
+      priceAsOf: last?.date ?? null,
       readOnly: false,
       note: equity.length
         ? null

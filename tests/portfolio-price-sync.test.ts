@@ -3,13 +3,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   coverage: vi.fn(), fetch: vi.fn(), upsert: vi.fn(),
-  config: vi.fn(), equity: vi.fn(), positions: vi.fn(), book: vi.fn(),
+  config: vi.fn(), equity: vi.fn(), positions: vi.fn(), book: vi.fn(), meta: vi.fn(),
 }));
 vi.mock('../electron/database', () => ({
   getPriceCoverage: mocks.coverage,
-  upsertPriceRows: mocks.upsert,
+  replacePriceSeries: mocks.upsert,
+  getPriceVintageIds: () => ({}),
+  getReviewedPriceVintage: () => null,
   getPortfolioConfig: mocks.config,
-  getPortfolioRunMeta: () => null,
+  getPortfolioRunMeta: mocks.meta,
   getPortfolioExperiment: () => null,
   getPortfolioEquity: mocks.equity,
   getPortfolioPositions: mocks.positions,
@@ -18,13 +20,18 @@ vi.mock('../electron/database', () => ({
   getPriceAsOf: () => '2026-09-21',
 
 }));
-vi.mock('../electron/prices', () => ({
+vi.mock('../electron/prices', async importOriginal => ({
+  ...await importOriginal<typeof import('../electron/prices')>(),
   PRICE_REQUEST_GAP_MS: 0,
-  fetchAdjCloseSeries: mocks.fetch,
-  screenSeries: (points: unknown[]) => ({ clean: points, suspect: [] }),
+  fetchPriceSnapshot: mocks.fetch,
   sleep: async () => {},
 }));
 import { getPortfolioState, syncPrices } from '../electron/portfolio';
+const snapshot = (ticker: string, prices = [ticker === 'SPY' ? 500 : 100]) => ({
+  ticker, fetchedAt: '2026-09-21T20:00:00Z', basis: 'yahoo-adjusted-close', providerSymbol: ticker,
+  metadata: { symbol: ticker, currency: 'USD', exchangeName: 'NMS' }, corporateActions: null, issues: [],
+  points: prices.map((px, i) => ({ date: `2026-09-${20 + i}`, px })),
+});
 
 describe('portfolio price synchronization', () => {
   beforeEach(() => {
@@ -39,20 +46,27 @@ describe('portfolio price synchronization', () => {
   afterEach(() => vi.useRealTimers());
 
   it('refreshes holdings against freshly fetched SPY, not the old database date', async () => {
-    mocks.fetch.mockImplementation(async (ticker: string) => [
-      { date: '2026-09-21', px: ticker === 'SPY' ? 500 : 100 },
-    ]);
+    mocks.fetch.mockImplementation(async (ticker: string) => snapshot(ticker));
     await syncPrices(['AAA', 'SPY'], '2026-09-01');
     expect(mocks.fetch.mock.calls.map((call) => call[0])).toEqual(['SPY', 'AAA']);
-    expect(mocks.upsert).toHaveBeenCalledWith([{ ticker: 'AAA', date: '2026-09-21', adjClose: 100 }]);
+    expect(mocks.upsert).toHaveBeenCalledWith(expect.objectContaining({ ticker: 'AAA', clean: [{ date: '2026-09-20', px: 100 }] }));
   });
 
   it('reports a holding fetch failure without deleting cached prices', async () => {
     mocks.fetch.mockImplementation(async (ticker: string) => ticker === 'SPY'
-      ? [{ date: '2026-09-21', px: 500 }] : null);
+      ? snapshot(ticker) : null);
     const result = await syncPrices(['SPY', 'AAA'], '2026-09-01');
     expect(result.missing).toEqual(['AAA']);
     expect(mocks.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('replaces previously usable prices with an empty quarantine, then allows corrected recovery', async () => {
+    mocks.fetch.mockImplementation(async (ticker: string) => snapshot(ticker, ticker === 'AAA' ? [1, 50, 51] : [500, 501]));
+    expect((await syncPrices(['AAA'], '2026-09-01')).missing).toEqual(['AAA']);
+    expect(mocks.upsert).toHaveBeenLastCalledWith(expect.objectContaining({ ticker: 'AAA', clean: [], issues: [expect.stringContaining('unexplained_discontinuity')] }));
+    mocks.fetch.mockImplementation(async (ticker: string) => snapshot(ticker, [50, 51, 52]));
+    expect((await syncPrices(['AAA'], '2026-09-01')).missing).toEqual([]);
+    expect(mocks.upsert.mock.calls.at(-1)![0].clean).toHaveLength(3);
   });
 });
 
@@ -78,4 +92,10 @@ it('shows the last known close, not the historical high, when today has no quote
     marketValue: 900, nearestBarrier: null,
   });
   expect(state.open[0].unrealizedPct).toBeCloseTo(-0.1);
+  mocks.meta.mockReturnValue({ config: { ...DEFAULT_PORTFOLIO_CONFIG, trailArm: .1, trailDistance: .1 },
+    positionMarks: { AAA: { date: '2026-09-21', px: 110 } } });
+  const stored = getPortfolioState();
+  expect(stored.open[0].lastPrice).toBe(110);
+  expect(stored.open[0].nearestBarrier).toBe('trailing');
+  expect(stored.config.trailArm).toBe(.1);
 });

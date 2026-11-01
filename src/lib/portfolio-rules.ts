@@ -57,7 +57,10 @@ export function earliestEntryDate(seenAt:string,closeUtcHour?:number):string {
   const text=String(seenAt).trim();
   const date=/^(\d{4}-\d{2}-\d{2})/.exec(text)?.[1];
   if(!date)return '9999-12-31';
-  if(text.length===10)return date;
+  const calendarTime=Date.parse(`${date}T00:00:00Z`);
+  if(!Number.isFinite(calendarTime)||new Date(calendarTime).toISOString().slice(0,10)!==date)return '9999-12-31';
+  // Unknown observation time cannot establish availability before that close.
+  if(text.length===10)return addDaysYmd(date,1);
   const timestamp=Date.parse(text.includes('T')?(/(?:Z|[+-]\d{2}:?\d{2})$/.test(text)?text:text+'Z'):text.replace(' ','T')+'Z');
   if(!Number.isFinite(timestamp))return '9999-12-31';
   const utcDate=new Date(timestamp).toISOString().slice(0,10);
@@ -82,6 +85,14 @@ const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.m
  * tolerance is far below any price move that could matter.
  */
 const BARRIER_EPS = 1e-9;
+
+/** One trigger formula for decisions and displayed distances. */
+export function trailingTrigger(ctx: ExitContext, config: PortfolioConfig): number | null {
+  const b = resolveBarriers(config, ctx.sigmaDaily);
+  if (ctx.highWaterClose / ctx.entryPrice - 1 < b.trailArm - BARRIER_EPS) return null;
+  return Math.max(ctx.highWaterClose * (1 - b.trailDistance),
+    config.profitFloor == null ? 0 : ctx.entryPrice * (1 + config.profitFloor));
+}
 
 export interface PositionSizing {
   targetWeight: number;
@@ -208,9 +219,8 @@ export function resolveBarriers(
  * Triple barrier + trailing stop, evaluated on adjusted CLOSES only.
  *
  * Intraday highs and lows are deliberately not used: a stop filled at a day's
- * low you could never have traded is fiction. When two barriers break on the
- * same day the most pessimistic one wins (stop before trailing before target),
- * because a single daily bar cannot say which came first.
+ * low you could never have traded is fiction. Precedence at the observed close
+ * is stop, trailing, target, time. This does not infer intraday ordering.
  *
  * A `null` stop or target is genuinely ABSENT, not "very far away". The shipped
  * book runs with no take-profit at all, and encoding that as 999% would put a
@@ -220,12 +230,12 @@ export function evaluateExit(
   ctx: ExitContext,
   config: PortfolioConfig = DEFAULT_PORTFOLIO_CONFIG,
 ): PortfolioExitReason | null {
+  if (![ctx.close, ctx.entryPrice, ctx.highWaterClose].every(p => Number.isFinite(p) && p > 0)) return null;
   const b = resolveBarriers(config, ctx.sigmaDaily);
   const pnl = ctx.close / ctx.entryPrice - 1;
   if (b.stopLoss != null && pnl <= -b.stopLoss + BARRIER_EPS) return 'stop_loss';
-  const peakPnl = ctx.highWaterClose / ctx.entryPrice - 1;
-  const trailLevel = ctx.highWaterClose * (1 - b.trailDistance);
-  if (peakPnl >= b.trailArm - BARRIER_EPS && ctx.close <= trailLevel * (1 + BARRIER_EPS)) {
+  const trailLevel = trailingTrigger(ctx, config);
+  if (trailLevel != null && ctx.close <= trailLevel * (1 + BARRIER_EPS)) {
     return 'trailing';
   }
   if (b.takeProfit != null && pnl >= b.takeProfit - BARRIER_EPS) return 'take_profit';
@@ -255,10 +265,11 @@ export function nearestBarrier(
   if (b.takeProfit != null) {
     cands.push({ reason: 'take_profit', distance: (ctx.entryPrice * (1 + b.takeProfit)) / ctx.close - 1 });
   }
-  if (ctx.highWaterClose / ctx.entryPrice - 1 >= b.trailArm - BARRIER_EPS) {
+  const trailLevel = trailingTrigger(ctx, config);
+  if (trailLevel != null) {
     cands.push({
       reason: 'trailing',
-      distance: (ctx.highWaterClose * (1 - b.trailDistance)) / ctx.close - 1,
+      distance: trailLevel / ctx.close - 1,
     });
   }
   cands.sort((x, y) => Math.abs(x.distance) - Math.abs(y.distance));
@@ -280,6 +291,7 @@ export interface PortfolioSimInput {
 }
 
 export interface PortfolioSimResult {
+  pendingExits?: Record<string, PortfolioExitReason>;
   equity: PortfolioEquityPoint[];
   /** Every position the run opened; still-open ones have `exitDate === null`. */
   positions: PortfolioPosition[];
@@ -309,6 +321,7 @@ interface LivePosition {
   entrySigmaDaily: number | null;
   /** Consecutive trading days without a fresh close. */
   staleDays: number;
+  pendingExit?: PortfolioExitReason;
 }
 
 interface Book {
@@ -378,7 +391,7 @@ export function firstTradableDay(
   for (const d of tradingDays) {
     if (d < from) continue;
     if (diffDaysYmd(from, d) > maxSearchDays) return null;
-    if (series[d] != null) return d;
+    if (Number.isFinite(series[d]) && series[d] > 0) return d;
   }
   return null;
 }
@@ -391,7 +404,7 @@ export function simulatePortfolio(input: PortfolioSimInput): PortfolioSimResult 
   // against, and a rule this load-bearing should not depend on a caller
   // remembering to pre-filter its input.
   const inception = cfg.inceptionDate;
-  const days = [...input.tradingDays].sort().filter((d) => !inception || d >= inception);
+  const days = [...new Set(input.tradingDays)].sort().filter((d) => !inception || d >= inception);
   const equity: PortfolioEquityPoint[] = [];
   const events: PortfolioEvent[] = [];
   const untradable = new Set<string>();
@@ -502,14 +515,15 @@ export function simulatePortfolio(input: PortfolioSimInput): PortfolioSimResult 
   // A ticker that failed once but traded on another day is NOT untradable.
   for (const key of seen.keys()) untradable.delete(key.split("|")[0]);
 
-  return { equity, positions, events, untradable: [...untradable].sort() };
+  return { equity, positions, events, untradable: [...untradable].sort(),
+    pendingExits: Object.fromEntries(active.open.filter(p => p.pendingExit).map(p => [p.ticker,p.pendingExit!])) };
 
   // ── one day, one book ──
   function stepBook(b: Book, d: string, spyPx: number, record: boolean): void {
     // 1. Mark to market. A missing close is carried forward, not guessed.
     for (const p of b.open) {
       const px = input.prices[p.ticker]?.[d];
-      if (px != null && px > 0) {
+      if (px != null && Number.isFinite(px) && px > 0) {
         p.lastPrice = px;
         p.staleDays = 0;
         if (px > p.highWaterClose) p.highWaterClose = px;
@@ -534,6 +548,10 @@ export function simulatePortfolio(input: PortfolioSimInput): PortfolioSimResult 
         });
       }
       if (p.staleDays === 0) {
+        if (p.pendingExit) {
+          closePosition(b, p, d, spyPx, p.pendingExit, record);
+          continue;
+        }
         reason = evaluateExit(
           {
             entryPrice: p.entryPrice,
@@ -546,6 +564,10 @@ export function simulatePortfolio(input: PortfolioSimInput): PortfolioSimResult 
         );
       }
       if (!reason) continue;
+      if (cfg.exitExecution === 'next_close') {
+        p.pendingExit = reason;
+        continue;
+      }
       closePosition(b, p, d, spyPx, reason, record);
     }
 

@@ -51,6 +51,20 @@ INSERT INTO private_payload VALUES(zeroblob(106000000));
 """)
 c.commit();c.close()`, source]);
   assert(fs.statSync(source).size > 100 * 1024 * 1024);
+  // Exercise the actual vintage writer through desktop delivery, including an
+  // empty quarantine that must not be dropped by a row-oriented copy routine.
+  const helper = path.join(root, 'price-cache.cjs');
+  const { buildSync } = require('esbuild');
+  fs.writeFileSync(helper, buildSync({ entryPoints: [path.resolve('electron/priceCache.ts')], bundle: true,
+    write: false, platform: 'node', format: 'cjs' }).outputFiles[0].contents);
+  const { PRICE_CACHE_SCHEMA, makePriceVintage, storePriceVintage } = require(helper);
+  const Sqlite = require('better-sqlite3');
+  const cache = new Sqlite(source);
+  cache.exec(PRICE_CACHE_SCHEMA + `CREATE TABLE price_history(ticker TEXT,date TEXT,adj_close REAL,fetched_at TEXT,PRIMARY KEY(ticker,date));`);
+  storePriceVintage(cache, makePriceVintage({ ticker: 'TEST', fetchedAt: '2026-10-01T00:00:00Z',
+    basis: 'yahoo-adjusted-close', providerSymbol: 'TEST', metadata: { symbol: 'TEST', currency: 'USD', exchangeName: 'NMS' },
+    corporateActions: null, issues: [], points: [{ date: '2026-09-21', px: 100 }, { date: '2026-09-22', px: 20 }] }));
+  cache.close();
   assertLocalRemote();
   let responsiveTicks = 0;
   const heartbeat = setInterval(() => responsiveTicks++, 1);
@@ -75,6 +89,8 @@ spec=importlib.util.spec_from_file_location('h',sys.argv[1]);h=importlib.util.mo
 p=pathlib.Path(sys.argv[3]);h.unpack_desktop(pathlib.Path(sys.argv[2]),p)
 c=sqlite3.connect(p)
 assert c.execute('select ticker from signals').fetchall()==[('TEST',)]
+assert c.execute('select count(*) from price_vintages').fetchone()[0]==1
+assert c.execute('select count(*) from price_history').fetchone()[0]==0
 assert not c.execute("select 1 from sqlite_master where name='private_payload'").fetchone()
 c.close()`, decoder, path.join(delivered, 'data/desktop-publish'), path.join(root, 'decoded.db')]);
   const before = run(['rev-parse', 'main'], remote);

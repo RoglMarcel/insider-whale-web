@@ -8,6 +8,7 @@ const execGit = promisify(execFile);
 import { packageDesktopSnapshot, unpackDesktopSnapshot, DESKTOP_SNAPSHOT_PATH } from './desktopSnapshot';
 import { SCHEMA, runMigrations, snapshotDatabase } from './database';
 import { HISTORY_TABLES, mergeSharedHistory } from './sharedHistory';
+import { projectPriceVintages } from './priceCache';
 
 /**
  * Export only public signal/trade tables into bounded, checksummed Git chunks.
@@ -33,7 +34,7 @@ const COPIED_TABLES: { table: string; identity: string[] }[] = [
   // The pipeline's trade memory, so a later cloud run inherits the window this
   // machine built rather than restarting from its own 14-day source horizon.
   { table: 'insider_trades', identity: ['ticker', 'insider_key', 'trade_date', 'value_cents'] },
-  ...HISTORY_TABLES.filter(({ table }) => ['signal_outcomes', 'price_history', 'portfolio_experiment_candidates'].includes(table)),
+  ...HISTORY_TABLES.filter(({ table }) => ['signal_outcomes', 'price_history', 'price_vintages', 'portfolio_experiment_candidates'].includes(table)),
 ];
 
 const GIT_TIMEOUT_MS = 120_000;
@@ -121,7 +122,7 @@ function copyTable(
   const sourceCols = columnsOf(target, 'src', table);
   if (!sourceCols.length) return 0; // older desktop export
   if (!targetCols.length || !sourceCols.length) throw new Error(`Missing export table: ${table}`);
-  const cols = targetCols.filter((c) => c !== 'id' && sourceCols.includes(c));
+  const cols = targetCols.filter((c) => (c !== 'id' || table === 'price_vintages') && sourceCols.includes(c));
   if (!identity.every((c) => cols.includes(c))) throw new Error(`Missing identity columns: ${table}`);
 
   const list = cols.map((c) => `"${c}"`).join(', ');
@@ -228,6 +229,7 @@ export async function publishToWeb(opts: PublishOptions = {}): Promise<WebPublis
             FROM src.price_history AS s WHERE t.ticker=s.ticker AND t.date=s.date
             AND julianday(s.fetched_at)>COALESCE(julianday(t.fetched_at),0) AND s.adj_close>0`).run().changes;
         }
+        projectPriceVintages(target as Database.Database);
       });
       tx();
     } finally {
