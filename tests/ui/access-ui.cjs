@@ -11,7 +11,7 @@ let browser,page;
     const errors=[];page.on('pageerror',error=>errors.push(error.message));const access=await mockAccessWorkflow(page);let dataRequests=0;
     await page.route('**/data/**',route=>{dataRequests++;const name=new URL(route.request().url()).pathname.split('/').pop();return route.fulfill({json:name==='signals.json'?[]:name==='meta.json'?{version:'access-ui-test',generatedAt:new Date().toISOString()}:{stocks:{},stages:{}}});});
     const origin=`http://127.0.0.1:${server.address().port}`;await page.goto(origin);
-    const key=page.getByPlaceholder('Insert your Key here',{exact:true});await key.waitFor();
+    const key=page.getByLabel('Access key',{exact:true});await key.waitFor();
     assert.equal(await page.locator('.access-top .access-brand').count(),0,'Member login has no top-left branding');assert.equal(dataRequests,0,'No terminal data is fetched behind the lock');assert.equal(await page.getByRole('button',{name:'Enter terminal',exact:true}).isEnabled(),false);
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Lock screen fits');
     await page.screenshot({path:path.join(out,`${width}-lock.png`)});
