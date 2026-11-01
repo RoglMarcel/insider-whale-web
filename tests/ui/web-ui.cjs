@@ -122,7 +122,7 @@ async function contextPage(width, mode = 'full') {
     await page.locator('main [role="button"][aria-label="NVDA"]').waitFor();
     await page.waitForFunction(()=>document.querySelector('[aria-label="NVDA"] [data-alert-fair-value]')?.innerText.includes('%'));
     assert.equal(await page.locator('[data-alert-fair-value]').count(), await page.locator('.signal-card').count(), 'Every visible alert has a fair-value block');
-    assert.equal(await page.locator('main [aria-label="NVDA"] .font-mono-terminal').first().evaluate(el => getComputedStyle(el).color), 'rgb(246, 246, 248)', 'Ticker text contrast');
+    assert.equal(await page.locator('main [aria-label="NVDA"] .font-mono-terminal').first().evaluate(el => getComputedStyle(el).color), 'rgb(238, 242, 239)', 'Ticker text contrast');
     await checkPage(page, `${width}-alerts`);
     const heights = await page.locator('.signal-card').evaluateAll(cards => cards.map(c => c.getBoundingClientRect().height));
     assert(Math.max(...heights) - Math.min(...heights) < 2, 'Consistent alert card heights');
