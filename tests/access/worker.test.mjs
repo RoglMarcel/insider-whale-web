@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
-const compiled = await build({entryPoints:[new URL('../../access/worker.mjs',import.meta.url).pathname],bundle:true,write:false,format:'esm',platform:'browser',plugins:[{name:'test-shell',setup(builder){builder.onResolve({filter:/^@iwt-assets$/},()=>({path:'shell',namespace:'test'}));builder.onLoad({filter:/.*/,namespace:'test'},()=>({contents:'export default '+JSON.stringify({'/index.html':{body:btoa('<h1>Terminal</h1>'),type:'text/html'},'/assets/shell.js':{body:btoa('/* shell */'),type:'text/javascript'}})}));}}]});
+import { fileURLToPath } from 'node:url';
+const compiled = await build({entryPoints:[fileURLToPath(new URL('../../access/worker.mjs',import.meta.url))],bundle:true,write:false,format:'esm',platform:'browser',plugins:[{name:'test-shell',setup(builder){builder.onResolve({filter:/^@iwt-assets$/},()=>({path:'shell',namespace:'test'}));builder.onLoad({filter:/.*/,namespace:'test'},()=>({contents:'export default '+JSON.stringify({'/index.html':{body:btoa('<h1>Terminal</h1>'),type:'text/html'},'/assets/shell.js':{body:btoa('/* shell */'),type:'text/javascript'}})}));}}]});
 const {default:worker}=await import('data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].contents).toString('base64'));
 const env={DATA_ORIGIN:'https://roglmarcel.github.io/insider-whale-web/data/',DB:{prepare(){return{bind(){return this;},async first(){return{role:'member',session_expiry:Date.now()+60000,duration:'4weeks',expires_at:Date.now()+60000,activated_at:Date.now()-1000,revoked_at:null};}};},async batch(){return[];}}};
 const ctx={waitUntil(promise){promise.catch(()=>{});}};

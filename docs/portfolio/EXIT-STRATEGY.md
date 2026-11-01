@@ -1,4 +1,8 @@
-# Exit strategy — what the literature says, and what we changed
+# Exit strategy — historical rationale
+
+> Current owner-selected experiment: [15% activation / 10% distance, next-close execution and four portfolios](FOUR-PORTFOLIO-DECISION-2026-11-01.md). The older parameter rationale below remains historical evidence.
+
+> **Correction, 2026-11-01:** This document preserves the earlier decision evidence. Its confidence claims do not establish optimal exit settings. The current engineering/research decision is [SIMULATION-DECISION-2026-11-01.md](SIMULATION-DECISION-2026-11-01.md). A terminal-payoff cap is not a first-passage profit-taking backtest; skew/disposition-effect evidence does not select an event strategy's exits. The stitched drift curve below combines different populations, clocks and interpolation. [Zhao v2](https://arxiv.org/abs/2602.06198v2) supersedes v1 and withdraws the momentum and classifier-superiority claims used in the older discussion. Keep these passages as history, not validated recommendations. No default thresholds were changed in the repair.
 
 **Scope.** This decides three numbers for the *simulated* testing portfolio
 (`src/types/index.ts`, applied in `evaluateExit`): how long a position stays

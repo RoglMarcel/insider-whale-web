@@ -64,6 +64,8 @@ jobs:
           node tests/persistence/trade-revisions.integration.cjs
           node tests/persistence/track-cache.integration.cjs
           npm run verify:backtest
+          npm run verify:simulation
+          npm run verify:comparisons
           npx esbuild electron/sharedHistoryWorker.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --alias:electron=./scripts/electron-stub.ts --outfile=tmp/sharedHistoryWorker.js
           npx esbuild scripts/verify-shared-history.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --alias:electron=./scripts/electron-stub.ts --outfile=tmp/verify-shared-history.cjs
           node scripts/run-node-or-electron.cjs tmp/verify-shared-history.cjs
@@ -116,6 +118,8 @@ jobs:
       - run: npm run build
       - name: Backtest Web and Desktop UI
         run: node tests/ui/backtest-ui.cjs
+      - name: Simulation settings and explanations
+        run: node tests/ui/simulation-ui.cjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:

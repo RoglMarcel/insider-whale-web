@@ -22,10 +22,9 @@ export const PRICE_REQUEST_GAP_MS = 120;
 const REQUEST_TIMEOUT_MS = 15_000;
 
 /**
- * A single-session move larger than this is treated as a data error, not a
- * market event. Real equities do move 60% in a day (biotech readouts, halts),
- * so this is deliberately loose: it is a guard against Yahoo returning a stale
- * or mis-scaled point, not a volatility filter.
+ * A single-session move larger than this requires review, rather than proving
+ * a data error. Genuine crashes/rallies must be confirmed without clipping the
+ * observed move or silently treating it as an ordinary holiday gap.
  */
 export const PRICE_MAX_DAILY_MOVE = 0.6;
 
@@ -37,6 +36,8 @@ export interface PricePoint {
 interface YahooChart {
   chart?: {
     result?: Array<{
+      meta?: { symbol?: string; currency?: string; exchangeName?: string; instrumentType?: string; longName?: string };
+      events?: unknown;
       timestamp?: number[];
       indicators?: { adjclose?: Array<{ adjclose?: Array<number | null> }> };
     }>;
@@ -52,6 +53,24 @@ export interface FetchSeriesOptions {
   identity?: PriceIdentity;
 }
 
+export interface PriceSnapshot {
+  ticker: string;
+  fetchedAt: string;
+  basis: 'yahoo-adjusted-close';
+  providerSymbol: string;
+  metadata: NonNullable<NonNullable<YahooChart['chart']>['result']>[number]['meta'];
+  corporateActions: unknown;
+  rawObservations?: { timestamps: number[]; adjustedCloses: Array<number | null> };
+  points: PricePoint[];
+  issues: string[];
+}
+
+export async function fetchAdjCloseSeries(symbol: string, opts: FetchSeriesOptions = {}): Promise<PricePoint[] | null> {
+  const snapshot = await fetchPriceSnapshot(symbol, opts);
+  // Other outcome callers must not use an identified wrong instrument either.
+  return snapshot && !snapshot.issues.length ? snapshot.points : null;
+}
+
 function ymdUtcMs(s: string): number {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
   return m ? Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : NaN;
@@ -61,17 +80,18 @@ function ymdUtcMs(s: string): number {
  * Adjusted daily closes for one symbol, ascending, or null when the symbol has
  * no usable series (delisted, renamed, or simply never existed).
  */
-export async function fetchAdjCloseSeries(
+export async function fetchPriceSnapshot(
   symbol: string,
   opts: FetchSeriesOptions = {},
-): Promise<PricePoint[] | null> {
+): Promise<PriceSnapshot | null> {
   if (tickerIssue(symbol)) return null;
   try {
     // Yahoo writes share classes with a DASH (BRK-B) while the pipeline stores
     // the canonical dot form. Without this every class share resolves to 404 and
     // vanishes from the portfolio without a trace.
     const today = new Date().toISOString().slice(0, 10);
-    const sym = encodeURIComponent(yahooTicker(priceTicker(resolvedTicker(symbol, today), today, opts.identity)) || symbol);
+    const providerSymbol = yahooTicker(priceTicker(resolvedTicker(symbol, today), today, opts.identity)) || symbol;
+    const sym = encodeURIComponent(providerSymbol);
     let window: string;
     if (opts.fromYmd) {
       const period1 = Math.floor((ymdUtcMs(opts.fromYmd) - 10 * 86_400_000) / 1000);
@@ -88,7 +108,7 @@ export async function fetchAdjCloseSeries(
       if (opts.signal?.aborted) return null;
       if (host === 'query2') await sleep(400);
       try {
-        const res = await fetch(`https://${host}.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&${window}`, {
+        const res = await fetch(`https://${host}.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&events=div%2Csplits&${window}`, {
           headers: { 'User-Agent': YF_UA },
           signal: opts.signal ? AbortSignal.any([opts.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) : AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         });
@@ -117,16 +137,25 @@ export async function fetchAdjCloseSeries(
     const adj = result?.indicators?.adjclose?.[0]?.adjclose ?? [];
     const seen = new Set<string>();
     const out: PricePoint[] = [];
+    const issues: string[] = [];
+    const meta = result?.meta;
+    if (meta?.symbol && meta.symbol.toUpperCase() !== providerSymbol.toUpperCase()) issues.push('provider_symbol_mismatch');
+    if (meta?.currency && meta.currency !== 'USD') issues.push('non_usd_price');
+    if (meta?.instrumentType && !['EQUITY', 'ETF'].includes(meta.instrumentType)) issues.push('unsupported_instrument');
     ts.forEach((t, i) => {
       const v = adj[i];
-      if (v == null || !Number.isFinite(v) || v <= 0 || !Number.isFinite(t)) return;
+      if (v == null) return; // A missing session is retained in the raw response.
+      if (!Number.isFinite(v) || v <= 0 || !Number.isFinite(t)) { issues.push('invalid_observation'); return; }
       const date = new Date(t * 1000).toISOString().slice(0, 10);
-      if (seen.has(date)) return;
+      if (date > today) { issues.push('future_observation'); return; }
+      if (seen.has(date)) { issues.push('duplicate_session'); return; }
       seen.add(date);
       out.push({ date, px: v });
     });
     out.sort((a, b) => a.date.localeCompare(b.date));
-    return out.length ? out : null;
+    return out.length ? { ticker: symbol, fetchedAt: new Date().toISOString(), basis: 'yahoo-adjusted-close',
+      providerSymbol, metadata: meta, corporateActions: result?.events ?? null,
+      rawObservations: { timestamps: ts, adjustedCloses: adj }, points: out, issues } : null;
   } catch {
     return null;
   }
@@ -145,17 +174,15 @@ export interface ScreenedSeries {
 }
 
 /**
- * Plausibility screen. A single mis-scaled Yahoo point would otherwise fire a
- * stop-loss on a position that never moved, and the trade would be permanently
- * baked into an append-only curve — so a suspect point is DROPPED, not used.
- * The gap it leaves behind is handled by the same next-trading-day search that
- * handles holidays.
+ * Adjacent observations, never the last accepted anchor. Magnitude is a review
+ * flag, not proof of error. Portfolio ingestion quarantines the WHOLE vintage
+ * until corrected or reviewed, so a crash cannot disappear as an ordinary gap.
  */
 export function screenSeries(points: readonly PricePoint[], maxMove = PRICE_MAX_DAILY_MOVE): ScreenedSeries {
   const clean: PricePoint[] = [];
   const suspect: Array<PricePoint & { movePct: number }> = [];
   let prev: number | null = null;
-  for (const p of points) {
+  for (const p of [...points].sort((a, b) => a.date.localeCompare(b.date))) {
     if (!Number.isFinite(p.px) || p.px <= 0) {
       suspect.push({ ...p, movePct: NaN });
       continue;
@@ -164,6 +191,7 @@ export function screenSeries(points: readonly PricePoint[], maxMove = PRICE_MAX_
       const move = p.px / prev - 1;
       if (Math.abs(move) > maxMove) {
         suspect.push({ ...p, movePct: move });
+        prev = p.px;
         continue;
       }
     }

@@ -5,6 +5,7 @@ import { useI18n } from '@/hooks/useI18n';
 import { api, isWeb } from '@/lib/ipc';
 import { formatDate, formatDateTime, timeAgo } from '@/lib/format';
 import { addDaysYmd, diffDaysYmd, emptyPortfolioState } from '@/lib/portfolio-rules';
+import { alertsAbove80Config } from '@/lib/alerts-above-80';
 import type { PortfolioConfig, PortfolioState } from '@/types';
 import type { TKey } from '@/lib/i18n';
 import { PortfolioStatsPanel } from './PortfolioStats';
@@ -106,8 +107,12 @@ function Toggle({
 export function PortfolioView() {
   const { t, language } = useI18n();
   const [portfolio, setState] = useState<PortfolioState>(() => emptyPortfolioState());
-  const [variant, setVariant] = useState<'overlay' | 'insider'>('overlay');
-  const state = variant === 'insider' && portfolio.insiderOnly ? portfolio.insiderOnly.state : portfolio;
+  const [variant, setVariant] = useState<'overlay' | 'insider' | 'above80'>('overlay');
+  const state = variant === 'above80'
+    ? portfolio.alertsAbove80?.state ?? { ...emptyPortfolioState(), config: alertsAbove80Config(portfolio.config) }
+    : variant === 'insider' ? portfolio.insiderOnly?.state ?? emptyPortfolioState() : portfolio;
+  const variantColor = variant === 'above80' ? 'var(--portfolio-above80)' : variant === 'insider' ? 'var(--portfolio-insider)' : 'var(--portfolio-overlay)';
+  const variantLabel = variant === 'above80' ? t('pf.compare.above80') : variant === 'insider' ? t('pf.compare.insider') : t('pf.chart.portfolio');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<'sync' | 'rebuild' | 'config' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -266,6 +271,7 @@ export function PortfolioView() {
       <div className="portfolio-switch" role="group" aria-label={t('pf.compare.details')}>
         <button className="btn" aria-pressed={variant === 'overlay'} onClick={() => setVariant('overlay')}>{t('pf.compare.overlay')}</button>
         <button className="btn" disabled={!portfolio.insiderOnly} aria-pressed={variant === 'insider'} onClick={() => setVariant('insider')}>{t('pf.compare.insider')}</button>
+        <button className="btn" disabled={!portfolio.alertsAbove80} aria-pressed={variant === 'above80'} onClick={() => setVariant('above80')}>{t('pf.compare.above80')}</button>
       </div>
       {/* ── Headline ── */}
       <GlassCard className="portfolio-headline">
@@ -397,12 +403,12 @@ export function PortfolioView() {
                 unit={unit}
                 logScale={logScale && unit === '$'}
                 showIdle={false}
-                portfolioColor={variant === 'insider' ? 'var(--portfolio-insider)' : 'var(--portfolio-overlay)'}
+                portfolioColor={variantColor}
                 markers={markers}
                 liveFrom={liveInWindow}
                 compact={compact}
                 labels={{
-                  portfolio: variant === 'insider' ? t('pf.compare.insider') : t('pf.chart.portfolio'),
+                  portfolio: variantLabel,
                   benchmark: t('pf.chart.benchmark'),
                   idle: t('pf.chart.idle'),
                   difference: t('pf.chart.difference'),
@@ -448,7 +454,8 @@ export function PortfolioView() {
       <ClosedTradesTable trades={state.closed} />
 
       <RulesCard
-        description={variant === 'insider' ? t('pf.compare.rules') : undefined}
+        description={variant === 'above80' ? t('pf.compare.above80Rules', { capital: config.startingCash.toLocaleString('en-US') })
+          : variant === 'insider' ? t('pf.compare.rules', { capital: config.startingCash.toLocaleString('en-US') }) : undefined}
         config={config}
         meta={meta}
         busy={busy === 'config'}

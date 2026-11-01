@@ -1,5 +1,20 @@
 # Cloud history persistence
 
+## Simulation repair, 2026-11-01
+
+Curve builder 6 publishes one coherent replay at a time: equity, positions,
+frozen marks, configuration and the concentrated comparison commit together.
+Earlier runs remain in `portfolio_revisions`; original backtest evidence stays
+immutable. Price-cache history now travels as complete immutable `price_vintages`,
+including empty quarantines. A legacy import cannot resurrect rejected dates or
+join incompatible adjustment vintages. Both books expose run/input/config hashes
+and source vintage IDs. Default thresholds and configuration version 3 are retained.
+
+See [the decision and migration report](portfolio/SIMULATION-DECISION-2026-11-01.md)
+for acceptance checks, recovery and empirical limitations. The append-only equity
+description in older release notes is historical; the previous complete run is
+now archived rather than spliced with freshly simulated positions.
+
 The raw database exceeded GitHub's 100 MB Git blob limit. Since 2026-09-11,
 cloud runs could deploy fresh JSON but fail to commit their accumulated history.
 The old workflow suppressed that error. Earlier failed runners' databases cannot

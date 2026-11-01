@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import { SCHEMA, runMigrations } from './database';
+import { projectPriceVintages } from './priceCache';
 
 /** Public evidence is additive. Local IDs and private settings never travel. */
 export const HISTORY_TABLES: { table: string; identity: string[] }[] = [
@@ -9,6 +10,7 @@ export const HISTORY_TABLES: { table: string; identity: string[] }[] = [
   { table: 'insider_trades', identity: ['ticker', 'insider_key', 'trade_date', 'value_cents'] },
   { table: 'signal_outcomes', identity: ['ticker', 'entry_date', 'horizon'] },
   { table: 'price_history', identity: ['ticker', 'date'] },
+  { table: 'price_vintages', identity: ['id'] },
   { table: 'portfolio_experiment_candidates', identity: ['experiment_id', 'ticker', 'earliest_date'] },
 ];
 const BOOK_TABLES = ['portfolio_positions', 'portfolio_equity', 'portfolio_events', 'portfolio_experiments'];
@@ -20,7 +22,9 @@ function columns(db: Database.Database, schema: string, table: string): string[]
 function copy(db: Database.Database, table: string, identity?: string[]): number {
   const source = columns(db, 'incoming', table);
   if (!source.length) return 0; // exports from older versions
-  const cols = columns(db, 'main', table).filter(c => c !== 'id' && source.includes(c));
+  // String IDs identify whole vintages/experiments across machines. Only local
+  // autoincrement row IDs are discarded during transport.
+  const cols = columns(db, 'main', table).filter(c => (c !== 'id' || table === 'price_vintages' || table === 'portfolio_experiments') && source.includes(c));
   if (!cols.length || identity?.some(c => !cols.includes(c))) throw new Error(`Incompatible shared table: ${table}`);
   // signal_id refers to a machine-local autoincrement key, never to the same
   // signal on another machine. Historical decision evidence has its own key.
@@ -48,6 +52,7 @@ export function mergeSharedHistory(db: Database.Database, source: string, revisi
           AND julianday(s.fetched_at) > COALESCE(julianday(t.fetched_at), 0)
           AND s.adj_close > 0`).run().changes;
       }
+      projectPriceVintages(db);
       if (revision) {
         const previous = db.prepare("SELECT value FROM app_settings WHERE key = 'web_sync_revision'").get() as { value: string } | undefined;
         if (previous && previous.value >= revision) return copied;

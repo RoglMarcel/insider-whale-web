@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useI18n } from '@/hooks/useI18n';
 import { DEFAULT_PORTFOLIO_CONFIG, type PortfolioCashPolicy, type PortfolioConfig } from '@/types';
 import type { TKey } from '@/lib/i18n';
+import { EXIT_POLICIES } from '@/lib/exit-policies';
 
 /**
  * Runtime editor for the rule set.
@@ -34,7 +35,7 @@ interface Field {
 }
 
 /** Prefilled when a switched-off barrier is switched back on. */
-const BARRIER_FALLBACK: Record<string, number> = { takeProfit: 0.3, stopLoss: 0.25 };
+const BARRIER_FALLBACK: Record<string, number> = { takeProfit: 0.3, stopLoss: 0.25, profitFloor: 0.10 };
 
 const FIELDS: Field[] = [
   { key: 'startingCash', label: 'pf.rules.capital', unit: 'raw', step: 500, min: 100, max: 10_000_000 },
@@ -51,6 +52,7 @@ const FIELDS: Field[] = [
   { key: 'maxHoldDays', label: 'pf.cfg.maxHoldDays', unit: 'raw', step: 5, min: 1, max: 3650 },
   { key: 'trailArm', label: 'pf.cfg.trailArm', unit: 'pct', step: 1, min: 0.5, max: 500 },
   { key: 'trailDistance', label: 'pf.cfg.trailDistance', unit: 'pct', step: 1, min: 0.5, max: 99 },
+  { key: 'profitFloor', label: 'pf.cfg.profitFloor', unit: 'pct', step: 1, min: 0, max: 499, optional: true },
   { key: 'slippageBps', label: 'pf.cfg.slippage', unit: 'bps', step: 1, min: 0, max: 500 },
 ];
 
@@ -98,10 +100,22 @@ export function PortfolioConfigForm({
   const invalid =
     draft.minWeight > draft.maxWeight ||
     draft.baseWeight > draft.maxWeight ||
-    draft.baseWeight < draft.minWeight;
+    draft.baseWeight < draft.minWeight ||
+    (draft.profitFloor != null && draft.profitFloor >= draft.trailArm);
 
   return (
-    <div className="mt-4 rounded-xl p-3" style={{ border: '1px solid var(--border-glass)' }}>
+    <form className="mt-4 rounded-xl p-3" style={{ border: '1px solid var(--border-glass)' }} onSubmit={e => { e.preventDefault(); if (!invalid) onApply(draft); }}>
+      <label className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+        {t('pf.cfg.researchPolicy')}
+        <select className="input p-2" name="researchPolicy" disabled={busy}
+          value={EXIT_POLICIES.find(p => Object.entries(p.patch).every(([k,v]) => (draft[k as keyof PortfolioConfig] ?? null) === v))?.id ?? ''} onChange={e => {
+          const policy = EXIT_POLICIES.find(p => p.id === e.target.value);
+          if (policy) setDraft(d => ({ ...d, ...policy.patch }));
+        }}>
+          <option value="">{t('pf.cfg.custom')}</option>
+          {EXIT_POLICIES.map(p => <option key={p.id} value={p.id}>{p.id}</option>)}
+        </select>
+      </label>
       <div className="grid gap-x-4 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
         {FIELDS.map((f) => {
           const raw = draft[f.key] as number | null;
@@ -126,9 +140,11 @@ export function PortfolioConfigForm({
                 ) : (
                   <input
                     type="number"
+                    name={f.key}
+                    required
                     className="input w-24 px-2 py-1 text-right text-xs tabular-nums"
                     value={toDisplay(raw ?? 0, f.unit)}
-                    step={f.step}
+                    step={['maxPositions', 'reentryCooldownDays', 'maxHoldDays'].includes(f.key) ? 1 : 'any'}
                     min={f.min}
                     max={f.max}
                     disabled={busy}
@@ -156,26 +172,34 @@ export function PortfolioConfigForm({
             <option value="idle">{t('pf.cfg.cashIdle')}</option>
           </select>
         </label>
+        <fieldset className="text-sm">
+          <legend>{t('pf.cfg.execution')}</legend>
+          {(['same_close', 'next_close'] as const).map(mode => <label key={mode} className="flex items-center gap-2 py-2">
+            <input type="radio" name="exitExecution" value={mode} checked={(draft.exitExecution ?? 'same_close') === mode}
+              disabled={busy} onChange={() => setDraft(d => ({ ...d, exitExecution: mode }))} />
+            {t(mode === 'same_close' ? 'pf.rules.sameClose' : 'pf.rules.nextClose')}
+          </label>)}
+        </fieldset>
       </div>
 
       <p className="mt-3 text-[11px] leading-snug text-secondary">{t('pf.cfg.rebuildWarning')}</p>
       {invalid && (
         <p className="mt-1 text-[11px] font-semibold" style={{ color: 'var(--accent-red)' }}>
-          {t('pf.cfg.invalidWeights')}
+          {t('pf.cfg.invalidStrategy')}
         </p>
       )}
 
       <div className="mt-3 flex flex-wrap gap-2">
-        <button className="btn btn-primary" disabled={busy || invalid} onClick={() => onApply(draft)}>
+        <button type="submit" className="btn btn-primary" disabled={busy || invalid}>
           {busy ? t('pf.cfg.applying') : t('pf.cfg.apply')}
         </button>
-        <button className="btn" disabled={busy} onClick={() => setDraft(DEFAULT_PORTFOLIO_CONFIG)}>
+        <button type="button" className="btn" disabled={busy} onClick={() => setDraft(DEFAULT_PORTFOLIO_CONFIG)}>
           {t('pf.cfg.reset')}
         </button>
-        <button className="btn" disabled={busy} onClick={onCancel}>
+        <button type="button" className="btn" disabled={busy} onClick={onCancel}>
           {t('pf.cfg.cancel')}
         </button>
       </div>
-    </div>
+    </form>
   );
 }

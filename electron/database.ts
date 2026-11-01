@@ -1,6 +1,8 @@
 import { summarizeInsiderTrades, mergeInsiderSaleVolume } from '../src/lib/insider-summary';
 import { utcInstantMs } from '../src/lib/utcDate';
 import { BACKTEST_SCHEMA } from './backtestSchema';
+import { PRICE_CACHE_SCHEMA, storePriceVintage, type PriceVintage } from './priceCache';
+import type { PortfolioState, PortfolioExitReason } from '../src/types';
 import { captureDecision, recordBacktestBook, recordBacktestClosures, analyzePendingBacktests } from './backtest';
 import type { DecisionContext } from '../src/types/backtest';
 import { tickerIssue, resolvedTicker } from '../src/lib/ticker-quality';
@@ -37,6 +39,7 @@ import {
   type PortfolioPosition,
   DEFAULT_PORTFOLIO_CONFIG,
   PORTFOLIO_CONFIG_VERSION,
+  PORTFOLIO_SELECTED_EXIT_POLICY,
   PORTFOLIO_SUPERSEDED_DEFAULTS,
   DEFAULT_SETTINGS,
   filterSignals,
@@ -100,6 +103,7 @@ function backupDatabaseBeforeMigration(dbPath: string): void {
  * appear there.
  */
 export const PORTFOLIO_SCHEMA = `
+${PRICE_CACHE_SCHEMA}
 CREATE TABLE IF NOT EXISTS ticker_quarantine (
  ticker TEXT PRIMARY KEY, reason TEXT NOT NULL, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL
 );
@@ -2080,8 +2084,8 @@ export interface PriceRow {
  * REPLACE, not DO NOTHING: adjusted closes are restated for the WHOLE history
  * whenever a split or dividend happens, so keeping old rows and appending new
  * ones would weld a pre-split series onto a post-split one and manufacture a
- * −50% gap that trips every stop. A ticker's rows therefore always come from a
- * single fetch and are internally consistent.
+ * −50% gap that trips every stop. This legacy helper remains for fixtures and
+ * old importers only; versioned tickers require replacePriceSeries instead.
  */
 export function upsertPriceRows(rows: readonly PriceRow[]): number {
   if (!rows.length) return 0;
@@ -2092,10 +2096,33 @@ export function upsertPriceRows(rows: readonly PriceRow[]): number {
   );
   const now = new Date().toISOString();
   const tx = getDb().transaction((batch: readonly PriceRow[]) => {
-    for (const r of batch) stmt.run(r.ticker, r.date, r.adjClose, now);
+    for (const r of batch) {
+      if (getDb().prepare('SELECT 1 FROM price_vintages WHERE ticker=? LIMIT 1').get(r.ticker)) throw new Error('Versioned prices require a complete price vintage');
+      stmt.run(r.ticker, r.date, r.adjClose, now);
+    }
   });
   tx(rows);
   return rows.length;
+}
+
+export function replacePriceSeries(vintage: PriceVintage): string {
+  return storePriceVintage(getDb(), vintage);
+}
+
+export function getReviewedPriceVintage(ticker: string): PriceVintage | null {
+  const row = getDb().prepare(`SELECT id,payload FROM price_vintages WHERE ticker=?
+    AND json_extract(payload,'$.review.reviewer') IS NOT NULL ORDER BY julianday(recorded_at) DESC,id DESC LIMIT 1`)
+    .get(ticker) as { id:string; payload:string } | undefined;
+  if (!row) return null;
+  const vintage = JSON.parse(row.payload) as PriceVintage;
+  return { ...vintage, review: { ...vintage.review!, sourceVintageId: row.id } };
+}
+
+export function getPriceVintageIds(): Record<string, string> {
+  const rows = getDb().prepare(`SELECT ticker,id FROM (
+    SELECT ticker,id,ROW_NUMBER() OVER(PARTITION BY ticker ORDER BY julianday(recorded_at) DESC,id DESC) AS rn FROM price_vintages
+  ) WHERE rn=1`).all() as { ticker: string; id: string }[];
+  return Object.fromEntries(rows.map(r => [r.ticker, r.id]));
 }
 
 /** ticker → (date → adjusted close), from `date >= fromYmd`. */
@@ -2103,7 +2130,10 @@ export function getPriceBook(tickers: readonly string[], fromYmd: string): Recor
   const out: Record<string, Record<string, number>> = {};
   if (!tickers.length) return out;
   const stmt = getDb().prepare(
-    `SELECT date, adj_close FROM price_history WHERE ticker = ? AND date >= ? ORDER BY date`,
+    `SELECT date, adj_close FROM price_history p WHERE ticker = ? AND date >= ?
+     AND (EXISTS (SELECT 1 FROM price_vintages v WHERE v.ticker=p.ticker)
+       OR NOT EXISTS (SELECT 1 FROM portfolio_events e WHERE e.ticker=p.ticker AND e.kind='suspect_price'))
+     ORDER BY date`,
   );
   for (const t of tickers) {
     const rows = stmt.all(t, fromYmd) as { date: string; adj_close: number }[];
@@ -2143,21 +2173,20 @@ export interface PortfolioCandidateRow {
 }
 
 /**
- * Live candidates: the FIRST sighting of a ticker on a scrape day (MIN(id)), so
+ * Live candidates: the FIRST qualifying sighting of a ticker on a scrape day, so
  * the score is the one that was actionable at that moment. Taking the day's max
  * would pick the best of N intraday scores after the fact — the same selection
  * bias `getOutcomeCandidates` and `computePerformanceReport` already guard against.
  */
-export function getPortfolioSignalCandidates(minScore: number): PortfolioCandidateRow[] {
+export function getPortfolioSignalCandidates(minScore: number, strict = false): PortfolioCandidateRow[] {
   return getDb()
     .prepare(
       `SELECT id AS signalId, ticker, score, scraped_at AS seenAt
        FROM signals
        WHERE id IN (SELECT id FROM (
          SELECT id, ROW_NUMBER() OVER (PARTITION BY ticker, substr(scraped_at, 1, 10) ORDER BY scraped_at, id) AS rn
-         FROM signals
+         FROM signals WHERE score ${strict ? '>' : '>='} ?
        ) WHERE rn = 1)
-         AND score >= ?
        ORDER BY scraped_at`,
     )
     .all(minScore) as PortfolioCandidateRow[];
@@ -2168,12 +2197,12 @@ export function getPortfolioSignalCandidates(minScore: number): PortfolioCandida
  * were measured at the time (score is never recomputed there), and they reach
  * five weeks further back than `signals`, whose rows rotate out.
  */
-export function getPortfolioOutcomeCandidates(minScore: number): PortfolioCandidateRow[] {
+export function getPortfolioOutcomeCandidates(minScore: number, strict = false): PortfolioCandidateRow[] {
   return getDb()
     .prepare(
       `SELECT ticker, MAX(score) AS score, entry_date AS seenAt, NULL AS signalId
        FROM signal_outcomes
-       WHERE score >= ?
+       WHERE score ${strict ? '>' : '>='} ?
        GROUP BY ticker, entry_date
        ORDER BY entry_date`,
     )
@@ -2342,7 +2371,8 @@ export function getPortfolioPositions(): PortfolioPosition[] {
 /**
  * Positions and events are a PROJECTION of the same deterministic simulation
  * the curve comes from, not an independent record, so they are rewritten whole
- * on every run. The curve itself stays append-only (see insertPortfolioEquity).
+ * on every run. The orchestrator replaces the curve in the same transaction
+ * and archives the previous complete result before a changed replay.
  */
 export function replacePortfolioPositions(positions: readonly PortfolioPosition[]): void {
   const db = getDb();
@@ -2476,13 +2506,10 @@ const PORTFOLIO_CONFIG_VERSION_KEY = 'portfolio_config_version';
  * in `src/types` never reaches that installation. That is the entire reason
  * this function exists.
  *
- * What it does, once per version bump:
- *   - a stored exit value that still equals the v1 default is DELETED from the
- *     overlay, so the new default shows through (and so will the next one);
- *   - a stored exit value that differs is a deliberate choice and is KEPT.
- *
- * Deleting rather than overwriting is the point: the overlay ends up holding
- * only what the user actually decided.
+ * Version 4 is the explicitly owner-authorized exit-policy rollout: archive
+ * the old book/config, set the selected exits once, and preserve unrelated
+ * capital, allocation and entry settings. Later v4 user edits survive restart.
+ * Older installations first receive the existing pre-v3 default reconciliation.
  */
 export function migratePortfolioConfig(): { migrated: string[]; kept: string[] } | null {
   const db = getDb();
@@ -2501,38 +2528,40 @@ export function migratePortfolioConfig(): { migrated: string[]; kept: string[] }
   const row = db.prepare(`SELECT value FROM app_settings WHERE key = ?`).get(PORTFOLIO_CONFIG_KEY) as
     | { value: string }
     | undefined;
-  const stored = safeParse<Record<string, unknown> | null>(row?.value ?? null, null);
-  if (!stored) {
-    // Nothing has ever been overridden — the new defaults already apply.
-    stamp();
-    return { migrated: [], kept: [] };
-  }
-
+  const stored = safeParse<Record<string, unknown>>(row?.value ?? null, {});
+  const previous = { config: row?.value ?? null, meta: getPortfolioRunMeta(),
+    equity: getPortfolioEquity(), positions: getPortfolioPositions(), events: getPortfolioEvents(5000),
+    experiments: db.prepare('SELECT id,state_json FROM portfolio_experiments ORDER BY id').all() };
   const migrated: string[] = [];
   const kept: string[] = [];
-  for (const [key, superseded] of Object.entries(PORTFOLIO_SUPERSEDED_DEFAULTS)) {
-    if (!(key in stored)) continue;
-    if (superseded.includes(stored[key])) {
-      delete stored[key];
-      migrated.push(key);
-    } else {
-      kept.push(key);
+  // Preserve the existing pre-v3 migration for old installations. Version 4
+  // applies the explicitly owner-selected exit policy, preserving allocations.
+  if (Number(versionRow?.value ?? 0) < 3) {
+    for (const [key, superseded] of Object.entries(PORTFOLIO_SUPERSEDED_DEFAULTS)) {
+      if (!(key in stored)) continue;
+      if (superseded.includes(stored[key])) { delete stored[key]; migrated.push(key); }
+      else kept.push(key);
     }
   }
-
-  const tx = db.transaction(() => {
-    db.prepare(
-      `INSERT INTO app_settings (key, value) VALUES (?, ?)
-       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-    ).run(PORTFOLIO_CONFIG_KEY, JSON.stringify(stored));
+  for (const [key, value] of Object.entries(PORTFOLIO_SELECTED_EXIT_POLICY)) {
+    if (stored[key] !== value) migrated.push(key);
+    stored[key] = value;
+  }
+  db.transaction(() => {
+    if (row || previous.equity.length || previous.experiments.length) {
+      archivePortfolioRevision('before-exit-policy-v2-migration', previous);
+    }
+    db.prepare(`INSERT INTO app_settings(key,value) VALUES(?,?)
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(PORTFOLIO_CONFIG_KEY, JSON.stringify(stored));
     stamp();
-  });
-  tx();
+  })();
   return { migrated, kept };
 }
 
 export function setPortfolioConfig(partial: Partial<PortfolioConfig>): PortfolioConfig {
   const merged: PortfolioConfig = { ...getPortfolioConfig(), ...partial };
+  if (merged.exitExecution != null && !['same_close', 'next_close'].includes(merged.exitExecution)) throw new Error('Invalid exit execution');
+  if (merged.profitFloor != null && (!Number.isFinite(merged.profitFloor) || merged.profitFloor < 0 || merged.profitFloor >= merged.trailArm)) throw new Error('Profit floor must be nonnegative and below trailing activation');
   getDb()
     .prepare(
       `INSERT INTO app_settings (key, value) VALUES (?, ?)
@@ -2548,6 +2577,10 @@ export function setPortfolioConfig(partial: Partial<PortfolioConfig>): Portfolio
  * not computed with.
  */
 export interface PortfolioRunMeta {
+  provenance?: PortfolioState['meta']['provenance'];
+  positionMarks?: Record<string, { date: string; px: number }>;
+  entrySigmas?: Record<string, number | null>;
+  pendingExits?: Record<string, PortfolioExitReason>;
   config: PortfolioConfig;
   /**
    * Which builder produced the stored curve. Absent on curves written before

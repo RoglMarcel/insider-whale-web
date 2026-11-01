@@ -245,5 +245,33 @@ class AssetDownloadTests(unittest.TestCase):
             self.assertFalse(target.exists())
 
 
+class PriceVintageTests(unittest.TestCase):
+    def test_whole_quarantine_wins_over_legacy_and_recovers_with_corrected_vintage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target, source = Path(directory) / 'target.db', Path(directory) / 'source.db'
+            schema = '''CREATE TABLE price_history(ticker TEXT,date TEXT,adj_close REAL,fetched_at TEXT,PRIMARY KEY(ticker,date));
+                CREATE TABLE price_vintages(id TEXT PRIMARY KEY,ticker TEXT,recorded_at TEXT,payload TEXT);'''
+            for file in (target, source):
+                with closing(sqlite3.connect(file)) as db, db:
+                    db.executescript(schema)
+            with closing(sqlite3.connect(target)) as db, db:
+                db.execute('INSERT INTO price_history VALUES(?,?,?,?)', ('ALP','2026-09-21',4.56,'2026-10-01'))
+                db.execute('INSERT INTO price_vintages VALUES(?,?,?,?)', ('a'*64,'ALP','2026-10-02',json.dumps({
+                    'ticker':'ALP','fetchedAt':'2026-10-02','clean':[]})))
+            with closing(sqlite3.connect(source)) as db, db:
+                db.execute('INSERT INTO price_history VALUES(?,?,?,?)', ('ALP','2026-09-21',4.56,'2026-10-03'))
+            history.merge_desktop(target, source)
+            with closing(sqlite3.connect(target)) as db:
+                self.assertEqual(list(db.execute('SELECT * FROM price_history')), [])
+            with closing(sqlite3.connect(source)) as db, db:
+                db.execute('INSERT INTO price_vintages VALUES(?,?,?,?)', ('b'*64,'ALP','2026-10-04',json.dumps({
+                    'ticker':'ALP','fetchedAt':'2026-10-04','clean':[{'date':'2026-09-22','px':4.6}]})))
+            history.merge_desktop(target, source)
+            history.merge_desktop(target, source)
+            with closing(sqlite3.connect(target)) as db:
+                self.assertEqual(list(db.execute('SELECT date,adj_close FROM price_history')), [('2026-09-22',4.6)])
+                self.assertEqual(db.execute('SELECT COUNT(*) FROM price_vintages').fetchone()[0], 2)
+
+
 if __name__ == '__main__':
     unittest.main()

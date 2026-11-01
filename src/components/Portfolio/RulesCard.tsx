@@ -74,7 +74,7 @@ export function RulesCard({
           {description && <p className="portfolio-description">{description}</p>}
           <dl className="flex flex-col">
             <Line label={t('pf.rules.capital')} value={`$${config.startingCash.toLocaleString('en-US')}`} />
-            <Line label={t('pf.rules.entry')} value={t('pf.rules.entryValue', { score: config.entryScore })} />
+            <Line label={t('pf.rules.entry')} value={t(config.entryScoreStrict ? 'pf.rules.entryStrict' : 'pf.rules.entryValue', { score: config.entryScore })} />
             <Line
               label={t('pf.rules.sizing')}
               value={config.baseWeight === config.maxWeight && config.minWeight === config.baseWeight ? t('pf.rules.fixedSizing', { weight: p1(config.baseWeight) }) : t('pf.rules.sizingValue', {
@@ -86,7 +86,10 @@ export function RulesCard({
             />
             <Line
               label={t('pf.rules.exits')}
-              value={[
+              value={config.sigmaBarriers ? t('pf.rules.sigma', {
+                stop: config.sigmaBarriers.stop ?? 'off', target: config.sigmaBarriers.target ?? 'off',
+                arm: config.sigmaBarriers.trailArm ?? 'fixed', distance: config.sigmaBarriers.trailDistance ?? 'fixed', hold: config.maxHoldDays,
+              }) : [
                 config.takeProfit == null
                   ? t('pf.rules.exitNoTakeProfit')
                   : t('pf.rules.exitTakeProfit', { tp: p1(config.takeProfit) }),
@@ -120,6 +123,14 @@ export function RulesCard({
           </dl>
 
           <p className="mt-2 text-xs text-secondary">{t('pf.rules.priority')}</p>
+          {!config.sigmaBarriers && <p className="mt-2 text-xs text-secondary">{t('pf.rules.trailGeometry', {
+            arm: p1(config.trailArm), floor: p1(Math.max((1 + config.trailArm) * (1 - config.trailDistance) - 1, config.profitFloor ?? -1)),
+          })}</p>}
+          {config.profitFloor != null && <p className="mt-2 text-xs text-secondary">{t('pf.rules.profitFloor', { floor: p1(config.profitFloor) })}</p>}
+          <p className="mt-2 text-xs text-secondary">{t(config.exitExecution === 'next_close' ? 'pf.rules.nextClose' : 'pf.rules.sameClose')}</p>
+          {meta.provenance?.policyId && <p className="mt-2 text-xs text-secondary">{t('pf.rules.selectedPolicy', { id: meta.provenance.policyId, date: meta.provenance.policyDefinedAt ?? '—' })}</p>}
+          {meta.provenance && <p className="mt-2 break-all text-xs text-secondary">{t('pf.rules.run')}: {meta.provenance.runId} · {meta.provenance.priceBasis}</p>}
+          {!meta.provenance && <p className="mt-2 text-xs text-secondary">{t('pf.rules.legacyEvidence')}</p>}
 
           {/* Every parameter above is editable at runtime — but only where the
               curve can actually be recomputed. */}
