@@ -64,7 +64,13 @@ async function checkPage(page, label) {
   assert(!/SCRAPE_SESSIONS|GitHub.?Secrets|scraper|scraping|session.?cookies|Desktop|\bCI\b|Quellen-Status|Source health|scheduled run|Login zum Scrapen/i.test(visible), `${label}: public operational information`);
   assert.equal(await page.locator('[role="alert"]').count(), 0, `${label}: status banner`);
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${label}: document overflow`);
-  assert(await page.locator('main').evaluate(el => el.scrollWidth <= el.clientWidth + 1), `${label}: main overflow`);
+  const overflow = await page.locator('main').evaluate(el => {
+    if (el.scrollWidth <= el.clientWidth + 1) return { fits:true, offenders:[] };
+    const edge=el.getBoundingClientRect().right;
+    return { fits:false, offenders:[...el.querySelectorAll('*')].filter(node=>node.getBoundingClientRect().right>edge+1)
+      .slice(0,8).map(node=>({tag:node.tagName,css:node.getAttribute('class'),right:node.getBoundingClientRect().right,edge})) };
+  });
+  assert(overflow.fits, `${label}: main overflow ${JSON.stringify(overflow.offenders)}`);
   await assertThemeGeometry(page, label);
   await page.screenshot({ path: path.join(out, `${label}.png`) });
 }
@@ -198,6 +204,48 @@ async function contextPage(width, mode = 'full') {
     assert.equal(await page.locator('.portfolio-headline').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(17, 17, 21)');
     assert.equal(await page.getByRole('checkbox', { name: /cash.drag/i }).count(), 0);
     assert((await page.locator('.portfolio-headline').innerText()).includes('$' + portfolio.equity.at(-1).equity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })));
+    const comparison = page.locator('.four-portfolios');
+    const line = key => comparison.locator(`.portfolio-line-${key} .recharts-line-curve`);
+    await line('above80').waitFor();
+    assert.equal(await line('above80').getAttribute('stroke-dasharray'), null, 'Yellow line is solid');
+    assert.equal(await comparison.locator('.portfolio-summary').nth(3).locator('line').getAttribute('stroke-dasharray'), null, 'Yellow card swatch is solid');
+    for (const key of ['market','overlay','insider','above80']) assert.equal(await line(key).getAttribute('stroke-width'), '3');
+    assert.notEqual(await line('insider').evaluate(el=>getComputedStyle(el).stroke), await line('overlay').evaluate(el=>getComputedStyle(el).stroke), 'Concentrated and overlay curves have distinct colors');
+    assert(await line('market').getAttribute('stroke-dasharray'), 'Benchmark remains dashed');
+    assert.equal(await comparison.locator('.recharts-cartesian-axis-tick-value').first().evaluate(el=>getComputedStyle(el).fontSize),'13px','Axis labels use the larger size');
+    const paths = await comparison.locator('.recharts-line-curve').evaluateAll(nodes => nodes.map(el=>el.getAttribute('d')));
+    const focusThird = comparison.getByRole('button', {name:'Highlight 3 · Concentrated signals',exact:true});
+    await focusThird.click();
+    assert.equal(await focusThird.getAttribute('aria-pressed'), 'true');
+    assert.equal(await line('insider').getAttribute('stroke-opacity'), '1');
+    assert.equal(await line('overlay').getAttribute('stroke-opacity'), '0.28');
+    await focusThird.focus(); await page.keyboard.press('Space');
+    assert.equal(await focusThird.getAttribute('aria-pressed'), 'false', 'Keyboard toggles focus off');
+    await comparison.getByRole('button', {name:'Highlight 4 · alerts >80 only',exact:true}).click();
+    await comparison.getByRole('button', {name:'Show all lines',exact:true}).click();
+    for (const key of ['market','overlay','insider','above80']) assert.equal(await line(key).getAttribute('stroke-opacity'), '1');
+    assert.deepEqual(await comparison.locator('.recharts-line-curve').evaluateAll(nodes => nodes.map(el=>el.getAttribute('d'))), paths, 'Highlighting never changes plotted data or scale');
+    const plotBounds=await comparison.locator('.portfolio-comparison-chart').boundingBox();
+    const cardBounds=await comparison.locator('.portfolio-comparison-grid').boundingBox();
+    assert(plotBounds.y >= cardBounds.y+cardBounds.height, 'Full-width chart is below cards');
+    assert(Math.abs(plotBounds.width-cardBounds.width)<2, 'Chart uses the full card-row width');
+    if(width===1440){
+      await comparison.locator('.portfolio-end-labels text').last().waitFor();
+      assert.equal(await comparison.locator('.portfolio-end-labels text').count(),4);
+      const boxes=await comparison.locator('.portfolio-end-labels text').evaluateAll(nodes=>nodes.map(el=>{const b=el.getBoundingClientRect();return{top:b.top,bottom:b.bottom,right:b.right}}).sort((a,b)=>a.top-b.top));
+      for(let i=1;i<boxes.length;i++)assert(boxes[i].top>=boxes[i-1].bottom+3,'Endpoint labels do not overlap');
+      assert(boxes.every(b=>b.right<=plotBounds.x+plotBounds.width+1),'Endpoint labels stay within chart');
+      const cards=await comparison.locator('.portfolio-summary').evaluateAll(nodes=>nodes.map(el=>el.getBoundingClientRect().top));
+      assert(Math.max(...cards)-Math.min(...cards)<2,'Four cards share one desktop row');
+    }else assert.equal(await comparison.locator('.portfolio-end-labels').count(),0,'Compact plots leave space for the data');
+    const surface=comparison.locator('svg.recharts-surface');
+    await surface.focus(); await page.keyboard.press('ArrowRight');
+    await comparison.locator('.recharts-tooltip-wrapper').waitFor({state:'visible'});
+    await comparison.locator('.recharts-tooltip-item-name').filter({hasText:'1 · S&P 500'}).waitFor({state:'visible'});
+    const tooltip=await comparison.locator('.recharts-tooltip-wrapper').innerText();
+    for(const label of ['1 · S&P 500','2 · Small positions + S&P 500','3 · Concentrated signals','4 · alerts >80 only'])assert(tooltip.includes(label),'Shared tooltip includes '+label);
+    await comparison.getByRole('button',{name:'Show all lines',exact:true}).focus();
+    await page.mouse.move(0,0);
     await checkPage(page, `${width}-portfolio-2`);
     await page.getByRole('button', { name: '3 · Concentrated signals', exact: true }).click();
     await page.getByRole('button', { name: /Rules.*Assumptions/i }).click();

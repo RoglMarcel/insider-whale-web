@@ -464,14 +464,14 @@ tr {
 
 /* Portfolio workspace: quiet surfaces, consistent series and compact hierarchy. */
 :root {
-  --portfolio-market: #8d8f9a;
+  --portfolio-market: #b5bdcc;
   --portfolio-overlay: #00e676;
-  --portfolio-insider: #7fae9b;
+  --portfolio-insider: #65aeff;
 }
 [data-theme='dark'] {
-  --portfolio-market: #8d8f9a;
+  --portfolio-market: #b5bdcc;
   --portfolio-overlay: #00e676;
-  --portfolio-insider: #7fae9b;
+  --portfolio-insider: #65aeff;
 }
 .portfolio-dashboard {
   --bg-glass: #111115;
