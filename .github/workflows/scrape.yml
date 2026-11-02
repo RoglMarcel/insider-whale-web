@@ -264,6 +264,13 @@ jobs:
           node tmp/publish-shared-history.cjs
           npm run build:web
 
+      # Preserve the real Vite shell before GitHub Pages redirects to Sites.
+      # The managed worker serves this HTML and the latest hashed assets.
+      - name: Publish current terminal shell
+        run: |
+          test -s dist-web/index.html
+          cp dist-web/index.html dist-web/terminal-shell.html
+
       - name: Route visitors to the key-protected terminal
         run: node scripts/prepare-pages-entry.mjs
 
