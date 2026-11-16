@@ -61,23 +61,27 @@ export default function AccessGate({ children }: { children: ReactNode }) {
   if (checking) return <AccessLoading />;
   if (session) return <>{children}<button className="access-lock-button" type="button" onClick={() => void logout()} disabled={busy} title={error || 'Sign out and forget this device'}>Lock terminal <Arrow /></button>{error && <div className="access-session-error" role="alert">{error}</div>}</>;
   return <main className="access-screen">
-    <header className="access-top"><span className="access-private"><span />Private access</span><TerminalLogo /></header>
-    <section className="access-entry" aria-labelledby="access-title">
-      <span className="access-eyebrow">Insider activity. Unusual flow.</span>
-      <h1 id="access-title">Insider &amp; Whale<br /><span>Terminal access</span></h1>
-      <p className="access-description">Follow insider activity and whale signals in one workspace. Enter your access key to continue.</p>
-      <form onSubmit={activate} className="access-key-form">
-        <label className="access-key-label" htmlFor="terminal-key">Access key</label>
-        <div className={`access-input-wrap ${error ? 'has-error' : ''}`}>
-          <input id="terminal-key" name="key" value={key} onChange={event => setKey(event.target.value)} placeholder="Enter your access key" autoComplete="off" autoCapitalize="characters" spellCheck={false} required maxLength={100} aria-describedby={error ? 'access-error' : 'access-help'} aria-invalid={!!error} disabled={busy} />
-          <button type="submit" className="access-submit" aria-label="Enter terminal" disabled={busy || !key.trim()}>{busy ? <span className="access-spinner" /> : <Arrow />}</button>
-        </div>
-        <label className="access-remember"><input type="checkbox" checked={rememberDevice} onChange={event => setRememberDevice(event.target.checked)} disabled={busy} aria-describedby="remember-device-help" />Remember this device</label>
-        <p id="remember-device-help" className="access-help">Sign in automatically for up to one year, or until your key expires. Lock terminal to forget this device.</p>
-        {error ? <p id="access-error" className="access-error" role="alert">{error}</p> : <p id="access-help" className="access-help">{notice || 'Your access period begins when you first use your key. Each key works on a limited number of devices.'}</p>}
+    <header className="access-top gate-top"><TerminalLogo /></header>
+    <div className="gate">
+      <section className="gate-pitch" aria-labelledby="access-title">
+        <h1 id="access-title">Insider trades and unusual options flow, in one terminal.</h1>
+        <p>See what company insiders are buying and selling, next to the options activity on the same stocks.</p>
+      </section>
+      <form onSubmit={activate} className="gate-card" aria-labelledby="gate-form-title">
+        <h2 id="gate-form-title">Enter your access key</h2>
+        <label className="gate-label" htmlFor="terminal-key">Access key</label>
+        <input id="terminal-key" name="key" className={`gate-input gate-input-key ${error ? 'has-error' : ''}`} value={key} onChange={event => setKey(event.target.value)} placeholder="IWT-XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX" autoComplete="off" autoCapitalize="characters" spellCheck={false} required maxLength={100} aria-describedby={error ? 'access-error' : 'access-help'} aria-invalid={!!error} disabled={busy} />
+        {error ? <p id="access-error" className="gate-note gate-error" role="alert">{error}</p> : <p id="access-help" className="gate-note">{notice || 'Your access period starts the first time you use the key. A key works on up to two devices.'}</p>}
+        <label className="gate-remember"><input type="checkbox" checked={rememberDevice} onChange={event => setRememberDevice(event.target.checked)} disabled={busy} />Keep me signed in on this device</label>
+        <button type="submit" className="gate-submit" disabled={busy}>{busy ? <span className="access-spinner" /> : <>Open terminal <Arrow /></>}</button>
       </form>
-      <div className="access-entry-rule" /><div className="access-benefits"><span>Insider activity</span><span>Whale signals</span><span>One terminal</span></div>
-    </section>
-    <footer className="access-footer"><span>Insider &amp; Whale Terminal</span><a href={`${import.meta.env.BASE_URL}#/admin`}>Admin access <span aria-hidden="true">↗</span></a></footer>
+      <dl className="gate-facts">
+        <div><dt>Insider transactions</dt><dd>Buys and sales by company insiders, scored so the strongest signals come first.</dd></div>
+        <div><dt>Unusual options flow</dt><dd>Large and unusual options activity, shown alongside the insider record.</dd></div>
+        <div><dt>Analysis and fair value</dt><dd>A valuation view for each stock, so a signal comes with context.</dd></div>
+        <div><dt>Portfolio and backtest</dt><dd>Model portfolios and backtests built on the same signals.</dd></div>
+      </dl>
+    </div>
+    <footer className="access-footer"><span>Insider &amp; Whale Terminal</span><a href={`${import.meta.env.BASE_URL}#/admin`}>Owner sign-in</a></footer>
   </main>;
 }
