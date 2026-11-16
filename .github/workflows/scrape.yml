@@ -264,7 +264,7 @@ jobs:
           node tmp/publish-shared-history.cjs
           npm run build:web
 
-      # Preserve the real Vite shell before GitHub Pages redirects to Sites.
+      # Preserve the real Vite shell before GitHub Pages redirects to the Worker.
       # The managed worker serves this HTML and the latest hashed assets.
       - name: Publish current terminal shell
         run: |

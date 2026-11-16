@@ -210,7 +210,7 @@ test('opting out uses a session cookie and expires server-side after eight hours
   const {keys} = await generate('lifetime');
   const response = await request('access/activate',{key:keys[0].key,rememberDevice:false});
   assert.equal(response.status,200);
-  assert(!/Max-Age|Expires/i.test(response.headers.get('set-cookie')));
+  assert(!/Max-Age|Expires/i.test(response.headers.getSetCookie().find(c => c.startsWith('iwt_session='))));
   const saved = cookieOf(response);
   now += 8*60*60_000;
   assert.equal((await (await request('access/session',undefined,saved)).json()).session,null);
@@ -222,4 +222,44 @@ test('remember-device accepts only boolean choices and remembered lifetime sessi
   const saved = cookieOf(await request('access/activate',{key:keys[0].key,rememberDevice:true}));
   now += 365*86_400_000;
   assert.equal((await (await request('access/session',undefined,saved)).json()).session,null);
+});
+
+const deviceOf = response => response.headers.getSetCookie().find(c => c.startsWith('iwt_device=')).split(';')[0];
+test('a key binds to its first two devices; a third is rejected while bound devices return',async () => {
+  const {keys} = await generate('lifetime');
+  const first = await request('access/activate',{key:keys[0].key});
+  assert.match(first.headers.getSetCookie().find(c => c.startsWith('iwt_device=')),/HttpOnly; Secure; SameSite=Strict; Max-Age=34560000/);
+  const a = deviceOf(first), b = deviceOf(await request('access/activate',{key:keys[0].key}));
+  const third = await request('access/activate',{key:keys[0].key});
+  assert.equal(third.status,403); assert.equal(third.headers.get('set-cookie'),null);
+  assert.equal((await request('access/activate',{key:keys[0].key},'iwt_device='+'f'.repeat(64))).status,403);
+  for (const device of [a,b]) assert.equal((await request('access/activate',{key:keys[0].key},device)).status,200);
+  assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM access_devices').get().n,2);
+  assert.ok(!JSON.stringify(sql.prepare('SELECT * FROM access_devices').all()).includes(a.split('=')[1]));
+});
+test('one device can hold several keys and concurrent new devices cannot exceed the limit',async () => {
+  const {keys} = await generate('lifetime',2);
+  const device = deviceOf(await request('access/activate',{key:keys[0].key}));
+  assert.equal((await request('access/activate',{key:keys[1].key},device)).status,200);
+  const replies = await Promise.all([1,2,3].map(() => request('access/activate',{key:keys[1].key})));
+  assert.deepEqual(replies.map(r => r.status).sort(),[200,403,403]);
+});
+test('owner can add a paid device or reset devices; reset signs every device out',async () => {
+  const {admin,keys} = await generate('lifetime');
+  const a = await request('access/activate',{key:keys[0].key}); await request('access/activate',{key:keys[0].key});
+  assert.equal((await request('access/activate',{key:keys[0].key})).status,403);
+  let listed = (await (await request('admin/keys',undefined,admin)).json()).keys[0];
+  assert.equal(listed.deviceLimit,2); assert.equal(listed.devices,2);
+  assert.equal((await request(`admin/keys/${keys[0].id}/add-device`,{},admin)).status,200);
+  assert.equal((await request('access/activate',{key:keys[0].key})).status,200);
+  assert.equal((await request('access/activate',{key:keys[0].key})).status,403);
+  assert.equal((await request(`admin/keys/${keys[0].id}/reset-devices`,{},admin)).status,200);
+  assert.equal((await (await request('access/session',undefined,cookieOf(a))).json()).session,null);
+  listed = (await (await request('admin/keys',undefined,admin)).json()).keys[0];
+  assert.equal(listed.deviceLimit,3); assert.equal(listed.devices,0);
+  assert.equal((await request('access/activate',{key:keys[0].key})).status,200);
+  for (const action of ['add-device','reset-devices']) {
+    assert.equal((await request(`admin/keys/${keys[0].id}/${action}`,{})).status,401);
+    assert.notEqual((await request(`admin/keys/12345678-1234-1234-1234-123456789abc/${action}`,{},admin)).status,200);
+  }
 });

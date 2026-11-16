@@ -1,0 +1,15 @@
+# Key-protected terminal: https://terminal.insiderwhale.workers.dev
+# ADMIN_PASSWORD_HASH is a secret set on the Worker, never in this file.
+name = "terminal"
+account_id = "5e49de29df6521aac5fcdd869a0d670f"
+main = "dist/server/index.js"
+no_bundle = true
+compatibility_date = "2026-11-01"
+workers_dev = true
+preview_urls = false
+
+[[d1_databases]]
+binding = "DB"
+database_name = "insider-whale-access"
+database_id = "d229cf94-8fc3-460b-b906-f5da3c66cb57"
+migrations_dir = "drizzle"

@@ -16,7 +16,6 @@ walk('dist-web');
 mkdirSync('tmp/access',{recursive:true});
 writeFileSync('tmp/access/assets.mjs','export default '+JSON.stringify(assets)+';\n');
 rmSync('dist',{recursive:true,force:true});
-mkdirSync('dist/server',{recursive:true});mkdirSync('dist/.openai',{recursive:true});
+mkdirSync('dist/server',{recursive:true});
 await build({entryPoints:['access/worker.mjs'],outfile:'dist/server/index.js',bundle:true,format:'esm',platform:'browser',target:'es2022',alias:{'@iwt-assets':join(process.cwd(),'tmp/access/assets.mjs')}});
-writeFileSync('dist/.openai/hosting.json',readFileSync('.openai/hosting.json'));
 console.log(`Access Worker built with ${Object.keys(assets).length} shell assets; data served only after authorization.`);
