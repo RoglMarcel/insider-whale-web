@@ -22,9 +22,11 @@ exports.mockAccessWorkflow = async page => {
     if(path==='/api/admin/logout'){admin=null;return fulfill(route,{ok:true});}
     if(!admin)return fulfill(route,{error:'Sign in to manage access keys.'},401);
     if(path==='/api/admin/keys' && post) {
-      const key={id:'12345678-1234-1234-1234-123456789abc',key:'IWT-BROWSER-FIXTURE-KEY',hint:'IWT-••••-FIXKEY',duration:data.duration,label:data.label,status:'unused',createdAt:Date.now(),activatedAt:null,expiresAt:null,revokedAt:null};
+      const key={id:'12345678-1234-1234-1234-123456789abc',key:'IWT-BROWSER-FIXTURE-KEY',hint:'IWT-••••-FIXKEY',duration:data.duration,label:data.label,status:'unused',createdAt:Date.now(),activatedAt:null,expiresAt:null,revokedAt:null,deviceLimit:2,devices:0};
       keys.push(key);return fulfill(route,{keys:[key]},201);
     }
+    if(path.endsWith('/add-device')){keys[0].deviceLimit++;return fulfill(route,{ok:true});}
+    if(path.endsWith('/reset-devices')){keys[0].devices=0;return fulfill(route,{ok:true});}
     if(path.endsWith('/revoke')){keys[0].status='revoked';keys[0].revokedAt=Date.now();return fulfill(route,{ok:true});}
     if(path==='/api/admin/keys')return fulfill(route,{keys:keys.map(({key,...visible})=>visible),total:keys.length,page:1,pageSize:50,stats:['4weeks','6months','1year','lifetime','3days'].map(duration=>({duration,generated:keys.filter(k=>k.duration===duration).length,used:0,active:0,unused:keys.filter(k=>k.duration===duration&&k.status==='unused').length,expired:0,revoked:keys.filter(k=>k.duration===duration&&k.status==='revoked').length}))});
     return fulfill(route,{error:'Not found'},404);

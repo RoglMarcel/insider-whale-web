@@ -1,7 +1,7 @@
 import { createAccessService } from './service.mjs';
 import assets from '@iwt-assets';
 
-// One managed Sites deployment of this Worker enables automatic UI updates.
+// One Cloudflare deployment of this Worker enables automatic UI updates.
 // The fixed Pages origin supplies code only; D1 sessions and keys stay here.
 const UI_ORIGIN = new URL('https://roglmarcel.github.io/insider-whale-web/');
 const DATA_FILES = /^(?:meta|signals|portfolio|backtest|history|update-health|valuations|analysis-summary|analysis-index)\.json$|^analysis\/[A-Z0-9.^_-]{1,32}\.json$/;

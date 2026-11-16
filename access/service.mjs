@@ -30,7 +30,7 @@ const effectiveDuration = key => key.trial_days === 3 ? '3days' : key.duration;
 function publicKey(key, now) {
   return { id: key.id, hint: key.hint, duration: effectiveDuration(key), label: key.label,
     createdAt: key.created_at, activatedAt: key.activated_at, expiresAt: key.expires_at,
-    revokedAt: key.revoked_at, status: keyStatus(key, now) };
+    revokedAt: key.revoked_at, status: keyStatus(key, now), deviceLimit: key.device_limit, devices: key.devices };
 }
 async function passwordMatches(password, verifier) {
   const [scheme, count, salt, hash] = (verifier || '').split('$');
@@ -50,7 +50,9 @@ function cookie(name, token, maxAge, persistent = true) {
   return `${name}=${token}; Path=/; HttpOnly; Secure; SameSite=Strict${persistent ? `; Max-Age=${Math.max(0, Math.floor(maxAge / 1000))}` : ''}`;
 }
 function json(value, status = 200, headers = {}) {
-  return Response.json(value, { status, headers: { 'Cache-Control': 'no-store, private', 'X-Content-Type-Options': 'nosniff', ...headers } });
+  const all = new Headers({ 'Cache-Control': 'no-store, private', 'X-Content-Type-Options': 'nosniff' });
+  for (const [name, text] of Array.isArray(headers) ? headers : Object.entries(headers)) all.append(name, text);
+  return Response.json(value, { status, headers: all });
 }
 async function body(request) {
   if (!(request.headers.get('Content-Type') || '').startsWith('application/json')) throw new AccessError(415, 'Send JSON.');
@@ -129,6 +131,12 @@ export function createAccessService(env, clock = Date.now) {
           WHERE key_hash=? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>?) RETURNING *`)
           .bind(now, expiration(effectiveDuration(existing), now), hash, now).first();
         if (!key) throw new AccessError(401, 'This key is invalid, expired or revoked.');
+        // A key works only on the first device_limit browsers that redeem it. The
+        // conditional insert is one statement, so concurrent devices cannot exceed the limit.
+        const known = cookies(request).iwt_device, device = /^[a-f0-9]{64}$/.test(known || '') ? known : randomToken(), deviceHash = await digest(device);
+        await db.prepare(`INSERT OR IGNORE INTO access_devices(key_id,device_hash,created_at) SELECT ?1,?2,?3
+          WHERE (SELECT COUNT(*) FROM access_devices WHERE key_id=?1)<?4`).bind(key.id, deviceHash, now, key.device_limit).run();
+        if (!await db.prepare('SELECT 1 AS ok FROM access_devices WHERE key_id=? AND device_hash=?').bind(key.id, deviceHash).first()) throw new AccessError(403, 'This key is already in use on its maximum number of devices. Contact the owner to add a device.');
         // Preserve the legacy 30-day session for older clients. Explicit opt-out
         // uses a browser-session cookie and an eight-hour server-side limit.
         const lifetime = data.rememberDevice === true ? 365 * DAY : data.rememberDevice === false ? 8 * 60 * 60_000 : 30 * DAY;
@@ -137,7 +145,7 @@ export function createAccessService(env, clock = Date.now) {
         // Replace this browser's old session rather than accumulating it on every login.
         const old = cookies(request).iwt_session;
         if (old) await db.prepare('DELETE FROM access_sessions WHERE token_hash=?').bind(await digest(old)).run();
-        return json({ session: { role: 'member', duration: effectiveDuration(key), expiresAt: key.expires_at, sessionExpiresAt: ends } }, 200, { 'Set-Cookie': cookie('iwt_session', token, ends - now, data.rememberDevice !== false) });
+        return json({ session: { role: 'member', duration: effectiveDuration(key), expiresAt: key.expires_at, sessionExpiresAt: ends } }, 200, [['Set-Cookie', cookie('iwt_session', token, ends - now, data.rememberDevice !== false)], ['Set-Cookie', cookie('iwt_device', device, 400 * DAY)]]);
       }
       if (path === '/api/admin/login' && request.method === 'POST') {
         await throttle(request, 'admin-login', 10);
@@ -185,7 +193,7 @@ export function createAccessService(env, clock = Date.now) {
           if (search) { predicates.push('(instr(lower(label),lower(?))>0 OR instr(lower(hint),lower(?))>0)'); bindings.push(search, search); }
           const where = predicates.join(' AND ');
           const [list, count, totals] = await db.batch([
-            db.prepare(`SELECT * FROM access_keys WHERE ${where} ORDER BY created_at DESC,id DESC LIMIT 50 OFFSET ?`).bind(...bindings, (page - 1) * 50),
+            db.prepare(`SELECT *,(SELECT COUNT(*) FROM access_devices d WHERE d.key_id=access_keys.id) AS devices FROM access_keys WHERE ${where} ORDER BY created_at DESC,id DESC LIMIT 50 OFFSET ?`).bind(...bindings, (page - 1) * 50),
             db.prepare(`SELECT COUNT(*) AS count FROM access_keys WHERE ${where}`).bind(...bindings),
             db.prepare(`SELECT CASE WHEN trial_days=3 THEN '3days' ELSE duration END AS duration,COUNT(*) AS generated,SUM(activated_at IS NOT NULL) AS used,
               SUM(revoked_at IS NULL AND activated_at IS NULL) AS unused,
@@ -201,6 +209,18 @@ export function createAccessService(env, clock = Date.now) {
           const key = await db.prepare('UPDATE access_keys SET revoked_at=COALESCE(revoked_at,?) WHERE id=? RETURNING id').bind(now, revoke[1]).first();
           if (!key) throw new AccessError(404, 'Key not found.');
           await db.prepare('DELETE FROM access_sessions WHERE key_id=?').bind(revoke[1]).run();
+          return json({ ok: true });
+        }
+        const devices = path.match(/^\/api\/admin\/keys\/([a-f0-9-]{36})\/(add-device|reset-devices)$/);
+        if (devices && request.method === 'POST') {
+          if (devices[2] === 'add-device') {
+            const key = await db.prepare('UPDATE access_keys SET device_limit=device_limit+1 WHERE id=? AND device_limit<100 RETURNING id').bind(devices[1]).first();
+            if (!key) throw new AccessError(400, 'Key not found or already at 100 devices.');
+          } else {
+            if (!await db.prepare('SELECT id FROM access_keys WHERE id=?').bind(devices[1]).first()) throw new AccessError(404, 'Key not found.');
+            // Forget every bound device and sign them out; the key and its term are unchanged.
+            await db.batch([db.prepare('DELETE FROM access_devices WHERE key_id=?').bind(devices[1]), db.prepare('DELETE FROM access_sessions WHERE key_id=?').bind(devices[1])]);
+          }
           return json({ ok: true });
         }
       }

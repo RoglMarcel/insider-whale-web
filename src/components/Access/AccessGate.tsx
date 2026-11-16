@@ -74,7 +74,7 @@ export default function AccessGate({ children }: { children: ReactNode }) {
         </div>
         <label className="access-remember"><input type="checkbox" checked={rememberDevice} onChange={event => setRememberDevice(event.target.checked)} disabled={busy} aria-describedby="remember-device-help" />Remember this device</label>
         <p id="remember-device-help" className="access-help">Sign in automatically for up to one year, or until your key expires. Lock terminal to forget this device.</p>
-        {error ? <p id="access-error" className="access-error" role="alert">{error}</p> : <p id="access-help" className="access-help">{notice || 'Your access period begins when you first use your key.'}</p>}
+        {error ? <p id="access-error" className="access-error" role="alert">{error}</p> : <p id="access-help" className="access-help">{notice || 'Your access period begins when you first use your key. Each key works on a limited number of devices.'}</p>}
       </form>
       <div className="access-entry-rule" /><div className="access-benefits"><span>Insider activity</span><span>Whale signals</span><span>One terminal</span></div>
     </section>

@@ -43,6 +43,7 @@
     "verify:backtest": "esbuild scripts/verify-backtest.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --outfile=tmp/verify-backtest.cjs && node scripts/run-node-or-electron.cjs tmp/verify-backtest.cjs && esbuild scripts/verify-backtest-sync.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --outfile=tmp/verify-backtest-sync.cjs && node scripts/run-node-or-electron.cjs tmp/verify-backtest-sync.cjs",
     "build:access": "npm run build:web && node scripts/build-access.mjs",
     "test:access": "node --test tests/access/*.test.mjs",
+    "deploy:access": "npm run build:access && wrangler d1 migrations apply insider-whale-access --remote && wrangler deploy",
     "verify:simulation": "esbuild scripts/verify-simulation-repair.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --alias:electron=./scripts/electron-stub.ts --outfile=tmp/verify-simulation-repair.cjs && node tmp/verify-simulation-repair.cjs",
     "verify:comparisons": "esbuild scripts/verify-four-portfolios.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --alias:electron=./scripts/electron-stub.ts --outfile=tmp/verify-four-portfolios.cjs && node tmp/verify-four-portfolios.cjs"
   },
@@ -74,6 +75,7 @@
     "vite-plugin-electron": "^0.28.8",
     "vite-plugin-electron-renderer": "^0.14.6",
     "vitest": "^2.1.9",
+    "wrangler": "^4.163.0",
     "zustand": "^4.5.4"
   }
 }
