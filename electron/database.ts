@@ -11,6 +11,7 @@ import { tradeFingerprint, selectTradeRevisions } from './tradeRevisions';
 import { dedupTrades } from './tradeDedup';
 import { admissibleTrade } from '../src/lib/tradeEligibility';
 import { eventDate } from '../src/lib/utcDate';
+import { signalEntryDate } from '../src/lib/portfolio-rules';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
@@ -375,7 +376,7 @@ CREATE TABLE IF NOT EXISTS ticker_meta (
 -- grows on its own with every scheduled scrape.
 CREATE TABLE IF NOT EXISTS signal_outcomes (
   ticker TEXT NOT NULL,
-  entry_date TEXT NOT NULL,      -- YYYY-MM-DD, max(trade, filing, first-seen)
+  entry_date TEXT NOT NULL,      -- YYYY-MM-DD, signalEntryDate(): first close the sighting could trade
   horizon INTEGER NOT NULL,      -- calendar days forward (5 … 180; see label-outcomes.ts)
   entry_price REAL,
   exit_price REAL,
@@ -1399,7 +1400,7 @@ export interface OutcomeCandidate {
  * One candidate per ticker per entry date, taken from the FIRST time we saw that
  * signal (MIN(id)) so the score is the one that was actionable then — scoring a
  * signal by a later, already-decayed row would leak hindsight into the label.
- * Entry date follows the backtest convention: max(trade, filing, first-seen).
+ * Entry date is `signalEntryDate`: the first close the sighting could trade.
  */
 export function getOutcomeCandidates(): OutcomeCandidate[] {
   // Entry date is resolved in JS: SQLite's scalar MAX(a,b,c) cannot be mixed with
@@ -1407,7 +1408,7 @@ export function getOutcomeCandidates(): OutcomeCandidate[] {
   const rows = getDb()
     .prepare(
       `
-      SELECT ticker, trade_date, filing_date, substr(scraped_at, 1, 10) AS seen_date,
+      SELECT ticker, trade_date, filing_date, scraped_at, substr(scraped_at, 1, 10) AS seen_date,
              score, conviction_level AS conviction, score_breakdown AS breakdown, company_name, source_urls, politician_trades
       FROM signals
       WHERE id IN (
@@ -1424,6 +1425,7 @@ export function getOutcomeCandidates(): OutcomeCandidate[] {
     ticker: string;
     trade_date: string | null;
     filing_date: string | null;
+    scraped_at: string;
     seen_date: string;
     score: number;
     conviction: string | null;
@@ -1433,12 +1435,9 @@ export function getOutcomeCandidates(): OutcomeCandidate[] {
     politician_trades: string | null;
   }[];
 
-  const ymd = (v: string | null | undefined) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '');
   const out = new Map<string, OutcomeCandidate>();
   for (const r of rows) {
-    // max(trade, filing, first-seen) — the date the signal was actionable.
-    const entryDate = [ymd(r.trade_date), ymd(r.filing_date), ymd(r.seen_date)].sort().pop() || '';
-    if (!entryDate) continue;
+    const entryDate = signalEntryDate(r.trade_date, r.filing_date, r.scraped_at);
     const key = `${r.ticker}|${entryDate}`;
     if (!out.has(key)) {
       out.set(key, {

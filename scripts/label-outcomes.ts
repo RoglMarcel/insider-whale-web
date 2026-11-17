@@ -83,7 +83,14 @@ async function main(): Promise<void> {
   // of everything ever labeled is `signal_outcomes`; unioning it in is what makes
   // the 40/60/90/120/180-day horizons reachable at all. Live rows win on a
   // duplicate key, because they carry the freshest breakdown snapshot.
-  const bySignal = getOutcomeCandidates().filter((c) => /^\d{4}-\d{2}-\d{2}$/.test(c.entryDate));
+  const labeled = getLabeledKeys();
+  // A sighting after the close used to be keyed to its own calendar date; it is
+  // now keyed to the next session (`signalEntryDate`). One already labeled under
+  // the old key keeps that single series — a second key would count the same
+  // observation twice. Only sightings labeled before the change are affected.
+  const labeledUnderSightingDate = (c: { ticker: string; entryDate: string; observedDate?: string }) =>
+    !!c.observedDate && c.entryDate > c.observedDate && HORIZONS.some((h) => labeled.has(`${c.ticker}|${c.observedDate}|${h}`));
+  const bySignal = getOutcomeCandidates().filter((c) => /^\d{4}-\d{2}-\d{2}$/.test(c.entryDate) && !labeledUnderSightingDate(c));
   const seenKeys = new Set(bySignal.map((c) => `${c.ticker}|${c.entryDate}`));
   const rawCandidates = [
     ...bySignal,
@@ -94,7 +101,6 @@ async function main(): Promise<void> {
   const quarantined = [...new Set(rawCandidates.filter((c) => tickerIssue(c.ticker)).map((c) => c.ticker))].sort();
   const candidates = rawCandidates.filter((c) => !tickerIssue(c.ticker));
   if (quarantined.length) console.log(`[label] quarantined malformed symbols (history retained): ${quarantined.join(', ')}`);
-  const labeled = getLabeledKeys();
   const fromYmd = candidates.map(c => c.entryDate).sort()[0] ?? new Date().toISOString().slice(0, 10);
   const spy = await fetchSeries('SPY', fromYmd);
   const cutoff = spy && outcomeCutoff(spy, new Date().toISOString().slice(0, 10));

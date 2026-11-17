@@ -1,6 +1,7 @@
 import type { PerformanceReport, PerformanceTierStats, PerformanceBucketStats } from '../src/types';
 import { getSignalRowsForBacktest } from './database';
 import { fetchAdjCloseSeries } from './prices';
+import { signalEntryDate } from '../src/lib/portfolio-rules';
 
 /**
  * In-app calibration report — replays stored signals against realized forward
@@ -125,21 +126,13 @@ async function computeInner(): Promise<PerformanceReport> {
   const nowYmd = new Date().toISOString().slice(0, 10);
   const ripeEnd = addDaysYmd(nowYmd, -RIPENESS_DAYS);
 
-  // F31 protocol: one observation per ticker-day (highest score wins)…
-  // Entry = max(trade, filing, first-seen) — never pure trade date (info may
-  // not have been public yet).
-  const entryYmd = (r: { trade_date: string | null; filing_date?: string | null; scraped_at: string }) => {
-    const cands: string[] = [];
-    if (r.trade_date && /^\d{4}-\d{2}-\d{2}$/.test(r.trade_date)) cands.push(r.trade_date);
-    if (r.filing_date && /^\d{4}-\d{2}-\d{2}$/.test(r.filing_date)) cands.push(r.filing_date);
-    const scraped = r.scraped_at.slice(0, 10);
-    if (/^\d{4}-\d{2}-\d{2}$/.test(scraped)) cands.push(scraped);
-    return cands.length ? cands.sort().slice(-1)[0] : scraped;
-  };
+  // F31 protocol: one observation per ticker-day…
+  // Entry = the first close the sighting could trade (`signalEntryDate`) —
+  // never the trade date, and never a close that had passed before the sighting.
   const rows = getSignalRowsForBacktest();
   const byTickerDay = new Map<string, Observation>();
   for (const r of rows) {
-    const date = entryYmd(r);
+    const date = signalEntryDate(r.trade_date, r.filing_date, r.scraped_at);
     if (date > ripeEnd) continue;
     const key = `${r.ticker}|${date}`;
     // FIRST sighting wins, not the highest score. Rows arrive ordered by

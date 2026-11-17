@@ -68,6 +68,22 @@ export function earliestEntryDate(seenAt:string,closeUtcHour?:number):string {
   return timestamp>=close?addDaysYmd(utcDate,1):utcDate;
 }
 
+/**
+ * The day an observed signal is measured from: the first close the sighting
+ * could still trade, and never earlier than the trade or filing it reports.
+ *
+ * The portfolio, the outcome labels and the in-app performance report all
+ * measure from this one date. The labels and the report used to take the
+ * sighting's calendar date instead, so a signal first seen after the close was
+ * priced at that day's close, which had already happened: 172 of 8,133 stored
+ * label candidates, e.g. ACCS seen 2026-08-18T20:56Z (16:56 New York time)
+ * and labeled from the 16:00 close.
+ */
+export function signalEntryDate(tradeDate: string | null | undefined, filingDate: string | null | undefined, sightedAt: string): string {
+  const day = (v: string | null | undefined): string => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '');
+  return [day(tradeDate), day(filingDate), earliestEntryDate(sightedAt)].sort().at(-1)!;
+}
+
 // ── Trading mechanics ──
 
 /** Fills are worse than the close on BOTH sides — never in the book's favour. */

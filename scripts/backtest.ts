@@ -13,6 +13,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { app } from 'electron';
 import Database from 'better-sqlite3';
+import { signalEntryDate } from '../src/lib/portfolio-rules';
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 const HORIZONS = [30, 90]; // calendar days forward
@@ -133,15 +134,8 @@ function row(label: string, r: ReturnType<typeof stats>, a: ReturnType<typeof st
   // samples — they inflate n and wash out the score↔alpha correlation. Keep the
   // FIRST session's score (the earliest actionable decision point; `ripe` is
   // already ordered scraped_at ASC).
-  // Entry = max(trade, filing, first-seen) — never pure trade date alone.
-  const entryDateOf = (r: Row & { filing_date?: string | null }) => {
-    const cands: string[] = [];
-    if (r.trade_date && /^\d{4}-\d{2}-\d{2}$/.test(r.trade_date)) cands.push(r.trade_date);
-    if (r.filing_date && /^\d{4}-\d{2}-\d{2}$/.test(r.filing_date)) cands.push(r.filing_date);
-    const scraped = r.scraped_at.slice(0, 10);
-    if (/^\d{4}-\d{2}-\d{2}$/.test(scraped)) cands.push(scraped);
-    return cands.length ? cands.sort().slice(-1)[0] : scraped;
-  };
+  // Entry = the first close the sighting could trade (`signalEntryDate`).
+  const entryDateOf = (r: Row & { filing_date?: string | null }) => signalEntryDate(r.trade_date, r.filing_date, r.scraped_at);
   const seenEntries = new Set<string>();
   const deduped = ripe.filter((r) => {
     const key = `${r.ticker}|${entryDateOf(r)}`;

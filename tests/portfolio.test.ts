@@ -5,6 +5,7 @@ import {
   computeStats,
   diffDaysYmd,
   earliestEntryDate,
+  signalEntryDate,
   evaluateExit,
   firstTradableDay,
   nearestBarrier,
@@ -402,6 +403,21 @@ describe('no look-ahead', () => {
     expect(earliestEntryDate('2026-01-05T19:59:59.000Z')).toBe('2026-01-05');
     expect(earliestEntryDate('2026-01-05T20:00:00.000Z')).toBe('2026-01-05');
     expect(earliestEntryDate('2026-01-05T23:07:59.662Z')).toBe('2026-01-06');
+  });
+
+  it('measures an observed signal from the first close it could trade (labels, report and book alike)', () => {
+    // Seen before the 16:00 New York close → that close. EDT: the close is 20:00Z.
+    expect(signalEntryDate('2026-08-17', '2026-08-18', '2026-08-18T14:46:00.000Z')).toBe('2026-08-18');
+    // Seen at 16:56 New York time → the next session (regression: labeled from 08-18's close).
+    expect(signalEntryDate('2026-08-17', '2026-08-18', '2026-08-18T20:56:43.380Z')).toBe('2026-08-19');
+    // EST: the close is 21:00Z, so 20:30Z is still before it.
+    expect(signalEntryDate(null, null, '2026-12-01T20:30:00.000Z')).toBe('2026-12-01');
+    // Early close (day after Thanksgiving, 13:00 New York = 18:00Z).
+    expect(signalEntryDate(null, null, '2026-11-27T18:30:00.000Z')).toBe('2026-11-28');
+    // Never before the trade or filing it reports, even on inconsistent rows.
+    expect(signalEntryDate('2026-08-20', '2026-08-21', '2026-08-18T14:00:00.000Z')).toBe('2026-08-21');
+    // An unreadable sighting time cannot establish availability at all.
+    expect(signalEntryDate('2026-08-17', '2026-08-18', 'not a time')).toBe('9999-12-31');
   });
 
   it('reads the hour as UTC even without a zone marker (SQLite CURRENT_TIMESTAMP)', () => {
