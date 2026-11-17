@@ -206,9 +206,9 @@ finalScore = clamp(corroboration applies ? normalized × softMult : normalized, 
 | Faktor | Implementierte Bedeutung |
 |---|---|
 | Rolle | Höherer Rang für relevante Unternehmensverantwortliche; unbekannte Rolle wird ausdrücklich behandelt |
-| Kaufgröße | Durchschnittlicher qualifizierter Kaufwert pro Insider im relevanten Fenster; marktwertrelativ, wenn Marktkapitalisierung vorliegt, ansonsten absolute Klassen |
+| Kaufgröße | Durchschnittlicher qualifizierter Kaufwert pro Insider im relevanten Fenster; marktwertrelativ, wenn Marktkapitalisierung vorliegt, ansonsten absolute Klassen. Gelesen zusammen mit dem Cluster aus dem stärksten Teil-Cluster (`clusterSizeReading`) |
 | Transaktionstyp | Wertgewichtete Qualität der berücksichtigten Kaufarten |
-| Cluster | Verstärkung durch mehrere unterschiedliche kaufende Insider |
+| Cluster | Verstärkung durch mehrere unterschiedliche kaufende Insider. Für jedes k werden die k größten Käufer als Cluster der Größe k auf ihrem eigenen Durchschnitt bewertet; das beste Produkt aus Größenpunkten und Cluster-Multiplikator gilt. Ein zusätzlicher Käufer oder ein größerer Kauf kann den Wert dadurch nie senken; gleich große Käufe ergeben dasselbe wie der einfache Durchschnitt |
 | Earnings | Zeitabhängiger Kontext für Insider beziehungsweise Optionen; nicht jeder Insider erhält denselben Timing-Bonus |
 | VIX | Begrenzte graduelle Kontextverstärkung; fehlender VIX bleibt neutral |
 | Aktualität | Getrennte Alterung von Insider- und Optionsbelegen; zukünftige/fehlende Daten nicht als frische Beobachtung behandeln |
@@ -217,7 +217,7 @@ finalScore = clamp(corroboration applies ? normalized × softMult : normalized, 
 | Bewertung | Aktueller `fairValue.multiplier`; alter `upsidePct`-Pfad ist eine Kompatibilitätsnaht |
 | Politik und Bestätigung | Eigener politischer Beitrag; Combo-Stufen verwenden das Maximum der passenden Soft-Multiplikatoren, nicht deren Produkt |
 
-Standardwerte: Halbsättigung 105; Bestätigungsbonus erst ab normalisiertem Score 50. `HIGH` beginnt bei 80, `WATCH` bei 50, darunter `LOW`. Eine Classic-Combo kann ×1,20 beitragen; politische Combo-Stufen sind begrenzt und separat definiert. Shadow-Konfigurationen dienen zum Vergleich mit älteren/alternativen Regeln und ersetzen nicht unbemerkt den Live-Score.
+Standardwerte: Halbsättigung 105; Bestätigungsbonus erst ab normalisiertem Score 50. `HIGH` beginnt bei 80, `WATCH` bei 50, darunter `LOW`; maßgeblich ist der veröffentlichte, auf eine Nachkommastelle gerundete Score, derselbe Wert, den Anzeige, Alert-Regeln und Depot-Einstieg verwenden. Eine Classic-Combo kann ×1,20 beitragen; politische Combo-Stufen sind begrenzt und separat definiert. Shadow-Konfigurationen dienen zum Vergleich mit älteren/alternativen Regeln und ersetzen nicht unbemerkt den Live-Score.
 
 Ein negativer `legSum` wird nicht durch Kontext-Multiplikatoren verstärkt. Ausgabewerte müssen endlich bleiben; Scoring darf Eingabeaggregate nicht mutieren. `tests/invariants.test.ts`, Golden-Dateien und `verify:scoring` prüfen diese Verträge. Historische IC-/Backtest-Ergebnisse sind Stichprobenbefunde und kein Nachweis zukünftiger Überrendite.
 
@@ -781,56 +781,58 @@ Das folgende Verzeichnis ist aus dem geprüften Quellstand abgeleitet. Es nennt 
 
 #### [electron/scoring.ts](electron/scoring.ts)
 
-- [L38](electron/scoring.ts#L38) · intern · `MAX_RANK_WEIGHT`
-- [L39](electron/scoring.ts#L39) · intern · `MAX_DOLLAR_VOLUME_POINTS`
-- [L40](electron/scoring.ts#L40) · intern · `MAX_TYPE_MODIFIER`
-- [L41](electron/scoring.ts#L41) · intern · `MAX_CLUSTER_MULTIPLIER`
-- [L42](electron/scoring.ts#L42) · intern · `MAX_INSIDER_TIMING`
-- [L43](electron/scoring.ts#L43) · intern · `MAX_OPTIONS_TIMING`
-- [L47](electron/scoring.ts#L47) · intern · `MAX_VIX_MULTIPLIER`
-- [L48](electron/scoring.ts#L48) · intern · `MAX_TRACK_RECORD`
-- [L49](electron/scoring.ts#L49) · intern · `MAX_VALUATION`
-- [L50](electron/scoring.ts#L50) · intern · `MAX_OPTIONS_SCORE`
-- [L52](electron/scoring.ts#L52) · intern · `MAX_INSIDER_RAW`
-- [L60](electron/scoring.ts#L60) · intern · `MAX_OPTIONS_RAW`
-- [L74](electron/scoring.ts#L74) · export · `MAX_POSSIBLE_RAW`
-- [L91](electron/scoring.ts#L91) · intern · `STRONG_SIGNAL_RAW`
-- [L92](electron/scoring.ts#L92) · export · `SCORE_HALF_SATURATION`
-- [L95](electron/scoring.ts#L95) · export · `COMBO_BONUS`
-- [L118](electron/scoring.ts#L118) · intern · `clamp(v: number, min: number, max: number): number`
-- [L130](electron/scoring.ts#L130) · intern · `finiteOr(v: number, fallback: number): number`
-- [L139](electron/scoring.ts#L139) · export · `isBuyTrade(t: RawInsiderTrade): boolean`
-- [L146](electron/scoring.ts#L146) · export · `isScoringEligible(t: RawInsiderTrade, asOf = Date.now()): boolean`
-- [L160](electron/scoring.ts#L160) · export · `getRankWeight(roleRaw: string): { weight: number; category: string }`
-- [L215](electron/scoring.ts#L215) · export · `UNKNOWN_ROLE_WEIGHT`
-- [L228](electron/scoring.ts#L228) · export · `earnsFinanceTimingBonus(role: string): boolean`
-- [L232](electron/scoring.ts#L232) · export · `isFinanceInsider(role: string): boolean`
-- [L263](electron/scoring.ts#L263) · export · `getDollarVolumePoints(buyValue: number, marketCap?: number): number`
-- [L289](electron/scoring.ts#L289) · export · `getClusterMultiplier(distinctInsiders: number): number`
-- [L301](electron/scoring.ts#L301) · export · `getInsiderTimingMultiplier(daysToEarnings: number | undefined, hasFinanceInsiderBuying: boolean): { multiplier: number; notes: string[] }`
-- [L326](electron/scoring.ts#L326) · export · `getOptionsTimingMultiplier(daysToEarnings: number | undefined): number`
-- [L338](electron/scoring.ts#L338) · intern · `optionPremium(o: OptionsActivity): number`
-- [L351](electron/scoring.ts#L351) · intern · `baseOptionPoints(premium: number): number`
-- [L366](electron/scoring.ts#L366) · export · `optionTiming(o: OptionsActivity, asOf = Date.now()): { eligible: boolean; dte?: number; age: number | null }`
-- [L383](electron/scoring.ts#L383) · export · `scoreOneOption(o: OptionsActivity, asOf = Date.now()): number`
-- [L415](electron/scoring.ts#L415) · export · `scoreOptionsDetailed(options: readonly OptionsActivity[], asOf = Date.now()): { score: number; notes: string[] }`
-- [L439](electron/scoring.ts#L439) · export · `getVixMultiplier(vix: number | undefined, cap = DEFAULT_SCORING_CONFIG.vixCap): number`
-- [L450](electron/scoring.ts#L450) · export · `getTrackRecordMultiplier(bestAccuracy3m: number | undefined, slope = DEFAULT_SCORING_CONFIG.trackRecordSlope): number`
-- [L472](electron/scoring.ts#L472) · export · `getValuationMultiplier(upsidePct: number | undefined): number`
-- [L484](electron/scoring.ts#L484) · export · `getConvictionLevel(score: number): ConvictionLevel`
-- [L490](electron/scoring.ts#L490) · export · `ScoredTicker`
-- [L515](electron/scoring.ts#L515) · export · `detectCombo(trades: RawInsiderTrade[], options: OptionsActivity[], asOf = Date.now()): boolean`
-- [L535](electron/scoring.ts#L535) · export · `POLITICIAN_COMBO_BONUS`
-- [L538](electron/scoring.ts#L538) · intern · `politicianAmountPoints(midpoint: number): number`
-- [L548](electron/scoring.ts#L548) · intern · `committeeMultiplier(committee: string | undefined): number`
-- [L558](electron/scoring.ts#L558) · intern · `fmtUSDShort(v: number): string`
-- [L562](electron/scoring.ts#L562) · export · `PoliticianScoreMode`
-- [L572](electron/scoring.ts#L572) · export · `getPoliticianScore(trades: PoliticianTrade[], opts?: { mode?: PoliticianScoreMode; insiderTrades?: RawInsiderTrade[]; asOf?: number }): { score: number; notes: string[] }`
-- [L641](electron/scoring.ts#L641) · export · `corroborationSoftMult(classicCombo: boolean, politicianComboTier: PoliticianComboTier | null): number`
-- [L661](electron/scoring.ts#L661) · export · `detectPoliticianCombo(politicianTrades: PoliticianTrade[], insiderTrades: RawInsiderTrade[], options: OptionsActivity[], asOf = Date.now()): PoliticianComboTier | null`
-- [L697](electron/scoring.ts#L697) · export · `computeConfidence(agg: TickerAggregate, eligible: RawInsiderTrade[]): number`
-- [L718](electron/scoring.ts#L718) · export · `normalizeAggregateTrades(agg: TickerAggregate): void`
-- [L745](electron/scoring.ts#L745) · export · `scoreTicker(agg: TickerAggregate, config: ScoringConfig = DEFAULT_SCORING_CONFIG, asOf = Date.now()): ScoredTicker`
+- [L39](electron/scoring.ts#L39) · intern · `MAX_RANK_WEIGHT`
+- [L40](electron/scoring.ts#L40) · intern · `MAX_DOLLAR_VOLUME_POINTS`
+- [L41](electron/scoring.ts#L41) · intern · `MAX_TYPE_MODIFIER`
+- [L42](electron/scoring.ts#L42) · intern · `MAX_CLUSTER_MULTIPLIER`
+- [L43](electron/scoring.ts#L43) · intern · `MAX_INSIDER_TIMING`
+- [L44](electron/scoring.ts#L44) · intern · `MAX_OPTIONS_TIMING`
+- [L48](electron/scoring.ts#L48) · intern · `MAX_VIX_MULTIPLIER`
+- [L49](electron/scoring.ts#L49) · intern · `MAX_TRACK_RECORD`
+- [L50](electron/scoring.ts#L50) · intern · `MAX_VALUATION`
+- [L51](electron/scoring.ts#L51) · intern · `MAX_OPTIONS_SCORE`
+- [L53](electron/scoring.ts#L53) · intern · `MAX_INSIDER_RAW`
+- [L61](electron/scoring.ts#L61) · intern · `MAX_OPTIONS_RAW`
+- [L75](electron/scoring.ts#L75) · export · `MAX_POSSIBLE_RAW`
+- [L92](electron/scoring.ts#L92) · intern · `STRONG_SIGNAL_RAW`
+- [L93](electron/scoring.ts#L93) · export · `SCORE_HALF_SATURATION`
+- [L96](electron/scoring.ts#L96) · export · `COMBO_BONUS`
+- [L119](electron/scoring.ts#L119) · intern · `clamp(v: number, min: number, max: number): number`
+- [L131](electron/scoring.ts#L131) · intern · `finiteOr(v: number, fallback: number): number`
+- [L140](electron/scoring.ts#L140) · export · `isBuyTrade(t: RawInsiderTrade): boolean`
+- [L147](electron/scoring.ts#L147) · export · `isScoringEligible(t: RawInsiderTrade, asOf = Date.now()): boolean`
+- [L161](electron/scoring.ts#L161) · export · `getRankWeight(roleRaw: string): { weight: number; category: string }`
+- [L216](electron/scoring.ts#L216) · export · `UNKNOWN_ROLE_WEIGHT`
+- [L229](electron/scoring.ts#L229) · export · `earnsFinanceTimingBonus(role: string): boolean`
+- [L233](electron/scoring.ts#L233) · export · `isFinanceInsider(role: string): boolean`
+- [L264](electron/scoring.ts#L264) · export · `getDollarVolumePoints(buyValue: number, marketCap?: number): number`
+- [L290](electron/scoring.ts#L290) · export · `getClusterMultiplier(distinctInsiders: number): number`
+- [L298](electron/scoring.ts#L298) · export · `ClusterSizeReading`
+- [L327](electron/scoring.ts#L327) · export · `clusterSizeReading(volumes: readonly number[], marketCap?: number): ClusterSizeReading`
+- [L350](electron/scoring.ts#L350) · export · `getInsiderTimingMultiplier(daysToEarnings: number | undefined, hasFinanceInsiderBuying: boolean): { multiplier: number; notes: string[] }`
+- [L375](electron/scoring.ts#L375) · export · `getOptionsTimingMultiplier(daysToEarnings: number | undefined): number`
+- [L387](electron/scoring.ts#L387) · intern · `optionPremium(o: OptionsActivity): number`
+- [L400](electron/scoring.ts#L400) · intern · `baseOptionPoints(premium: number): number`
+- [L415](electron/scoring.ts#L415) · export · `optionTiming(o: OptionsActivity, asOf = Date.now()): { eligible: boolean; dte?: number; age: number | null }`
+- [L432](electron/scoring.ts#L432) · export · `scoreOneOption(o: OptionsActivity, asOf = Date.now()): number`
+- [L464](electron/scoring.ts#L464) · export · `scoreOptionsDetailed(options: readonly OptionsActivity[], asOf = Date.now()): { score: number; notes: string[] }`
+- [L488](electron/scoring.ts#L488) · export · `getVixMultiplier(vix: number | undefined, cap = DEFAULT_SCORING_CONFIG.vixCap): number`
+- [L499](electron/scoring.ts#L499) · export · `getTrackRecordMultiplier(bestAccuracy3m: number | undefined, slope = DEFAULT_SCORING_CONFIG.trackRecordSlope): number`
+- [L521](electron/scoring.ts#L521) · export · `getValuationMultiplier(upsidePct: number | undefined): number`
+- [L533](electron/scoring.ts#L533) · export · `getConvictionLevel(score: number): ConvictionLevel`
+- [L539](electron/scoring.ts#L539) · export · `ScoredTicker`
+- [L564](electron/scoring.ts#L564) · export · `detectCombo(trades: RawInsiderTrade[], options: OptionsActivity[], asOf = Date.now()): boolean`
+- [L584](electron/scoring.ts#L584) · export · `POLITICIAN_COMBO_BONUS`
+- [L587](electron/scoring.ts#L587) · intern · `politicianAmountPoints(midpoint: number): number`
+- [L597](electron/scoring.ts#L597) · intern · `committeeMultiplier(committee: string | undefined): number`
+- [L607](electron/scoring.ts#L607) · intern · `fmtUSDShort(v: number): string`
+- [L611](electron/scoring.ts#L611) · export · `PoliticianScoreMode`
+- [L621](electron/scoring.ts#L621) · export · `getPoliticianScore(trades: PoliticianTrade[], opts?: { mode?: PoliticianScoreMode; insiderTrades?: RawInsiderTrade[]; asOf?: number }): { score: number; notes: string[] }`
+- [L690](electron/scoring.ts#L690) · export · `corroborationSoftMult(classicCombo: boolean, politicianComboTier: PoliticianComboTier | null): number`
+- [L710](electron/scoring.ts#L710) · export · `detectPoliticianCombo(politicianTrades: PoliticianTrade[], insiderTrades: RawInsiderTrade[], options: OptionsActivity[], asOf = Date.now()): PoliticianComboTier | null`
+- [L746](electron/scoring.ts#L746) · export · `computeConfidence(agg: TickerAggregate, eligible: RawInsiderTrade[]): number`
+- [L767](electron/scoring.ts#L767) · export · `normalizeAggregateTrades(agg: TickerAggregate): void`
+- [L794](electron/scoring.ts#L794) · export · `scoreTicker(agg: TickerAggregate, config: ScoringConfig = DEFAULT_SCORING_CONFIG, asOf = Date.now()): ScoredTicker`
 
 #### [electron/scraper/activist.ts](electron/scraper/activist.ts)
 
@@ -2093,13 +2095,13 @@ Ausführbare Tests, Ablaufskript oder Konfiguration; die verlinkte Datei enthäl
 - [L78](scripts/analyze-score.ts#L78) · export · `spearman(xs: readonly number[], ys: readonly number[]): number | null`
 - [L98](scripts/analyze-score.ts#L98) · intern · `mean`
 - [L100](scripts/analyze-score.ts#L100) · intern · `stdev(xs: readonly number[]): number`
-- [L111](scripts/analyze-score.ts#L111) · export · `designEffect(rows: readonly Row[]): { n: number; clusters: number; m: number; rho: number; deff: number }`
-- [L137](scripts/analyze-score.ts#L137) · export · `icInterval(r: number, nEff: number): [number, number]`
-- [L148](scripts/analyze-score.ts#L148) · export · `bucketMonotonicity(means: readonly (number | null)[]): number | null`
-- [L158](scripts/analyze-score.ts#L158) · intern · `pct(x: number): string`
-- [L162](scripts/analyze-score.ts#L162) · intern · `reportSet(label: string, rows: Row[]): void`
-- [L221](scripts/analyze-score.ts#L221) · intern · `outOfSample(rows: Row[]): void`
-- [L240](scripts/analyze-score.ts#L240) · intern · `main(): void`
+- [L119](scripts/analyze-score.ts#L119) · export · `designEffect(rows: readonly Row[]): { n: number; clusters: number; m: number; rho: number; deff: number }`
+- [L147](scripts/analyze-score.ts#L147) · export · `icInterval(r: number, nEff: number): [number, number]`
+- [L158](scripts/analyze-score.ts#L158) · export · `bucketMonotonicity(means: readonly (number | null)[]): number | null`
+- [L168](scripts/analyze-score.ts#L168) · intern · `pct(x: number): string`
+- [L172](scripts/analyze-score.ts#L172) · intern · `reportSet(label: string, rows: Row[]): void`
+- [L231](scripts/analyze-score.ts#L231) · intern · `outOfSample(rows: Row[]): void`
+- [L250](scripts/analyze-score.ts#L250) · intern · `main(): void`
 
 #### [scripts/audit-outcome-gaps.ts](scripts/audit-outcome-gaps.ts)
 

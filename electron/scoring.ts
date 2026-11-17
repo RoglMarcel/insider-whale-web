@@ -295,6 +295,54 @@ export function getClusterMultiplier(distinctInsiders: number): number {
   return 1.0;
 }
 
+export interface ClusterSizeReading {
+  dollarVolumePoints: number;
+  clusterMultiplier: number;
+  /** How many of the buyers (largest first) the reading is taken from. */
+  buyers: number;
+}
+
+/**
+ * Size × cluster reading for the insiders buying inside the 30-day window.
+ *
+ * `volumes` holds one summed buy value per distinct insider. Size is scored on
+ * the AVERAGE buy per insider so that magnitude stays decorrelated from the head
+ * count the cluster multiplier already rewards.
+ *
+ * Averaging over EVERY buyer let a genuine extra purchase lower the score: a
+ * small co-buyer dilutes the average across a ladder rung faster than the
+ * cluster multiplier grows. A CEO buying $520k alone scored 48.8; the same buy
+ * plus a director's $20k scored 41.7. In the stored history that hit 759 of
+ * 7,696 cluster signals (30 tickers) — KMPR's five buyers
+ * ($130k/$106k/$80k/$27k/$26k) read 1 point × 3.0 where the four largest alone
+ * read 5 points × 3.0. It is the same defect as the out-of-window dilution fixed
+ * earlier (docs/audit/MATH.md M41), inside the window.
+ *
+ * The reading is therefore the strongest sub-cluster: the k largest buyers are
+ * scored as a cluster of k on their own average, for every k, and the best
+ * product wins. A further buyer can only add candidates and a larger buy can
+ * only raise an average, so the reading is non-decreasing in both. Equal-sized
+ * buyers read exactly as before; on a tie the widest cluster is reported.
+ */
+export function clusterSizeReading(volumes: readonly number[], marketCap?: number): ClusterSizeReading {
+  const sorted = volumes.map((v) => (Number.isFinite(v) && v > 0 ? v : 0)).sort((a, b) => b - a);
+  let best: ClusterSizeReading = {
+    dollarVolumePoints: getDollarVolumePoints(0, marketCap),
+    clusterMultiplier: getClusterMultiplier(0),
+    buyers: 0,
+  };
+  let sum = 0;
+  for (let k = 1; k <= sorted.length; k++) {
+    sum += sorted[k - 1];
+    const dollarVolumePoints = getDollarVolumePoints(sum / k, marketCap);
+    const clusterMultiplier = getClusterMultiplier(k);
+    if (k === 1 || dollarVolumePoints * clusterMultiplier >= best.dollarVolumePoints * best.clusterMultiplier) {
+      best = { dollarVolumePoints, clusterMultiplier, buyers: k };
+    }
+  }
+  return best;
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // Step 4 — Earnings timing (Feature 5)
 // ──────────────────────────────────────────────────────────────────────────
@@ -806,10 +854,9 @@ export function scoreTicker(agg: TickerAggregate, config: ScoringConfig = DEFAUL
   const typeModifier = weightTotal > 0 ? weightedMod / weightTotal : 0;
 
   // Step 3 — cluster from distinct eligible insiders buying in the last 30 days.
-  const recentInsiders = new Set<string>();
+  /** Insider → summed buy value inside the SAME 30-day window the cluster counts. */
+  const recentVolumes = new Map<string, number>();
   const allInsiders = new Set<string>();
-  /** Volume of the trades inside the SAME 30-day window the cluster counts. */
-  let recentVolume = 0;
   let freshestAge: number | null = null;
   let tradeDate: string | null = null;
   let filingDate: string | null = null;
@@ -823,9 +870,8 @@ export function scoreTicker(agg: TickerAggregate, config: ScoringConfig = DEFAUL
     if (key) {
       allInsiders.add(key);
       if (usableAge != null && usableAge <= 30) {
-        recentInsiders.add(key);
         const v = Number.isFinite(t.value) ? t.value : 0;
-        if (v > 0 && v <= MAX_SANE_TRADE_VALUE) recentVolume += v;
+        recentVolumes.set(key, (recentVolumes.get(key) ?? 0) + (v > 0 && v <= MAX_SANE_TRADE_VALUE ? v : 0));
       }
       if (usableAge != null && (freshestAge == null || usableAge < freshestAge)) {
         freshestAge = usableAge;
@@ -855,8 +901,7 @@ export function scoreTicker(agg: TickerAggregate, config: ScoringConfig = DEFAUL
 
   // Strictly the last-30-day window (Step 3's contract) — no fallback to all
   // insiders, which would re-grant the full multiplier to months-old clusters.
-  const clusterCount = recentInsiders.size;
-  const clusterMultiplier = getClusterMultiplier(clusterCount);
+  const clusterCount = recentVolumes.size;
 
   // Step 2 — dollar-volume points on the AVERAGE buy per insider (decorrelates
   // magnitude from cluster count), market-cap-normalized when available.
@@ -866,14 +911,19 @@ export function scoreTicker(agg: TickerAggregate, config: ScoringConfig = DEFAUL
   // while the cluster multiplier counted only the last 30 days, so adding two
   // genuine but old, small buys diluted the average and LOWERED the score —
   // 2 fresh $1M buys scored 39.4, the same two plus two 200-day-old $10k buys
-  // scored 31.7. Both sides now use the 30-day window, with the full set as a
-  // fallback when nothing datable falls inside it (so an aggregate whose dates
-  // all failed to parse is still scored rather than divided by zero).
-  const useRecentWindow = recentInsiders.size > 0;
-  const distinctBuyers = useRecentWindow ? recentInsiders.size : Math.max(allInsiders.size, 1);
-  const windowVolume = useRecentWindow ? recentVolume : totalDollarVolume;
-  const perInsiderValue = windowVolume / distinctBuyers;
-  const dollarVolumePoints = getDollarVolumePoints(perInsiderValue, agg.marketCap);
+  // scored 31.7. Both sides now use the 30-day window (see `clusterSizeReading`
+  // for how the window itself is read), with the full set as a fallback when
+  // nothing datable falls inside it (so an aggregate whose dates all failed to
+  // parse is still scored rather than divided by zero).
+  const reading: ClusterSizeReading =
+    clusterCount > 0
+      ? clusterSizeReading([...recentVolumes.values()], agg.marketCap)
+      : {
+          dollarVolumePoints: getDollarVolumePoints(totalDollarVolume / Math.max(allInsiders.size, 1), agg.marketCap),
+          clusterMultiplier: getClusterMultiplier(0),
+          buyers: 0,
+        };
+  const { dollarVolumePoints, clusterMultiplier } = reading;
 
   // Step 4 — earnings timing.
   const insiderTiming = getInsiderTimingMultiplier(agg.daysToEarnings, hasFinance);
@@ -950,7 +1000,13 @@ export function scoreTicker(agg: TickerAggregate, config: ScoringConfig = DEFAUL
   const normalizedRaw = normLive;
 
   const notes: string[] = [];
-  if (clusterCount >= 2) notes.push(`${clusterCount} insiders buying (cluster ×${clusterMultiplier})`);
+  if (clusterCount >= 2) {
+    notes.push(
+      reading.buyers < clusterCount
+        ? `${clusterCount} insiders buying (cluster ×${clusterMultiplier}, read from the ${reading.buyers} largest)`
+        : `${clusterCount} insiders buying (cluster ×${clusterMultiplier})`,
+    );
+  }
   if (agg.marketCap && agg.marketCap > 0 && totalDollarVolume > 0) {
     notes.push(`Insider buys ≈ ${((totalDollarVolume / agg.marketCap) * 100).toFixed(2)}% of market cap`);
   }
@@ -1067,11 +1123,18 @@ export function scoreTicker(agg: TickerAggregate, config: ScoringConfig = DEFAUL
     notes,
   };
 
+  // The tier is read from the PUBLISHED score, the one-decimal number that is
+  // stored, displayed, coloured, alerted on and compared with the portfolio
+  // entry threshold. Reading it from the unrounded value let the two disagree at
+  // a boundary: 13 stored signals show 50.0 and are labelled LOW (unrounded
+  // 49.96–49.999).
+  const score = Math.round(finalScore * 10) / 10;
+
   return {
     ticker: agg.ticker,
     companyName: agg.companyName,
-    score: Math.round(finalScore * 10) / 10,
-    convictionLevel: getConvictionLevel(finalScore),
+    score,
+    convictionLevel: getConvictionLevel(score),
     totalDollarVolume,
     insiderCount: allInsiders.size,
     topInsiderRole: topRole,
