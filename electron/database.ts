@@ -516,6 +516,39 @@ export function runMigrations(database: Database.Database): void {
   database.exec(BACKTEST_SCHEMA);
 }
 
+/**
+ * Outcome labels measured across a provider price series later shown to be
+ * corrupt, with the evidence. Labels are additive across machines (a device
+ * that still holds a row imports it again), so the correction runs on every
+ * open rather than once. Each set is archived in `portfolio_revisions` before
+ * its first removal. Only labels computed before `computedBefore` match: a
+ * label recomputed afterwards passed the outcome window's price screen
+ * (`windowDiscontinuity`) and stays.
+ *
+ * YYAI: the 2026-07-10 entry is 8.11 in the labels computed 2026-08-23 and
+ * 162.20 in the one computed 2026-09-09 (×20, a half-applied 1-for-20 split);
+ * one fetch ran 8.11 → 182.20 → 0.17 in 20 days. The 5-day labels end before
+ * the jump and stay.
+ */
+const CORRUPT_OUTCOME_LABELS: readonly { ticker: string; entryDates: readonly string[]; minHorizon: number; computedBefore: string }[] = [
+  { ticker: 'YYAI', entryDates: ['2026-07-10', '2026-07-11'], minHorizon: 10, computedBefore: '2026-11-17' },
+];
+
+function removeCorruptOutcomeLabels(database: Database.Database): void {
+  for (const c of CORRUPT_OUTCOME_LABELS) {
+    const where = `ticker = ? AND entry_date IN (${c.entryDates.map(() => '?').join(',')}) AND horizon >= ? AND computed_at < ?`;
+    const args = [c.ticker, ...c.entryDates, c.minHorizon, c.computedBefore];
+    database.transaction(() => {
+      const rows = database.prepare(`SELECT * FROM signal_outcomes WHERE ${where} ORDER BY entry_date, horizon`).all(...args);
+      if (!rows.length) return;
+      database.prepare(`INSERT OR IGNORE INTO portfolio_revisions(reason, saved_at, state_json) VALUES (?, ?, ?)`)
+        .run(`corrupt-outcome-labels:${c.ticker}:${c.entryDates.join(',')}`, new Date().toISOString(), JSON.stringify(rows));
+      const removed = database.prepare(`DELETE FROM signal_outcomes WHERE ${where}`).run(...args).changes;
+      console.log(`[db] removed ${removed} outcome label(s) measured on a corrupt ${c.ticker} price series (archived)`);
+    })();
+  }
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // Lifecycle
 // ──────────────────────────────────────────────────────────────────────────
@@ -542,6 +575,7 @@ export function initDatabase(dbPath: string, opts?: { readonly?: boolean }): Dat
   db.pragma('foreign_keys = ON');
   db.exec(SCHEMA);
   runMigrations(db);
+  removeCorruptOutcomeLabels(db);
   quarantineLegacyTickers();
   // Seed the trade window from signal history the first time `insider_trades`
   // exists, so the first run after this lands isn't scored against an empty

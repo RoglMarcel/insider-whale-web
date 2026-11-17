@@ -301,7 +301,7 @@ Kandidaten aus Signalen verwenden den ersten legitim handelbaren Schlusskurs nac
 
 Bei geänderter Konfiguration oder veralteter Curve-Builder-Version wird die zusammengehörige Simulation neu erstellt; historische Kurven dürfen nicht mit Positionen einer anderen Regelversion kombiniert werden. Abweichungen nach Kurs-Neudarstellungen werden gezählt. `portfolio_revisions` bewahrt bestimmte frühere Bücher bei Migrationen. Statistiken begrenzen CAGR-/Sharpe-Ausgaben bei zu kurzen Beobachtungsfenstern; aus wenigen Trades darf keine belastbare Erfolgsquote abgeleitet werden.
 
-`performance.ts`, `scripts/label-outcomes.ts` und die Backtest-/Analyse-Skripte bewerten gereifte Signale gegen SPY. Sie messen wie das Depot ab `signalEntryDate`: dem ersten Schlusskurs, den die Beobachtung noch handeln konnte; eine Sichtung nach Börsenschluss beginnt erst mit der nächsten Sitzung. Enthält das Messfenster eine Kursbewegung von mehr als 60 % zwischen zwei Sitzungen, wird das Ergebnis erst nach einer Kursprüfung (`scripts/review-price-vintage.ts`) oder einer korrigierten Anbieterreihe geschrieben — dieselbe Regel wie für Depotkurse. Preispaare müssen vergleichbare Zeitpunkte besitzen; Ergebnisfenster, fehlende Kurse, wiederholte Ticker und überlappende Perioden beeinflussen die Aussage. Shadow-/Backtest-Ergebnisse ändern nicht selbstständig Live-Regeln.
+`performance.ts`, `scripts/label-outcomes.ts` und die Backtest-/Analyse-Skripte bewerten gereifte Signale gegen SPY. Sie messen wie das Depot ab `signalEntryDate`: dem ersten Schlusskurs, den die Beobachtung noch handeln konnte; eine Sichtung nach Börsenschluss beginnt erst mit der nächsten Sitzung. Enthält das Messfenster eine Kursbewegung von mehr als 60 % zwischen zwei Sitzungen, wird das Ergebnis erst nach einer Kursprüfung (`scripts/review-price-vintage.ts`) oder einer korrigierten Anbieterreihe geschrieben — dieselbe Regel wie für Depotkurse. Bereits gespeicherte Ergebnisse, die nachweislich auf einer fehlerhaften Kursreihe beruhen (`CORRUPT_OUTCOME_LABELS` in `electron/database.ts`, mit Beleg), werden beim Öffnen der Datenbank einmal in `portfolio_revisions` archiviert und bei jedem Öffnen entfernt, damit ein anderes Gerät sie nicht erneut importiert. Preispaare müssen vergleichbare Zeitpunkte besitzen; Ergebnisfenster, fehlende Kurse, wiederholte Ticker und überlappende Perioden beeinflussen die Aussage. Shadow-/Backtest-Ergebnisse ändern nicht selbstständig Live-Regeln.
 
 ### Speicherung und Synchronisierung
 
@@ -482,130 +482,132 @@ Das folgende Verzeichnis ist aus dem geprüften Quellstand abgeleitet. Es nennt 
 - [L410](electron/database.ts#L410) · intern · `columnExists(database: Database.Database, table: string, column: string): boolean`
 - [L415](electron/database.ts#L415) · intern · `addColumn(database: Database.Database, table: string, column: string, def: string): void`
 - [L421](electron/database.ts#L421) · export · `runMigrations(database: Database.Database): void`
-- [L533](electron/database.ts#L533) · export · `initDatabase(dbPath: string, opts?: { readonly?: boolean }): Database.Database`
-- [L584](electron/database.ts#L584) · intern · `getDb(): Database.Database`
-- [L596](electron/database.ts#L596) · export · `snapshotDatabase(destPath: string): Promise<void>`
-- [L600](electron/database.ts#L600) · export · `closeDatabase(): void`
-- [L610](electron/database.ts#L610) · intern · `SignalRow`
-- [L642](electron/database.ts#L642) · intern · `safeParse(json: string | null, fallback: T): T`
-- [L651](electron/database.ts#L651) · intern · `EMPTY_BREAKDOWN`
-- [L672](electron/database.ts#L672) · intern · `rowToSignal(row: SignalRow): Signal`
-- [L713](electron/database.ts#L713) · intern · `insertSignalStmt`
-- [L715](electron/database.ts#L715) · export · `insertSignal(signal: Signal): number`
-- [L776](electron/database.ts#L776) · export · `insertSignals(signals: Signal[]): void`
-- [L785](electron/database.ts#L785) · intern · `ACTIVE_SIGNAL_WINDOW_MS`
-- [L792](electron/database.ts#L792) · export · `getLatestSignals(): Signal[]`
-- [L821](electron/database.ts#L821) · export · `getFilteredSignals(filter: SignalFilter): Signal[]`
-- [L826](electron/database.ts#L826) · export · `getSignalByTicker(ticker: string): Signal | null`
-- [L834](electron/database.ts#L834) · export · `getSignalHistory(ticker: string): Signal[]`
-- [L842](electron/database.ts#L842) · export · `getMostRecentSessionSignals(): Signal[]`
-- [L857](electron/database.ts#L857) · export · `getWatchlist(): WatchlistItem[]`
-- [L870](electron/database.ts#L870) · export · `addToWatchlist(ticker: string, notes?: string): WatchlistItem[]`
-- [L881](electron/database.ts#L881) · export · `removeFromWatchlist(ticker: string): WatchlistItem[]`
-- [L890](electron/database.ts#L890) · export · `startScrapeLog(sources: string[]): number`
-- [L900](electron/database.ts#L900) · export · `finishScrapeLog(id: number, data: { signalsFound: number; status: ScrapeLogEntry['status']; sourcesScraped: string[]; vixAtScrape?: number | null; sourceBreakdown?: Record<string, number> | null; dataQuality?: DataQualityReport | null; }): void`
-- [L930](electron/database.ts#L930) · export · `getScrapeLogs(limit = 50): ScrapeLogEntry[]`
-- [L958](electron/database.ts#L958) · export · `getRecentSourceBreakdowns(limit = 20): Record<string, number>[]`
-- [L967](electron/database.ts#L967) · export · `getLastScrapeTime(): string | null`
-- [L978](electron/database.ts#L978) · intern · `TrackRecordRow`
-- [L993](electron/database.ts#L993) · intern · `rowToTrackRecord(row: TrackRecordRow): InsiderTrackRecord`
-- [L1015](electron/database.ts#L1015) · intern · `TRACK_RECORD_METHOD_VERSION`
-- [L1017](electron/database.ts#L1017) · export · `getTrackRecord(name: string): InsiderTrackRecord | null`
-- [L1024](electron/database.ts#L1024) · export · `upsertTrackRecord(record: InsiderTrackRecord): void`
-- [L1071](electron/database.ts#L1071) · export · `getSettings(): AppSettings`
-- [L1085](electron/database.ts#L1085) · export · `setSettings(partial: Partial<AppSettings>): AppSettings`
-- [L1107](electron/database.ts#L1107) · export · `getShadowScoringConfig(): Partial<ScoringConfig> | null`
-- [L1116](electron/database.ts#L1116) · export · `setShadowScoringConfig(config: Partial<ScoringConfig> | null): Partial<ScoringConfig> | null`
-- [L1135](electron/database.ts#L1135) · export · `clearDatabase(): void`
-- [L1145](electron/database.ts#L1145) · export · `insertNewsItem(news: { tweetId: string; text: string; timestamp: string; url: string }): boolean`
-- [L1156](electron/database.ts#L1156) · export · `getNewsItems(): NewsItem[]`
-- [L1187](electron/database.ts#L1187) · export · `getNewsForTicker(ticker: string): NewsItem[]`
-- [L1221](electron/database.ts#L1221) · export · `upsertPoliticianTrades(trades: PoliticianTrade[]): number`
-- [L1271](electron/database.ts#L1271) · intern · `PoliticianTradeRow`
-- [L1286](electron/database.ts#L1286) · intern · `rowToPoliticianTrade(r: PoliticianTradeRow): PoliticianTrade`
-- [L1304](electron/database.ts#L1304) · export · `getPoliticianTradesForTicker(ticker: string, days = 90): PoliticianTrade[]`
-- [L1315](electron/database.ts#L1315) · export · `getPoliticianTradeTickers(days = 90): string[]`
-- [L1328](electron/database.ts#L1328) · export · `upsertFilingEvents(events: FilingEvent[]): FilingEvent[]`
-- [L1347](electron/database.ts#L1347) · export · `getRecentFilingEvents(ticker: string, days = 90): FilingEvent[]`
-- [L1368](electron/database.ts#L1368) · export · `insertBacktestRun(report: PerformanceReport): void`
-- [L1374](electron/database.ts#L1374) · export · `getLatestBacktestRun(): PerformanceReport | null`
-- [L1382](electron/database.ts#L1382) · export · `BacktestSignalRow`
-- [L1395](electron/database.ts#L1395) · export · `OutcomeCandidate`
-- [L1413](electron/database.ts#L1413) · export · `getOutcomeCandidates(): OutcomeCandidate[]`
-- [L1488](electron/database.ts#L1488) · export · `getOutcomeBackfillCandidates(): OutcomeCandidate[]`
-- [L1506](electron/database.ts#L1506) · export · `getLabeledKeys(): Set<string>`
-- [L1513](electron/database.ts#L1513) · export · `SignalOutcome`
-- [L1527](electron/database.ts#L1527) · export · `upsertSignalOutcomes(rows: SignalOutcome[]): number`
-- [L1545](electron/database.ts#L1545) · export · `getOutcomeCoverage(): { perHorizon: { horizon: number; n: number }[]; components: { name: string; varying: number; total: number }[]; }`
-- [L1592](electron/database.ts#L1592) · export · `getScoreOutcomeRows(horizon: number): { score: number; alpha: number; entryDate: string; ticker: string; breakdown: string | null }[]`
-- [L1610](electron/database.ts#L1610) · export · `getFactorActivity(): { name: string; active: number; total: number }[]`
-- [L1645](electron/database.ts#L1645) · export · `getSignalRowsForBacktest(): BacktestSignalRow[]`
-- [L1657](electron/database.ts#L1657) · intern · `AlertRuleRow`
-- [L1667](electron/database.ts#L1667) · intern · `rowToAlertRule(row: AlertRuleRow): AlertRule`
-- [L1679](electron/database.ts#L1679) · export · `getAlertRules(): AlertRule[]`
-- [L1684](electron/database.ts#L1684) · export · `addAlertRule(rule: AlertRule): void`
-- [L1700](electron/database.ts#L1700) · export · `deleteAlertRule(id: number): void`
-- [L1704](electron/database.ts#L1704) · export · `setAlertRuleEnabled(id: number, enabled: boolean): void`
-- [L1709](electron/database.ts#L1709) · export · `getWatchlistTickers(): string[]`
-- [L1720](electron/database.ts#L1720) · export · `InsiderFlowInput`
-- [L1729](electron/database.ts#L1729) · export · `upsertInsiderFlow(rows: InsiderFlowInput[]): void`
-- [L1759](electron/database.ts#L1759) · export · `replaceInsiderSalesSnapshot(snapshot: { rows: InsiderFlowInput[]; complete: boolean; from: string; through: string; startedAt: string; }): boolean`
-- [L1790](electron/database.ts#L1790) · export · `InsiderFlowSummary`
-- [L1803](electron/database.ts#L1803) · export · `getNetInsiderFlow(ticker: string, days = 90): InsiderFlowSummary`
-- [L1838](electron/database.ts#L1838) · intern · `TRADE_SOURCE_RANK`
-- [L1846](electron/database.ts#L1846) · intern · `DEFAULT_TRADE_SOURCE_RANK`
-- [L1848](electron/database.ts#L1848) · intern · `tradeSourceRank(source: string): number`
-- [L1858](electron/database.ts#L1858) · export · `upsertInsiderTrades(trades: RawInsiderTrade[]): number`
-- [L1881](electron/database.ts#L1881) · intern · `isStoredTrade(value: unknown): value is RawInsiderTrade`
-- [L1891](electron/database.ts#L1891) · intern · `readCanonicalInsiderTrades(ticker?: string): RawInsiderTrade[]`
-- [L1906](electron/database.ts#L1906) · export · `getUnresolvedInsiderTrades(ticker?: string): RawInsiderTrade[]`
-- [L1910](electron/database.ts#L1910) · export · `getRecentInsiderTrades(days = 30, ticker?: string): RawInsiderTrade[]`
-- [L1921](electron/database.ts#L1921) · export · `backfillInsiderTradesFromSignals(days = 30): number`
-- [L1953](electron/database.ts#L1953) · export · `TickerMeta`
-- [L1966](electron/database.ts#L1966) · export · `getTickerMeta(ticker: string, maxAgeMs: number): TickerMeta | null`
-- [L2000](electron/database.ts#L2000) · export · `upsertTickerMeta(meta: { ticker: string; marketCap?: number; sector?: string; earningsDate?: string; earningsTiming?: string; shortPctFloat?: number; floatShares?: number; avgDollarVolume?: number; pctFrom52wHigh?: number; }): void`
-- [L2040](electron/database.ts#L2040) · export · `updateEarnings(ticker: string, earningsDate: string, earningsTiming: string | null, daysToEarnings: number | null): void`
-- [L2062](electron/database.ts#L2062) · export · `pruneOldData(retentionDays = 365): void`
-- [L2082](electron/database.ts#L2082) · export · `PriceRow`
-- [L2097](electron/database.ts#L2097) · export · `upsertPriceRows(rows: readonly PriceRow[]): number`
-- [L2136](electron/database.ts#L2136) · export · `getPriceBook(tickers: readonly string[], fromYmd: string): Record<string, Record<string, number>>`
-- [L2156](electron/database.ts#L2156) · export · `getPriceCoverage(): Record<string, { last: string; n: number; fetchedAt: string | null }>`
-- [L2169](electron/database.ts#L2169) · export · `getPriceAsOf(): string | null`
-- [L2174](electron/database.ts#L2174) · export · `PortfolioCandidateRow`
-- [L2188](electron/database.ts#L2188) · export · `getPortfolioSignalCandidates(minScore: number): PortfolioCandidateRow[]`
-- [L2207](electron/database.ts#L2207) · export · `getPortfolioOutcomeCandidates(minScore: number): PortfolioCandidateRow[]`
-- [L2220](electron/database.ts#L2220) · export · `getPortfolioUniverse(minScore: number): string[]`
-- [L2232](electron/database.ts#L2232) · export · `getPortfolioHistoryStart(minScore: number): string | null`
-- [L2246](electron/database.ts#L2246) · export · `getPortfolioLiveStart(): string | null`
-- [L2255](electron/database.ts#L2255) · intern · `EquityRow`
-- [L2266](electron/database.ts#L2266) · intern · `toEquityPoint`
-- [L2277](electron/database.ts#L2277) · export · `getPortfolioEquity(): PortfolioEquityPoint[]`
-- [L2287](electron/database.ts#L2287) · export · `insertPortfolioEquity(points: readonly PortfolioEquityPoint[]): number`
-- [L2313](electron/database.ts#L2313) · intern · `PositionRow`
-- [L2342](electron/database.ts#L2342) · export · `clearPortfolioEquity(): void`
-- [L2350](electron/database.ts#L2350) · export · `deletePortfolioEquityDay(date: string): void`
-- [L2354](electron/database.ts#L2354) · export · `getPortfolioPositions(): PortfolioPosition[]`
-- [L2384](electron/database.ts#L2384) · export · `replacePortfolioPositions(positions: readonly PortfolioPosition[]): void`
-- [L2417](electron/database.ts#L2417) · export · `getPortfolioEvents(limit = 500): PortfolioEvent[]`
-- [L2437](electron/database.ts#L2437) · export · `replacePortfolioEvents(events: readonly PortfolioEvent[]): void`
-- [L2450](electron/database.ts#L2450) · export · `insertPortfolioSuspectEvents(events: readonly PortfolioEvent[]): number`
-- [L2482](electron/database.ts#L2482) · export · `clearPortfolio(): void`
-- [L2494](electron/database.ts#L2494) · intern · `PORTFOLIO_CONFIG_KEY`
-- [L2495](electron/database.ts#L2495) · intern · `PORTFOLIO_META_KEY`
-- [L2497](electron/database.ts#L2497) · export · `getPortfolioConfig(): PortfolioConfig`
-- [L2504](electron/database.ts#L2504) · intern · `PORTFOLIO_CONFIG_VERSION_KEY`
-- [L2521](electron/database.ts#L2521) · export · `migratePortfolioConfig(): { migrated: string[]; kept: string[] } | null`
-- [L2568](electron/database.ts#L2568) · export · `setPortfolioConfig(partial: Partial<PortfolioConfig>): PortfolioConfig`
-- [L2586](electron/database.ts#L2586) · export · `PortfolioRunMeta`
-- [L2609](electron/database.ts#L2609) · export · `getPortfolioRunMeta(): PortfolioRunMeta | null`
-- [L2618](electron/database.ts#L2618) · export · `setPortfolioRunMeta(meta: PortfolioRunMeta): void`
-- [L2629](electron/database.ts#L2629) · export · `getPortfolioExperiment(id: string): PortfolioExperiment | null`
-- [L2634](electron/database.ts#L2634) · export · `setPortfolioExperiment(experiment: PortfolioExperiment): void`
-- [L2640](electron/database.ts#L2640) · export · `archiveExperimentCandidates(id: string, candidates: PortfolioCandidate[]): PortfolioCandidate[]`
-- [L2652](electron/database.ts#L2652) · export · `getArchivedExperimentCandidates(id: string): PortfolioCandidate[]`
-- [L2658](electron/database.ts#L2658) · export · `recordTickerQuality(ticker: string): void`
-- [L2666](electron/database.ts#L2666) · intern · `quarantineLegacyTickers(): void`
-- [L2671](electron/database.ts#L2671) · export · `archivePortfolioRevision(reason: string, state: unknown): void`
+- [L533](electron/database.ts#L533) · intern · `CORRUPT_OUTCOME_LABELS`
+- [L537](electron/database.ts#L537) · intern · `removeCorruptOutcomeLabels(database: Database.Database): void`
+- [L566](electron/database.ts#L566) · export · `initDatabase(dbPath: string, opts?: { readonly?: boolean }): Database.Database`
+- [L618](electron/database.ts#L618) · intern · `getDb(): Database.Database`
+- [L630](electron/database.ts#L630) · export · `snapshotDatabase(destPath: string): Promise<void>`
+- [L634](electron/database.ts#L634) · export · `closeDatabase(): void`
+- [L644](electron/database.ts#L644) · intern · `SignalRow`
+- [L676](electron/database.ts#L676) · intern · `safeParse(json: string | null, fallback: T): T`
+- [L685](electron/database.ts#L685) · intern · `EMPTY_BREAKDOWN`
+- [L706](electron/database.ts#L706) · intern · `rowToSignal(row: SignalRow): Signal`
+- [L747](electron/database.ts#L747) · intern · `insertSignalStmt`
+- [L749](electron/database.ts#L749) · export · `insertSignal(signal: Signal): number`
+- [L810](electron/database.ts#L810) · export · `insertSignals(signals: Signal[]): void`
+- [L819](electron/database.ts#L819) · intern · `ACTIVE_SIGNAL_WINDOW_MS`
+- [L826](electron/database.ts#L826) · export · `getLatestSignals(): Signal[]`
+- [L855](electron/database.ts#L855) · export · `getFilteredSignals(filter: SignalFilter): Signal[]`
+- [L860](electron/database.ts#L860) · export · `getSignalByTicker(ticker: string): Signal | null`
+- [L868](electron/database.ts#L868) · export · `getSignalHistory(ticker: string): Signal[]`
+- [L876](electron/database.ts#L876) · export · `getMostRecentSessionSignals(): Signal[]`
+- [L891](electron/database.ts#L891) · export · `getWatchlist(): WatchlistItem[]`
+- [L904](electron/database.ts#L904) · export · `addToWatchlist(ticker: string, notes?: string): WatchlistItem[]`
+- [L915](electron/database.ts#L915) · export · `removeFromWatchlist(ticker: string): WatchlistItem[]`
+- [L924](electron/database.ts#L924) · export · `startScrapeLog(sources: string[]): number`
+- [L934](electron/database.ts#L934) · export · `finishScrapeLog(id: number, data: { signalsFound: number; status: ScrapeLogEntry['status']; sourcesScraped: string[]; vixAtScrape?: number | null; sourceBreakdown?: Record<string, number> | null; dataQuality?: DataQualityReport | null; }): void`
+- [L964](electron/database.ts#L964) · export · `getScrapeLogs(limit = 50): ScrapeLogEntry[]`
+- [L992](electron/database.ts#L992) · export · `getRecentSourceBreakdowns(limit = 20): Record<string, number>[]`
+- [L1001](electron/database.ts#L1001) · export · `getLastScrapeTime(): string | null`
+- [L1012](electron/database.ts#L1012) · intern · `TrackRecordRow`
+- [L1027](electron/database.ts#L1027) · intern · `rowToTrackRecord(row: TrackRecordRow): InsiderTrackRecord`
+- [L1049](electron/database.ts#L1049) · intern · `TRACK_RECORD_METHOD_VERSION`
+- [L1051](electron/database.ts#L1051) · export · `getTrackRecord(name: string): InsiderTrackRecord | null`
+- [L1058](electron/database.ts#L1058) · export · `upsertTrackRecord(record: InsiderTrackRecord): void`
+- [L1105](electron/database.ts#L1105) · export · `getSettings(): AppSettings`
+- [L1119](electron/database.ts#L1119) · export · `setSettings(partial: Partial<AppSettings>): AppSettings`
+- [L1141](electron/database.ts#L1141) · export · `getShadowScoringConfig(): Partial<ScoringConfig> | null`
+- [L1150](electron/database.ts#L1150) · export · `setShadowScoringConfig(config: Partial<ScoringConfig> | null): Partial<ScoringConfig> | null`
+- [L1169](electron/database.ts#L1169) · export · `clearDatabase(): void`
+- [L1179](electron/database.ts#L1179) · export · `insertNewsItem(news: { tweetId: string; text: string; timestamp: string; url: string }): boolean`
+- [L1190](electron/database.ts#L1190) · export · `getNewsItems(): NewsItem[]`
+- [L1221](electron/database.ts#L1221) · export · `getNewsForTicker(ticker: string): NewsItem[]`
+- [L1255](electron/database.ts#L1255) · export · `upsertPoliticianTrades(trades: PoliticianTrade[]): number`
+- [L1305](electron/database.ts#L1305) · intern · `PoliticianTradeRow`
+- [L1320](electron/database.ts#L1320) · intern · `rowToPoliticianTrade(r: PoliticianTradeRow): PoliticianTrade`
+- [L1338](electron/database.ts#L1338) · export · `getPoliticianTradesForTicker(ticker: string, days = 90): PoliticianTrade[]`
+- [L1349](electron/database.ts#L1349) · export · `getPoliticianTradeTickers(days = 90): string[]`
+- [L1362](electron/database.ts#L1362) · export · `upsertFilingEvents(events: FilingEvent[]): FilingEvent[]`
+- [L1381](electron/database.ts#L1381) · export · `getRecentFilingEvents(ticker: string, days = 90): FilingEvent[]`
+- [L1402](electron/database.ts#L1402) · export · `insertBacktestRun(report: PerformanceReport): void`
+- [L1408](electron/database.ts#L1408) · export · `getLatestBacktestRun(): PerformanceReport | null`
+- [L1416](electron/database.ts#L1416) · export · `BacktestSignalRow`
+- [L1429](electron/database.ts#L1429) · export · `OutcomeCandidate`
+- [L1447](electron/database.ts#L1447) · export · `getOutcomeCandidates(): OutcomeCandidate[]`
+- [L1522](electron/database.ts#L1522) · export · `getOutcomeBackfillCandidates(): OutcomeCandidate[]`
+- [L1540](electron/database.ts#L1540) · export · `getLabeledKeys(): Set<string>`
+- [L1547](electron/database.ts#L1547) · export · `SignalOutcome`
+- [L1561](electron/database.ts#L1561) · export · `upsertSignalOutcomes(rows: SignalOutcome[]): number`
+- [L1579](electron/database.ts#L1579) · export · `getOutcomeCoverage(): { perHorizon: { horizon: number; n: number }[]; components: { name: string; varying: number; total: number }[]; }`
+- [L1626](electron/database.ts#L1626) · export · `getScoreOutcomeRows(horizon: number): { score: number; alpha: number; entryDate: string; ticker: string; breakdown: string | null }[]`
+- [L1644](electron/database.ts#L1644) · export · `getFactorActivity(): { name: string; active: number; total: number }[]`
+- [L1679](electron/database.ts#L1679) · export · `getSignalRowsForBacktest(): BacktestSignalRow[]`
+- [L1691](electron/database.ts#L1691) · intern · `AlertRuleRow`
+- [L1701](electron/database.ts#L1701) · intern · `rowToAlertRule(row: AlertRuleRow): AlertRule`
+- [L1713](electron/database.ts#L1713) · export · `getAlertRules(): AlertRule[]`
+- [L1718](electron/database.ts#L1718) · export · `addAlertRule(rule: AlertRule): void`
+- [L1734](electron/database.ts#L1734) · export · `deleteAlertRule(id: number): void`
+- [L1738](electron/database.ts#L1738) · export · `setAlertRuleEnabled(id: number, enabled: boolean): void`
+- [L1743](electron/database.ts#L1743) · export · `getWatchlistTickers(): string[]`
+- [L1754](electron/database.ts#L1754) · export · `InsiderFlowInput`
+- [L1763](electron/database.ts#L1763) · export · `upsertInsiderFlow(rows: InsiderFlowInput[]): void`
+- [L1793](electron/database.ts#L1793) · export · `replaceInsiderSalesSnapshot(snapshot: { rows: InsiderFlowInput[]; complete: boolean; from: string; through: string; startedAt: string; }): boolean`
+- [L1824](electron/database.ts#L1824) · export · `InsiderFlowSummary`
+- [L1837](electron/database.ts#L1837) · export · `getNetInsiderFlow(ticker: string, days = 90): InsiderFlowSummary`
+- [L1872](electron/database.ts#L1872) · intern · `TRADE_SOURCE_RANK`
+- [L1880](electron/database.ts#L1880) · intern · `DEFAULT_TRADE_SOURCE_RANK`
+- [L1882](electron/database.ts#L1882) · intern · `tradeSourceRank(source: string): number`
+- [L1892](electron/database.ts#L1892) · export · `upsertInsiderTrades(trades: RawInsiderTrade[]): number`
+- [L1915](electron/database.ts#L1915) · intern · `isStoredTrade(value: unknown): value is RawInsiderTrade`
+- [L1925](electron/database.ts#L1925) · intern · `readCanonicalInsiderTrades(ticker?: string): RawInsiderTrade[]`
+- [L1940](electron/database.ts#L1940) · export · `getUnresolvedInsiderTrades(ticker?: string): RawInsiderTrade[]`
+- [L1944](electron/database.ts#L1944) · export · `getRecentInsiderTrades(days = 30, ticker?: string): RawInsiderTrade[]`
+- [L1955](electron/database.ts#L1955) · export · `backfillInsiderTradesFromSignals(days = 30): number`
+- [L1987](electron/database.ts#L1987) · export · `TickerMeta`
+- [L2000](electron/database.ts#L2000) · export · `getTickerMeta(ticker: string, maxAgeMs: number): TickerMeta | null`
+- [L2034](electron/database.ts#L2034) · export · `upsertTickerMeta(meta: { ticker: string; marketCap?: number; sector?: string; earningsDate?: string; earningsTiming?: string; shortPctFloat?: number; floatShares?: number; avgDollarVolume?: number; pctFrom52wHigh?: number; }): void`
+- [L2074](electron/database.ts#L2074) · export · `updateEarnings(ticker: string, earningsDate: string, earningsTiming: string | null, daysToEarnings: number | null): void`
+- [L2096](electron/database.ts#L2096) · export · `pruneOldData(retentionDays = 365): void`
+- [L2116](electron/database.ts#L2116) · export · `PriceRow`
+- [L2131](electron/database.ts#L2131) · export · `upsertPriceRows(rows: readonly PriceRow[]): number`
+- [L2170](electron/database.ts#L2170) · export · `getPriceBook(tickers: readonly string[], fromYmd: string): Record<string, Record<string, number>>`
+- [L2190](electron/database.ts#L2190) · export · `getPriceCoverage(): Record<string, { last: string; n: number; fetchedAt: string | null }>`
+- [L2203](electron/database.ts#L2203) · export · `getPriceAsOf(): string | null`
+- [L2208](electron/database.ts#L2208) · export · `PortfolioCandidateRow`
+- [L2222](electron/database.ts#L2222) · export · `getPortfolioSignalCandidates(minScore: number): PortfolioCandidateRow[]`
+- [L2241](electron/database.ts#L2241) · export · `getPortfolioOutcomeCandidates(minScore: number): PortfolioCandidateRow[]`
+- [L2254](electron/database.ts#L2254) · export · `getPortfolioUniverse(minScore: number): string[]`
+- [L2266](electron/database.ts#L2266) · export · `getPortfolioHistoryStart(minScore: number): string | null`
+- [L2280](electron/database.ts#L2280) · export · `getPortfolioLiveStart(): string | null`
+- [L2289](electron/database.ts#L2289) · intern · `EquityRow`
+- [L2300](electron/database.ts#L2300) · intern · `toEquityPoint`
+- [L2311](electron/database.ts#L2311) · export · `getPortfolioEquity(): PortfolioEquityPoint[]`
+- [L2321](electron/database.ts#L2321) · export · `insertPortfolioEquity(points: readonly PortfolioEquityPoint[]): number`
+- [L2347](electron/database.ts#L2347) · intern · `PositionRow`
+- [L2376](electron/database.ts#L2376) · export · `clearPortfolioEquity(): void`
+- [L2384](electron/database.ts#L2384) · export · `deletePortfolioEquityDay(date: string): void`
+- [L2388](electron/database.ts#L2388) · export · `getPortfolioPositions(): PortfolioPosition[]`
+- [L2418](electron/database.ts#L2418) · export · `replacePortfolioPositions(positions: readonly PortfolioPosition[]): void`
+- [L2451](electron/database.ts#L2451) · export · `getPortfolioEvents(limit = 500): PortfolioEvent[]`
+- [L2471](electron/database.ts#L2471) · export · `replacePortfolioEvents(events: readonly PortfolioEvent[]): void`
+- [L2484](electron/database.ts#L2484) · export · `insertPortfolioSuspectEvents(events: readonly PortfolioEvent[]): number`
+- [L2516](electron/database.ts#L2516) · export · `clearPortfolio(): void`
+- [L2528](electron/database.ts#L2528) · intern · `PORTFOLIO_CONFIG_KEY`
+- [L2529](electron/database.ts#L2529) · intern · `PORTFOLIO_META_KEY`
+- [L2531](electron/database.ts#L2531) · export · `getPortfolioConfig(): PortfolioConfig`
+- [L2538](electron/database.ts#L2538) · intern · `PORTFOLIO_CONFIG_VERSION_KEY`
+- [L2555](electron/database.ts#L2555) · export · `migratePortfolioConfig(): { migrated: string[]; kept: string[] } | null`
+- [L2602](electron/database.ts#L2602) · export · `setPortfolioConfig(partial: Partial<PortfolioConfig>): PortfolioConfig`
+- [L2620](electron/database.ts#L2620) · export · `PortfolioRunMeta`
+- [L2643](electron/database.ts#L2643) · export · `getPortfolioRunMeta(): PortfolioRunMeta | null`
+- [L2652](electron/database.ts#L2652) · export · `setPortfolioRunMeta(meta: PortfolioRunMeta): void`
+- [L2663](electron/database.ts#L2663) · export · `getPortfolioExperiment(id: string): PortfolioExperiment | null`
+- [L2668](electron/database.ts#L2668) · export · `setPortfolioExperiment(experiment: PortfolioExperiment): void`
+- [L2674](electron/database.ts#L2674) · export · `archiveExperimentCandidates(id: string, candidates: PortfolioCandidate[]): PortfolioCandidate[]`
+- [L2686](electron/database.ts#L2686) · export · `getArchivedExperimentCandidates(id: string): PortfolioCandidate[]`
+- [L2692](electron/database.ts#L2692) · export · `recordTickerQuality(ticker: string): void`
+- [L2700](electron/database.ts#L2700) · intern · `quarantineLegacyTickers(): void`
+- [L2705](electron/database.ts#L2705) · export · `archivePortfolioRevision(reason: string, state: unknown): void`
 
 #### [electron/desktopSnapshot.ts](electron/desktopSnapshot.ts)
 

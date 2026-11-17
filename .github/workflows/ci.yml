@@ -63,6 +63,7 @@ jobs:
           node tests/persistence/portfolio-experiment.integration.cjs
           node tests/persistence/trade-revisions.integration.cjs
           node tests/persistence/track-cache.integration.cjs
+          node tests/persistence/corrupt-outcomes.integration.cjs
           npm run verify:backtest
           npm run verify:simulation
           npm run verify:comparisons
