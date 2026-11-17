@@ -14,6 +14,12 @@ A generated key remains unused indefinitely. Its first successful use atomically
 
 Every protected `/data/*` request checks the server session, key revocation, and current expiry before handing off to the existing public, CORS-enabled market-data feed. Browser credentials are not forwarded to that origin. Open tabs recheck every 15 seconds, on focus, and at expiry. Expired access is rejected immediately by server time even if the page is closed or the browser clock is wrong. Expired/revoked session records are cleaned up opportunistically; key audit rows remain for accurate counts. A cleanup cron is not needed for enforcement.
 
+## What key holders see
+
+A `member` session (any paid or trial key) gets the terminal without the owner's operational views: **Backtest** and **History** are neither in the navigation nor rendered, and Settings shows no list of alert sources. The owner's `admin` session and the desktop app keep every view (`MEMBER_HIDDEN_VIEWS` in `src/components/Access/AccessContext.tsx`). This is a presentation boundary only; it does not make `backtest.json` or the run list in `meta.json` confidential (see the scope note below).
+
+Settings → **License key** shows the member's own key after a confirmation, with a copy button. The service stores only key digests, so the key comes from the browser that entered it: `src/lib/licenseKey.ts` keeps it in localStorage when "Keep me signed in" is chosen and in sessionStorage otherwise, and removes it on **Lock terminal** and when the server reports the access ended. A device signed in before this feature has no copy until the key is entered there again.
+
 ## Secrets and security boundary
 
 `ADMIN_PASSWORD_HASH` is a secret runtime environment variable, using PBKDF2-SHA256 with a random salt and 100,000 iterations (the hosted WebCrypto limit). The supplied password is not committed or included in client assets. Rotate it by replacing that environment variable and redeploying. Existing admin sessions expire within eight hours; invalidate them immediately with `DELETE FROM access_sessions WHERE role='admin'` when rotating after a compromise.

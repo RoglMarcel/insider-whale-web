@@ -1,13 +1,13 @@
 const assert=require('node:assert/strict');
 const fs=require('node:fs');const path=require('node:path');const http=require('node:http');
-const {chromium}=require('playwright');const {mockAccessWorkflow}=require('./access-fixture.cjs');
+const {chromium}=require('playwright');const {mockAccessWorkflow,TEST_KEY}=require('./access-fixture.cjs');
 const root=path.resolve(__dirname,'../..'),out=path.join(root,'tmp/access-ui');fs.mkdirSync(out,{recursive:true});
 const server=http.createServer((req,res)=>{const name=new URL(req.url,'http://localhost').pathname;const file=path.resolve(root,'dist-web','.'+(name==='/'?'/index.html':name));if(!file.startsWith(path.join(root,'dist-web')+path.sep)||!fs.statSync(file,{throwIfNoEntry:false})?.isFile()){res.writeHead(404);return res.end();}res.setHeader('Content-Type',({'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml'})[path.extname(file)]||'application/octet-stream');fs.createReadStream(file).pipe(res);});
 let browser,page;
 (async()=>{
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));browser=await chromium.launch({headless:true});
   for(const width of [1440,820,390,320]) {
-    const context=await browser.newContext({viewport:{width,height:width<768?844:1000},reducedMotion:'reduce'});page=await context.newPage();
+    const context=await browser.newContext({viewport:{width,height:width<768?844:1000},reducedMotion:'reduce'});await context.grantPermissions(['clipboard-read','clipboard-write']);page=await context.newPage();
     const errors=[];page.on('pageerror',error=>errors.push(error.message));const access=await mockAccessWorkflow(page);let dataRequests=0;
     await page.route('**/data/**',route=>{dataRequests++;const name=new URL(route.request().url()).pathname.split('/').pop();return route.fulfill({json:name==='signals.json'?[]:name==='meta.json'?{version:'access-ui-test',generatedAt:new Date().toISOString()}:{stocks:{},stages:{}}});});
     const origin=`http://127.0.0.1:${server.address().port}`;await page.goto(origin);
@@ -16,8 +16,25 @@ let browser,page;
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Lock screen fits');
     await page.screenshot({path:path.join(out,`${width}-lock.png`)});
     await key.fill('invalid');await page.getByRole('button',{name:'Open terminal',exact:true}).click();await page.getByRole('alert').waitFor();
-    const loaded=page.waitForResponse('**/data/signals.json');await key.fill('IWT-UI-TEST-ONLY');await page.getByRole('button',{name:'Open terminal',exact:true}).click();await page.getByRole('button',{name:/^Lock terminal/}).waitFor();await loaded;assert(dataRequests>0,'Valid activation mounts the terminal');
+    const loaded=page.waitForResponse('**/data/signals.json');await key.fill(TEST_KEY.toLowerCase());await page.getByRole('button',{name:'Open terminal',exact:true}).click();await page.getByRole('button',{name:/^Lock terminal/}).waitFor();await loaded;assert(dataRequests>0,'Valid activation mounts the terminal');
+    // Key holders: no owner-only views, no source list, their own key behind a confirmation.
+    const nav=width<768?page.locator('nav').filter({has:page.locator('button[aria-current]')}):page.locator('aside');
+    if(width>=768&&width<1024)await page.getByRole('button',{name:/^(Open menu|Menü öffnen)$/,exact:true}).click();
+    for(const hidden of ['Backtest','History'])assert.equal(await nav.getByRole('button',{name:hidden,exact:true}).count(),0,`${hidden} is hidden from key holders`);
+    await nav.getByRole('button',{name:/^(Setup|Settings)$/}).click();await page.getByRole('heading',{name:'License key',exact:true}).waitFor();
+    assert.equal(await page.locator('.source-list').count(),0,'Key holders do not see the alert sources');
+    assert(!(await page.locator('main').innerText()).includes(TEST_KEY),'The key stays hidden until requested');
+    await page.getByRole('button',{name:'Show license key',exact:true}).click();await page.getByRole('alertdialog').waitFor();
+    assert(!(await page.locator('main').innerText()).includes(TEST_KEY),'Asking is not revealing');
+    await page.getByRole('button',{name:'Cancel',exact:true}).click();await page.getByRole('button',{name:'Show license key',exact:true}).click();
+    await page.getByRole('button',{name:'Yes, show it',exact:true}).click();
+    assert.equal(await page.getByLabel('License key',{exact:true}).innerText(),TEST_KEY,'The saved key is shown in full, in its issued format');
+    await page.getByRole('button',{name:'Copy',exact:true}).click();await page.getByRole('button',{name:'Copied',exact:true}).waitFor();
+    assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),TEST_KEY,'Copy puts the key on the clipboard');
+    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'License key fits');
+    await page.screenshot({path:path.join(out,`${width}-license.png`)});
     access.revokeSession();await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await key.waitFor();assert.equal(await page.getByRole('button',{name:/^Lock terminal/}).count(),0,'Revoked session unmounts the terminal');
+    assert.equal(await page.evaluate(()=>localStorage.getItem('iwt_license_key')??sessionStorage.getItem('iwt_license_key')),null,'Ended access forgets the saved key');
     await page.goto(origin+'/#/admin');await page.getByLabel('Admin password',{exact:true}).waitFor();assert.equal(await page.locator('.access-top .access-brand').count(),0,'Admin login has no top-left branding');await page.screenshot({path:path.join(out,`${width}-admin-login.png`)});await page.getByLabel('Admin password',{exact:true}).fill('test-only');await page.getByRole('button',{name:'Sign in',exact:true}).click();await page.getByRole('heading',{name:'Generate keys',exact:true}).waitFor();
     await page.locator('.access-duration-option').filter({hasText:'Free trial'}).click();await page.getByPlaceholder('e.g. October members').fill('Browser fixture');await page.getByRole('button',{name:'Generate key',exact:true}).click();await page.getByRole('region',{name:'New keys',exact:true}).waitFor();
     assert.equal(await page.locator('.access-plan-stat').count(),5);assert.equal(await page.locator('.access-table tbody tr').count(),1);assert((await page.locator('.access-table tbody').innerText()).includes('Free trial'));
@@ -26,6 +43,6 @@ let browser,page;
     await page.reload();await page.getByRole('heading',{name:'All access keys',exact:false}).waitFor();assert.equal(await page.locator('.access-generated').count(),0,'Full keys are not recovered after reload');
     await page.getByRole('button',{name:'Revoke',exact:true}).click();await page.getByRole('button',{name:'Revoke',exact:true}).click();await page.locator('.status-revoked').waitFor();
     await page.getByRole('button',{name:'Sign out',exact:true}).click();await page.getByLabel('Admin password',{exact:true}).waitFor();assert.deepEqual(errors,[]);
-    console.log(`Access ${width}px: lock, activation, session revocation, admin generation, one-time keys and responsive layout passed.`);await context.close();
+    console.log(`Access ${width}px: lock, activation, member views, license key reveal, session revocation, admin generation, one-time keys and responsive layout passed.`);await context.close();
   }
 })().catch(async error=>{console.error(error);process.exitCode=1;if(page&&!page.isClosed())await page.screenshot({path:path.join(out,'failure.png'),fullPage:true}).catch(()=>{});}).finally(async()=>{if(browser)await browser.close();server.close();});

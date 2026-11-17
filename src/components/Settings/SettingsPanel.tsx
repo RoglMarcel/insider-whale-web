@@ -10,6 +10,8 @@ import { ShadowScoring } from './ShadowScoring';
 import { api, isWeb } from '@/lib/ipc';
 import { useI18n } from '@/hooks/useI18n';
 import { AlertSources } from './AlertSources';
+import { LicenseKey } from './LicenseKey';
+import { useIsMember } from '@/components/Access/AccessContext';
 import { LANGUAGES, type Lang } from '@/lib/i18n';
 
 function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
@@ -63,6 +65,7 @@ export function SettingsPanel() {
   const clearDatabase = useStore((s) => s.clearDatabase);
   const authStatus = useStore((s) => s.authStatus);
   const { t, language, setLanguage } = useI18n();
+  const member = useIsMember();
 
   const save = (patch: Partial<AppSettings>) => void saveSettings(patch);
 
@@ -83,7 +86,8 @@ export function SettingsPanel() {
           </Row>
           <p className="py-2 text-xs text-secondary">{language === 'de' ? 'Deine Sprachwahl und Watchlist werden auf diesem Gerät gespeichert.' : 'Your language preference and watchlist are saved on this device.'}</p>
         </SectionCard>
-        <AlertSources />
+        {/* Where alerts are collected from is the owner's business, not the key holder's. */}
+        {member ? <LicenseKey /> : <AlertSources />}
       </>}
 
       {!isWeb && (

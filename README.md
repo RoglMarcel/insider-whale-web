@@ -1367,10 +1367,10 @@ Das folgende Verzeichnis ist aus dem geprüften Quellstand abgeleitet. Es nennt 
 
 #### [src/components/Layout/BottomTabBar.tsx](src/components/Layout/BottomTabBar.tsx)
 
-- [L7](src/components/Layout/BottomTabBar.tsx#L7) · intern · `Tab`
-- [L15](src/components/Layout/BottomTabBar.tsx#L15) · intern · `TABS`
-- [L31](src/components/Layout/BottomTabBar.tsx#L31) · intern · `VISIBLE_TABS`
-- [L44](src/components/Layout/BottomTabBar.tsx#L44) · export · `BottomTabBar()`
+- [L8](src/components/Layout/BottomTabBar.tsx#L8) · intern · `Tab`
+- [L16](src/components/Layout/BottomTabBar.tsx#L16) · intern · `TABS`
+- [L33](src/components/Layout/BottomTabBar.tsx#L33) · intern · `VISIBLE_TABS`
+- [L46](src/components/Layout/BottomTabBar.tsx#L46) · export · `BottomTabBar()`
 
 #### [src/components/Layout/Header.tsx](src/components/Layout/Header.tsx)
 
@@ -1383,10 +1383,10 @@ Das folgende Verzeichnis ist aus dem geprüften Quellstand abgeleitet. Es nennt 
 
 #### [src/components/Layout/Sidebar.tsx](src/components/Layout/Sidebar.tsx)
 
-- [L9](src/components/Layout/Sidebar.tsx#L9) · intern · `NavItem`
-- [L17](src/components/Layout/Sidebar.tsx#L17) · intern · `NAV`
-- [L32](src/components/Layout/Sidebar.tsx#L32) · export · `VISIBLE_NAV`
-- [L34](src/components/Layout/Sidebar.tsx#L34) · export · `Sidebar({ open = false, onClose }: { open?: boolean; onClose?: () => void })`
+- [L10](src/components/Layout/Sidebar.tsx#L10) · intern · `NavItem`
+- [L18](src/components/Layout/Sidebar.tsx#L18) · intern · `NAV`
+- [L34](src/components/Layout/Sidebar.tsx#L34) · export · `VISIBLE_NAV`
+- [L36](src/components/Layout/Sidebar.tsx#L36) · export · `Sidebar({ open = false, onClose }: { open?: boolean; onClose?: () => void })`
 
 #### [src/components/News/NewsView.tsx](src/components/News/NewsView.tsx)
 
@@ -1486,6 +1486,10 @@ Das folgende Verzeichnis ist aus dem geprüften Quellstand abgeleitet. Es nennt 
 
 - [L7](src/components/Settings/AlertSources.tsx#L7) · export · `AlertSources()`
 
+#### [src/components/Settings/LicenseKey.tsx](src/components/Settings/LicenseKey.tsx)
+
+- [L13](src/components/Settings/LicenseKey.tsx#L13) · export · `LicenseKey()`
+
 #### [src/components/Settings/PlatformLogins.tsx](src/components/Settings/PlatformLogins.tsx)
 
 - [L11](src/components/Settings/PlatformLogins.tsx#L11) · intern · `CATEGORY_KEYS`
@@ -1494,10 +1498,10 @@ Das folgende Verzeichnis ist aus dem geprüften Quellstand abgeleitet. Es nennt 
 
 #### [src/components/Settings/SettingsPanel.tsx](src/components/Settings/SettingsPanel.tsx)
 
-- [L15](src/components/Settings/SettingsPanel.tsx#L15) · intern · `Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean })`
-- [L37](src/components/Settings/SettingsPanel.tsx#L37) · intern · `Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode })`
-- [L49](src/components/Settings/SettingsPanel.tsx#L49) · intern · `SectionCard({ title, children }: { title: string; children: ReactNode })`
-- [L60](src/components/Settings/SettingsPanel.tsx#L60) · export · `SettingsPanel()`
+- [L17](src/components/Settings/SettingsPanel.tsx#L17) · intern · `Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean })`
+- [L39](src/components/Settings/SettingsPanel.tsx#L39) · intern · `Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode })`
+- [L51](src/components/Settings/SettingsPanel.tsx#L51) · intern · `SectionCard({ title, children }: { title: string; children: ReactNode })`
+- [L62](src/components/Settings/SettingsPanel.tsx#L62) · export · `SettingsPanel()`
 
 #### [src/components/Settings/ShadowScoring.tsx](src/components/Settings/ShadowScoring.tsx)
 
@@ -1716,13 +1720,13 @@ Das folgende Verzeichnis ist aus dem geprüften Quellstand abgeleitet. Es nennt 
 - [L11](src/lib/i18n.ts#L11) · export · `Lang`
 - [L13](src/lib/i18n.ts#L13) · export · `LANGUAGES`
 - [L18](src/lib/i18n.ts#L18) · intern · `en`
-- [L648](src/lib/i18n.ts#L648) · export · `TKey`
-- [L650](src/lib/i18n.ts#L650) · intern · `de`
-- [L1280](src/lib/i18n.ts#L1280) · intern · `DICTS`
-- [L1283](src/lib/i18n.ts#L1283) · export · `translate(lang: Lang, key: TKey, vars?: Record<string, string | number>): string`
-- [L1295](src/lib/i18n.ts#L1295) · intern · `STORAGE_KEY`
-- [L1298](src/lib/i18n.ts#L1298) · export · `initialLanguage(): Lang`
-- [L1311](src/lib/i18n.ts#L1311) · export · `persistLanguage(lang: Lang): void`
+- [L695](src/lib/i18n.ts#L695) · export · `TKey`
+- [L697](src/lib/i18n.ts#L697) · intern · `de`
+- [L1374](src/lib/i18n.ts#L1374) · intern · `DICTS`
+- [L1377](src/lib/i18n.ts#L1377) · export · `translate(lang: Lang, key: TKey, vars?: Record<string, string | number>): string`
+- [L1389](src/lib/i18n.ts#L1389) · intern · `STORAGE_KEY`
+- [L1392](src/lib/i18n.ts#L1392) · export · `initialLanguage(): Lang`
+- [L1405](src/lib/i18n.ts#L1405) · export · `persistLanguage(lang: Lang): void`
 
 #### [src/lib/insider-only.ts](src/lib/insider-only.ts)
 
@@ -1737,6 +1741,17 @@ Das folgende Verzeichnis ist aus dem geprüften Quellstand abgeleitet. Es nennt 
 - [L14](src/lib/ipc.ts#L14) · export · `isElectron`
 - [L16](src/lib/ipc.ts#L16) · export · `isWeb`
 - [L18](src/lib/ipc.ts#L18) · export · `api`
+
+#### [src/lib/licenseKey.ts](src/lib/licenseKey.ts)
+
+- [L10](src/lib/licenseKey.ts#L10) · intern · `STORAGE_KEY`
+- [L12](src/lib/licenseKey.ts#L12) · intern · `CANONICAL`
+- [L14](src/lib/licenseKey.ts#L14) · export · `normalizeLicenseKey`
+- [L17](src/lib/licenseKey.ts#L17) · export · `formatLicenseKey(normalized: string): string`
+- [L21](src/lib/licenseKey.ts#L21) · intern · `stores`
+- [L25](src/lib/licenseKey.ts#L25) · export · `saveLicenseKey(key: string, rememberDevice: boolean): void`
+- [L35](src/lib/licenseKey.ts#L35) · export · `readLicenseKey(): string | null`
+- [L45](src/lib/licenseKey.ts#L45) · export · `forgetLicenseKey(): void`
 
 #### [src/lib/mockApi.ts](src/lib/mockApi.ts)
 

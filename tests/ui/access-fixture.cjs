@@ -1,7 +1,13 @@
 // Browser-only fixture. Never imported by app/server code or shipped to visitors.
 const session = role => ({role, duration: role === 'member' ? '4weeks' : null, expiresAt:Date.now()+3_600_000, sessionExpiresAt:Date.now()+3_600_000});
+/** A syntactically valid key (IWT + 32 of A-H, J-N, P-Z, 2-9), as the real service requires. */
+exports.TEST_KEY = 'IWT-TESTKEYA-TESTKEYB-TESTKEYC-TESTKEYD';
 exports.mockMemberAccess = async page => {
   await page.route('**/api/access/session', route => route.fulfill({json:{session:session('member')}}));
+};
+/** The owner's terminal session (password sign-in): every view is available. */
+exports.mockOwnerAccess = async page => {
+  await page.route('**/api/access/session', route => route.fulfill({json:{session:session('admin')}}));
 };
 exports.mockAccessWorkflow = async page => {
   let member=null, admin=null, keys=[];
@@ -11,7 +17,9 @@ exports.mockAccessWorkflow = async page => {
     if(path==='/api/access/session')return fulfill(route,{session:member || admin});
     if(path==='/api/admin/session')return fulfill(route,{session:admin});
     if(path==='/api/access/activate') {
-      if(data.key!=='IWT-UI-TEST-ONLY')return fulfill(route,{error:'This key is invalid, expired or revoked.'},401);
+      // Same normalization as access/service.mjs: case, spaces and dashes do not matter.
+      const normalize=value=>String(value).toUpperCase().replace(/[\s-]/g,'');
+      if(normalize(data.key)!==normalize(exports.TEST_KEY))return fulfill(route,{error:'This key is invalid, expired or revoked.'},401);
       member=session('member');return fulfill(route,{session:member});
     }
     if(path==='/api/access/logout'){member=null;return fulfill(route,{ok:true});}

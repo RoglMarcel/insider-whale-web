@@ -5,6 +5,7 @@ import { GridIcon, StarIcon, HistoryIcon, SettingsIcon, NewsIcon, BriefcaseIcon 
 import { api, isWeb } from '@/lib/ipc';
 import { useI18n } from '@/hooks/useI18n';
 import type { TKey } from '@/lib/i18n';
+import { MEMBER_HIDDEN_VIEWS, useIsMember } from '@/components/Access/AccessContext';
 
 interface NavItem {
   key: View;
@@ -39,6 +40,8 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
   const scheduleEnabled = useStore((s) => s.settings.scheduleEnabled);
   const [version, setVersion] = useState<string>('');
   const { t } = useI18n();
+  const member = useIsMember();
+  const nav = member ? VISIBLE_NAV.filter((n) => !MEMBER_HIDDEN_VIEWS.includes(n.key)) : VISIBLE_NAV;
 
   useEffect(() => {
     api.app.getVersion().then(setVersion).catch(() => undefined);
@@ -75,7 +78,7 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
 
       {/* Nav */}
       <nav className="flex flex-1 flex-col gap-1">
-        {VISIBLE_NAV.map((item) => {
+        {nav.map((item) => {
           const Icon = item.icon;
           const active = view === item.key;
           return (
