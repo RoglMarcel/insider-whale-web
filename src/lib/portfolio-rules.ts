@@ -68,6 +68,22 @@ export function earliestEntryDate(seenAt:string,closeUtcHour?:number):string {
   return timestamp>=close?addDaysYmd(utcDate,1):utcDate;
 }
 
+/**
+ * The day an observed signal is measured from: the first close the sighting
+ * could still trade, and never earlier than the trade or filing it reports.
+ *
+ * The portfolio, the outcome labels and the in-app performance report all
+ * measure from this one date. The labels and the report used to take the
+ * sighting's calendar date instead, so a signal first seen after the close was
+ * priced at that day's close, which had already happened: 172 of 8,133 stored
+ * label candidates, e.g. ACCS seen 2026-08-18T20:56Z (16:56 New York time)
+ * and labeled from the 16:00 close.
+ */
+export function signalEntryDate(tradeDate: string | null | undefined, filingDate: string | null | undefined, sightedAt: string): string {
+  const day = (v: string | null | undefined): string => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '');
+  return [day(tradeDate), day(filingDate), earliestEntryDate(sightedAt)].sort().at(-1)!;
+}
+
 // ── Trading mechanics ──
 
 /** Fills are worse than the close on BOTH sides — never in the book's favour. */
@@ -334,19 +350,19 @@ interface Book {
   nextId: number;
 }
 
-function newBook(policy: PortfolioCashPolicy, startingCash: number, spyOpen: number, slipBps: number): Book {
-  // Under the `spy` policy the book is fully invested in the index from day one,
-  // and pays the same entry slippage the benchmark pays.
-  const spyShares = policy === 'spy' ? startingCash / applySlippage(spyOpen, 'buy', slipBps) : 0;
-  return {
-    policy,
-    cash: policy === 'spy' ? 0 : startingCash,
-    spyShares,
-    open: [],
-    closed: [],
-    cooldown: new Map(),
-    nextId: 1,
-  };
+function newBook(policy: PortfolioCashPolicy, startingCash: number): Book {
+  // Every book opens in CASH. Under the `spy` policy the first day's `parkCash`
+  // puts whatever the opening-day entries left over into the index, at that same
+  // close and with the entry slippage the benchmark pays — so on day one the
+  // book and the benchmark both hold the committed capital less one side.
+  //
+  // The book used to be parked in SPY before the first day ran. An entry on
+  // opening day then sold index shares it had bought at the very same close: a
+  // round trip nobody would trade, costing two extra sides of slippage on that
+  // position. The stored book opened at $9,993.92 against a benchmark of
+  // $9,995.00 for exactly that reason ($1,080.68 bought on day one × 10 bps),
+  // while its own idle-cash twin paid the single side.
+  return { policy, cash: startingCash, spyShares: 0, open: [], closed: [], cooldown: new Map(), nextId: 1 };
 }
 
 const positionsValue = (b: Book): number => b.open.reduce((s, p) => s + p.shares * p.lastPrice, 0);
@@ -455,11 +471,11 @@ export function simulatePortfolio(input: PortfolioSimInput): PortfolioSimResult 
   const spyStart = input.spy[days[0]];
   if (!(spyStart > 0)) return { equity, positions: [], events, untradable: [...untradable] };
 
-  const active = newBook(cfg.cashPolicy, cfg.startingCash, spyStart, slip);
+  const active = newBook(cfg.cashPolicy, cfg.startingCash);
   // The comparison book always runs the `idle` policy. When that IS the active
   // policy the two are the same object, so `equityIdle` equals `equity` instead
   // of drifting from a second, pointlessly re-simulated run.
-  const idle = cfg.cashPolicy === 'idle' ? active : newBook('idle', cfg.startingCash, spyStart, slip);
+  const idle = cfg.cashPolicy === 'idle' ? active : newBook('idle', cfg.startingCash);
 
   // Benchmark: buy & hold, same day, same capital, same entry slippage.
   const benchShares = cfg.startingCash / applySlippage(spyStart, 'buy', slip);

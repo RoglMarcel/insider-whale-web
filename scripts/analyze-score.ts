@@ -105,8 +105,16 @@ function stdev(xs: readonly number[]): number {
 
 /**
  * Design effect from a one-way variance decomposition by ticker.
- * `deff = 1 + (m − 1)·ρ`, so `n_eff = n / deff`. With ρ = 0 (truly independent
+ * `deff = 1 + (m′ − 1)·ρ`, so `n_eff = n / deff`. With ρ = 0 (truly independent
  * observations) this collapses to n, i.e. the old behaviour.
+ *
+ * m′ is the SIZE-WEIGHTED cluster size Σnᵢ²/n, not the plain mean n/clusters.
+ * The variance of a pooled, equally weighted statistic over clusters of unequal
+ * size is σ²/n · [1 + ρ·(Σnᵢ²/n − 1)]: a ticker with 29 rows carries 29 times
+ * the weight of a ticker with one, and the mean cluster size cannot see that.
+ * The two agree only when every ticker has the same number of rows. On the
+ * stored outcomes they do not (10d: mean 8.2, size-weighted 12.2; largest 26),
+ * and the mean overstated n_eff by 35–53% across the 5/10/20-day horizons.
  */
 export function designEffect(rows: readonly Row[]): { n: number; clusters: number; m: number; rho: number; deff: number } {
   const byTicker = new Map<string, number[]>();
@@ -130,7 +138,9 @@ export function designEffect(rows: readonly Row[]): { n: number; clusters: numbe
   const msB = ssBetween / Math.max(clusters - 1, 1);
   const msW = ssWithin / Math.max(n - clusters, 1);
   const rho = msB + (m - 1) * msW > 0 ? Math.max(0, (msB - msW) / (msB + (m - 1) * msW)) : 0;
-  return { n, clusters, m, rho, deff: Math.max(1, 1 + (m - 1) * rho) };
+  let sumSquares = 0;
+  for (const values of byTicker.values()) sumSquares += values.length ** 2;
+  return { n, clusters, m, rho, deff: Math.max(1, 1 + (sumSquares / n - 1) * rho) };
 }
 
 /** Fisher-z 95% interval for a rank correlation at an effective sample size. */

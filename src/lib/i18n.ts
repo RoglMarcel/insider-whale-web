@@ -101,6 +101,7 @@ const en = {
   'updates.details': 'Details',
   'updates.prices_unavailable': 'Some prices are unavailable.',
   'updates.work_remaining': 'More history will be processed in later runs.',
+  'updates.price_review_required': 'Some outcomes wait for a price review of an extreme move.',
   'updates.source_errors': 'Some sources could not be refreshed.',
   'updates.update_failed': 'Refresh failed; displayed data may be older.',
   'updates.no_work': 'No new outcomes are due yet.',
@@ -489,7 +490,7 @@ const en = {
   "acc.avgAlpha": "{v} avg 3M α (vs S&P)",
   "acc.marketBeatRate": "{pct}% market-beat rate",
   "acc.avgAlphaLong": ", {v} avg 3M alpha",
-  "acc.disclaimer": "Outcomes are split/dividend-adjusted and measured against the S&P 500 over ~3 months. Buys on tickers later delisted have no price data and are excluded, so win rates skew optimistic.",
+  "acc.disclaimer": "Outcomes are split/dividend-adjusted and measured against the S&P 500 over ~3 months. Repeat buys of the same stock within 3 months count once. Buys on tickers later delisted have no price data and are excluded, so win rates skew optimistic.",
 
   // ── Testing portfolio (v1.4.0) ──
   "nav.portfolio": "Portfolio",
@@ -766,6 +767,7 @@ const de: Record<TKey, string> = {
   'updates.details': 'Details',
   'updates.prices_unavailable': 'Einige Kurse sind nicht verfügbar.',
   'updates.work_remaining': 'Weitere historische Daten folgen in späteren Durchläufen.',
+  'updates.price_review_required': 'Einige Ergebnisse warten auf die Prüfung einer extremen Kursbewegung.',
   'updates.source_errors': 'Einige Quellen konnten nicht aktualisiert werden.',
   'updates.update_failed': 'Aktualisierung fehlgeschlagen; angezeigte Daten können älter sein.',
   'updates.no_work': 'Noch keine neuen Ergebnisse fällig.',
@@ -1154,7 +1156,7 @@ const de: Record<TKey, string> = {
   "acc.avgAlpha": "{v} Ø 3-M-α (vs. S&P)",
   "acc.marketBeatRate": "{pct} % Trefferquote gegen den Markt",
   "acc.avgAlphaLong": ", {v} Ø 3-Monats-Alpha",
-  "acc.disclaimer": "Die Ergebnisse sind split- und dividendenbereinigt und werden über ~3 Monate gegen den S&P 500 gemessen. Käufe in später delisteten Titeln haben keine Kursdaten und fallen heraus — die Trefferquoten sind dadurch tendenziell zu optimistisch.",
+  "acc.disclaimer": "Die Ergebnisse sind split- und dividendenbereinigt und werden über ~3 Monate gegen den S&P 500 gemessen. Wiederholte Käufe derselben Aktie innerhalb von 3 Monaten zählen einmal. Käufe in später delisteten Titeln haben keine Kursdaten und fallen heraus — die Trefferquoten sind dadurch tendenziell zu optimistisch.",
 
   // ── Testing portfolio (v1.4.0) ──
   "nav.portfolio": "Depot",

@@ -56,6 +56,18 @@ describe('designEffect', () => {
     for (let t = 0; t < 10; t++) for (let k = 0; k < 4; k++) rows.push(row(`T${t}`, t, ((t * 7 + k * 13) % 20) / 100));
     expect(designEffect(rows).deff).toBeLessThan(2);
   });
+  it('weights clusters by size: one ticker with 91 identical rows is not ten independent ones', () => {
+    // 91 identical observations of one ticker plus 9 single-row tickers. The
+    // pooled statistic gives the big ticker 91% of the weight, so the effective
+    // sample is n²/Σnᵢ² = 100²/(91² + 9) ≈ 1.2. The mean cluster size (10) said
+    // n_eff = 10 — an 8-fold overstatement.
+    const rows: Row[] = Array.from({ length: 91 }, () => row('BIG', 50, 0.2));
+    for (let t = 0; t < 9; t++) rows.push(row(`S${t}`, t, t / 100));
+    const d = designEffect(rows);
+    expect(d.m).toBe(10);
+    expect(d.rho).toBeCloseTo(1, 10);
+    expect(d.n / d.deff).toBeCloseTo((100 * 100) / (91 * 91 + 9), 10);
+  });
   it('never returns a design effect below 1', () => {
     expect(designEffect([]).deff).toBe(1);
     expect(designEffect([row('A', 1, 0.1)]).deff).toBeGreaterThanOrEqual(1);

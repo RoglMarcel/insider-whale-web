@@ -23,8 +23,10 @@ import {
   getPortfolioPositions,
   getPortfolioRunMeta,
   getPriceBook,
+  getArchivedExperimentCandidates,
 } from '../electron/database';
-import { buildCandidates } from '../electron/portfolio';
+import { MAIN_BOOK_CANDIDATE_ARCHIVE } from '../electron/portfolio';
+import { cleanPortfolioCandidates } from '../src/lib/ticker-quality';
 import { applySlippage, diffDaysYmd, simulatePortfolio } from '../src/lib/portfolio-rules';
 
 let failures = 0;
@@ -130,9 +132,13 @@ function main(): void {
     // Both series mark at the starting capital MINUS one side of slippage on
     // day one — that is the cost of getting in, and both pay it identically.
     const afterEntryCost = config.startingCash * (1 - config.slippageBps / 10_000);
+    // Compared in whole cents with room for rounding. Equity is the sum of three
+    // components each rounded to the cent, the benchmark is rounded once, so the
+    // same value can print up to two cents apart — and `9995.01 - 9995` is
+    // 0.0100000000002 in floating point, which a bare `<= 0.01` rejects.
     check(
-      'both series start on the same day at the same value',
-      Math.abs(first.equity - first.benchmark) <= 0.01,
+      'both series start on the same day at the same value (±$0.02)',
+      Math.round(Math.abs(first.equity - first.benchmark) * 100) <= 2,
       `equity ${money(first.equity)} vs benchmark ${money(first.benchmark)}`,
     );
     check(
@@ -237,7 +243,12 @@ function main(): void {
   );
 
   // ── 7. Determinism: re-run the engine and compare with what is on disk ──
-  const candidates = buildCandidates(config);
+  // The run replays its ARCHIVED candidates: the first observed entry of each
+  // ticker and day, which can differ from what the rolling signal tables say
+  // today (a sighting imported later must not rewrite an earlier decision).
+  // Rebuilding from live signals instead reported a restatement that never
+  // happened (GME 2026-09-11: archived 70.1, live 74.1).
+  const candidates = cleanPortfolioCandidates(getArchivedExperimentCandidates(MAIN_BOOK_CANDIDATE_ARCHIVE));
   const universe = [...new Set(candidates.map((c) => c.ticker))];
   const book = getPriceBook(universe, first.date);
   const tradingDays = Object.keys(spy).sort();

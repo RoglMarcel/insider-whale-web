@@ -201,6 +201,17 @@ export function screenSeries(points: readonly PricePoint[], maxMove = PRICE_MAX_
   return { clean, suspect };
 }
 
+/**
+ * Does the window from `from` through `to` contain a session-to-session move the
+ * screen flags? Such a window needs review before a return is measured across
+ * it: a provider series with a half-applied split reads as a real move. Stored
+ * labels show it: YYAI's 2026-07-10 entry is 8.11 in one fetch and 162.20 in a
+ * later one (exactly ×20), and one fetch ran 8.11 → 182.20 → 0.17 in 20 days.
+ */
+export function windowDiscontinuity(points: readonly PricePoint[], from: string, to: string, maxMove = PRICE_MAX_DAILY_MOVE): boolean {
+  return screenSeries(points.filter((p) => p.date >= from && p.date <= to), maxMove).suspect.length > 0;
+}
+
 /** First point on or after `date` — the "next trading day" rule, on a series. */
 export function priceOnOrAfter(series: readonly PricePoint[], date: string): PricePoint | null {
   for (const p of series) if (p.date >= date) return p;

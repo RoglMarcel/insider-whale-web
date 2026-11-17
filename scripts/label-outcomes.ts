@@ -23,8 +23,10 @@ import { resolvedTicker } from '../src/lib/ticker-quality';
 import path from 'node:path';
 import { recordUpdate } from './update-report';
 import fs from 'node:fs';
-import { fetchAdjCloseSeries, outcomeCutoff, outcomePricePair, PRICE_REQUEST_GAP_MS, sleep } from '../electron/prices';
+import { fetchPriceSnapshot, outcomeCutoff, outcomePricePair, windowDiscontinuity, PRICE_REQUEST_GAP_MS, sleep, type PricePoint } from '../electron/prices';
+import { reusablePriceReview } from '../electron/priceCache';
 import {
+  getReviewedPriceVintage,
   initDatabase,
   closeDatabase,
   getOutcomeBackfillCandidates,
@@ -50,7 +52,8 @@ import {
 const HORIZONS = [5, 10, 20, 40, 60, 90, 120, 180] as const; // calendar days forward
 const MAX_TICKERS_PER_RUN = Number(process.env.LABEL_MAX_TICKERS ?? 250);
 
-type Series = { date: string; px: number }[];
+/** `reviewed`: a person released this response's flagged moves (scripts/review-price-vintage.ts). */
+type Series = { points: PricePoint[]; reviewed: boolean };
 const cache = new Map<string, Series | null>();
 
 async function fetchSeries(ticker: string, fromYmd: string, identity?: PriceIdentity): Promise<Series | null> {
@@ -58,8 +61,10 @@ async function fetchSeries(ticker: string, fromYmd: string, identity?: PriceIden
   const key = priceTicker(resolvedTicker(ticker, today), today, identity);
   if (cache.has(key)) return cache.get(key)!;
   await sleep(PRICE_REQUEST_GAP_MS);
-  const points = await fetchAdjCloseSeries(ticker, { fromYmd, identity });
-  const series = points?.length ? points : null;
+  const snapshot = await fetchPriceSnapshot(ticker, { fromYmd, identity });
+  const series = snapshot && !snapshot.issues.length && snapshot.points.length
+    ? { points: snapshot.points, reviewed: !!reusablePriceReview(snapshot, getReviewedPriceVintage(ticker)) }
+    : null;
   cache.set(key, series);
   return series;
 }
@@ -83,7 +88,14 @@ async function main(): Promise<void> {
   // of everything ever labeled is `signal_outcomes`; unioning it in is what makes
   // the 40/60/90/120/180-day horizons reachable at all. Live rows win on a
   // duplicate key, because they carry the freshest breakdown snapshot.
-  const bySignal = getOutcomeCandidates().filter((c) => /^\d{4}-\d{2}-\d{2}$/.test(c.entryDate));
+  const labeled = getLabeledKeys();
+  // A sighting after the close used to be keyed to its own calendar date; it is
+  // now keyed to the next session (`signalEntryDate`). One already labeled under
+  // the old key keeps that single series — a second key would count the same
+  // observation twice. Only sightings labeled before the change are affected.
+  const labeledUnderSightingDate = (c: { ticker: string; entryDate: string; observedDate?: string }) =>
+    !!c.observedDate && c.entryDate > c.observedDate && HORIZONS.some((h) => labeled.has(`${c.ticker}|${c.observedDate}|${h}`));
+  const bySignal = getOutcomeCandidates().filter((c) => /^\d{4}-\d{2}-\d{2}$/.test(c.entryDate) && !labeledUnderSightingDate(c));
   const seenKeys = new Set(bySignal.map((c) => `${c.ticker}|${c.entryDate}`));
   const rawCandidates = [
     ...bySignal,
@@ -94,10 +106,9 @@ async function main(): Promise<void> {
   const quarantined = [...new Set(rawCandidates.filter((c) => tickerIssue(c.ticker)).map((c) => c.ticker))].sort();
   const candidates = rawCandidates.filter((c) => !tickerIssue(c.ticker));
   if (quarantined.length) console.log(`[label] quarantined malformed symbols (history retained): ${quarantined.join(', ')}`);
-  const labeled = getLabeledKeys();
   const fromYmd = candidates.map(c => c.entryDate).sort()[0] ?? new Date().toISOString().slice(0, 10);
   const spy = await fetchSeries('SPY', fromYmd);
-  const cutoff = spy && outcomeCutoff(spy, new Date().toISOString().slice(0, 10));
+  const cutoff = spy && outcomeCutoff(spy.points, new Date().toISOString().slice(0, 10));
   if (!spy || !cutoff) {
     closeDatabase();
     throw new Error('Benchmark unavailable');
@@ -128,13 +139,15 @@ async function main(): Promise<void> {
   const out: SignalOutcome[] = [];
   let done = 0;
   const missing = new Set<string>();
+  /** Windows crossing an unreviewed >60% session move: left pending, never labeled. */
+  const needsReview = new Set<string>();
   for (const ticker of tickers) {
     done++;
     if (done % 50 === 0) console.log(`   …${done}/${tickers.length}`);
     for (const c of todo.filter((x) => x.ticker === ticker)) {
       const series = await fetchSeries(ticker, fromYmd, c);
       if (!series) { missing.add(ticker); continue; }
-      const entryPair = outcomePricePair(series, spy, c.entryDate);
+      const entryPair = outcomePricePair(series.points, spy.points, c.entryDate);
       if (!entryPair) { missing.add(ticker); continue; }
       const { equity: entry, benchmark: spyEntry } = entryPair;
       for (const h of HORIZONS) {
@@ -142,9 +155,13 @@ async function main(): Promise<void> {
         if (labeled.has(key)) continue;
         const target = addDays(c.entryDate, h);
         if (target > cutoff) continue;
-        const exitPair = outcomePricePair(series, spy, target);
+        const exitPair = outcomePricePair(series.points, spy.points, target);
         if (!exitPair) { missing.add(ticker); continue; }
         const { equity: exit, benchmark: spyExit } = exitPair;
+        // Same screen the portfolio applies to every price vintage, scoped to
+        // the measured window. Retried every run: a corrected provider series
+        // or a recorded review labels it later.
+        if (!series.reviewed && windowDiscontinuity(series.points, entry.date, exit.date)) { needsReview.add(ticker); continue; }
         const ret = exit.px / entry.px - 1;
         const spyRet = spyExit.px / spyEntry.px - 1;
         out.push({
@@ -168,7 +185,11 @@ async function main(): Promise<void> {
   console.log(`[label] wrote ${written} new labeled outcome(s).`);
   const deferred = new Set(todo.map((c) => c.ticker)).size > tickers.length;
   if (missing.size) console.warn(`[label] missing historical prices: ${[...missing].sort().join(', ')}`);
-  recordUpdate(missing.size || deferred ? 'partial' : 'success', missing.size ? 'prices_unavailable' : deferred ? 'work_remaining' : 'updated', missing.size, [...missing], undefined, quarantined);
+  if (needsReview.size) console.warn(`[label] >60% session move inside the window, label held for price review: ${[...needsReview].sort().join(', ')}`);
+  const incomplete = [...new Set([...missing, ...needsReview])];
+  recordUpdate(incomplete.length || deferred ? 'partial' : 'success',
+    missing.size ? 'prices_unavailable' : needsReview.size ? 'price_review_required' : deferred ? 'work_remaining' : 'updated',
+    incomplete.length, incomplete, undefined, quarantined);
   report();
   closeDatabase();
 }

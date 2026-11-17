@@ -13,7 +13,14 @@ import {
   computeConfidence,
   CORROBORATION_GATE,
 } from '../electron/scoring';
-import { getFreshnessMultiplier, type TickerAggregate, type OptionsActivity, type RawInsiderTrade } from '../src/types';
+import {
+  getFreshnessMultiplier,
+  CONVICTION_THRESHOLDS,
+  DEFAULT_SCORING_CONFIG,
+  type TickerAggregate,
+  type OptionsActivity,
+  type RawInsiderTrade,
+} from '../src/types';
 import { aggregate, trade, option, politician, ymd, snapshot } from './helpers';
 
 /**
@@ -278,6 +285,28 @@ describe('INVARIANT — monotonicity in every factor that claims to be monotone'
       }
     }
   });
+  it('a further genuine buyer never lowers the score, whatever the sizes (regression: 48.8 → 41.7)', () => {
+    const ceo = trade({ value: 520_000 });
+    const alone = scoreTicker(aggregate({ trades: [ceo] })).score;
+    const joined = scoreTicker(aggregate({ trades: [ceo, trade({ insiderName: 'Bob Roe', role: 'Director', value: 20_000 })] })).score;
+    expect(alone).toBe(48.8);
+    expect(joined).toBeGreaterThanOrEqual(alone);
+
+    const r = rng(20261116);
+    for (let round = 0; round < 300; round++) {
+      const marketCap = r() < 0.5 ? undefined : 10 ** (8 + r() * 4);
+      const trades = Array.from({ length: 1 + Math.floor(r() * 5) }, (_, i) =>
+        trade({ insiderName: `Person ${i}`, role: 'Director', value: 10 ** (3.5 + r() * 4), tradeDate: ymd(Math.floor(r() * 20)) }),
+      );
+      const before = scoreTicker(aggregate({ trades, marketCap })).score;
+      // Not fresher than the freshest existing buy, so the age decay is held fixed
+      // and the comparison isolates the size × cluster reading.
+      const oldest = Math.max(...trades.map((t) => Math.round((Date.now() - Date.parse(t.tradeDate)) / 86_400_000)));
+      const extra = trade({ insiderName: 'Newcomer', role: 'Director', value: 10 ** (3.5 + r() * 4), tradeDate: ymd(oldest) });
+      const after = scoreTicker(aggregate({ trades: [...trades, extra], marketCap })).score;
+      expect(after, `round ${round}`).toBeGreaterThanOrEqual(before - 1e-9);
+    }
+  });
   it('is non-decreasing in the size of the buy', () => {
     let last = -Infinity;
     for (const value of [50_000, 100_000, 500_000, 1_000_000, 5_000_000, 20_000_000]) {
@@ -337,6 +366,38 @@ describe('INVARIANT — corroboration can never lower a score, and is gated', ()
       options: [option({ premiumTotal: 300_000, notional: 300_000 })],
     })).score;
     expect(withCombo).toBeGreaterThanOrEqual(withoutCombo);
+  });
+});
+
+describe('INVARIANT — the conviction tier is the tier of the published score', () => {
+  // A CEO buying $1.2M is exactly 140 raw. Choosing the half-saturation point
+  // puts the unrounded score wherever the boundary needs it: 100·140/(140+K).
+  const agg = aggregate({ trades: [trade({ value: 1_200_000 })] });
+  const at = (unrounded: number) =>
+    scoreTicker(agg, { ...DEFAULT_SCORING_CONFIG, scoreHalfSaturation: 140 * (100 / unrounded - 1) });
+
+  it('a score that publishes as 50.0 is WATCH (regression: 49.97 showed 50.0 and LOW)', () => {
+    const s = at(49.97);
+    expect(s.breakdown.normalizedScore).toBeLessThan(50);
+    expect(s.score).toBe(50);
+    expect(s.convictionLevel).toBe('WATCH');
+  });
+  it('a score that publishes as 80.0 is HIGH', () => {
+    const s = at(79.97);
+    expect(s.breakdown.normalizedScore).toBeLessThan(80);
+    expect(s.score).toBe(80);
+    expect(s.convictionLevel).toBe('HIGH');
+  });
+  it('a score that publishes one step below a threshold keeps the lower tier', () => {
+    expect(at(49.94)).toMatchObject({ score: 49.9, convictionLevel: 'LOW' });
+    expect(at(79.94)).toMatchObject({ score: 79.9, convictionLevel: 'WATCH' });
+  });
+  it('holds across the random sweep', () => {
+    for (const a of allAggregates()) {
+      const s = scoreTicker(a);
+      const expected = s.score >= CONVICTION_THRESHOLDS.high ? 'HIGH' : s.score >= CONVICTION_THRESHOLDS.watch ? 'WATCH' : 'LOW';
+      expect(s.convictionLevel).toBe(expected);
+    }
   });
 });
 

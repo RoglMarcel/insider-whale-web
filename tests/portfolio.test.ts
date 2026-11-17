@@ -5,6 +5,7 @@ import {
   computeStats,
   diffDaysYmd,
   earliestEntryDate,
+  signalEntryDate,
   evaluateExit,
   firstTradableDay,
   nearestBarrier,
@@ -404,6 +405,21 @@ describe('no look-ahead', () => {
     expect(earliestEntryDate('2026-01-05T23:07:59.662Z')).toBe('2026-01-06');
   });
 
+  it('measures an observed signal from the first close it could trade (labels, report and book alike)', () => {
+    // Seen before the 16:00 New York close → that close. EDT: the close is 20:00Z.
+    expect(signalEntryDate('2026-08-17', '2026-08-18', '2026-08-18T14:46:00.000Z')).toBe('2026-08-18');
+    // Seen at 16:56 New York time → the next session (regression: labeled from 08-18's close).
+    expect(signalEntryDate('2026-08-17', '2026-08-18', '2026-08-18T20:56:43.380Z')).toBe('2026-08-19');
+    // EST: the close is 21:00Z, so 20:30Z is still before it.
+    expect(signalEntryDate(null, null, '2026-12-01T20:30:00.000Z')).toBe('2026-12-01');
+    // Early close (day after Thanksgiving, 13:00 New York = 18:00Z).
+    expect(signalEntryDate(null, null, '2026-11-27T18:30:00.000Z')).toBe('2026-11-28');
+    // Never before the trade or filing it reports, even on inconsistent rows.
+    expect(signalEntryDate('2026-08-20', '2026-08-21', '2026-08-18T14:00:00.000Z')).toBe('2026-08-21');
+    // An unreadable sighting time cannot establish availability at all.
+    expect(signalEntryDate('2026-08-17', '2026-08-18', 'not a time')).toBe('9999-12-31');
+  });
+
   it('reads the hour as UTC even without a zone marker (SQLite CURRENT_TIMESTAMP)', () => {
     expect(earliestEntryDate('2026-01-05 23:07:59')).toBe('2026-01-06');
     expect(earliestEntryDate('2026-01-05 09:07:59')).toBe('2026-01-05');
@@ -576,6 +592,37 @@ describe('book invariants', () => {
     const spy = path(days, days.map((_, i) => 500 + i * 3));
     const res = simulatePortfolio(input({ tradingDays: days, spy }));
     for (const p of res.equity) expect(p.equity).toBeCloseTo(p.benchmark, 2);
+  });
+
+  it('opens at the benchmark value even when a signal is bought on opening day (regression: $9,994 vs $9,995)', () => {
+    // Flat prices, so only costs can move the curve. The book used to be parked
+    // in SPY before day one ran, and an opening-day entry then sold index shares
+    // bought at that very close — two extra sides of slippage on that position.
+    const days = calendar('2026-01-05', 5);
+    const res = simulatePortfolio(
+      input({ tradingDays: days, prices: { AAA: flat(days, 10) }, candidates: [cand({ earliestDate: days[0], score: 86 })] }),
+    );
+    const [first] = res.equity;
+    expect(res.positions.map((p) => p.entryDate)).toEqual([days[0]]);
+    expect(first.benchmark).toBe(9995);
+    expect(first.equity).toBe(first.benchmark);
+    // One side on everything: the position on its $1,000, the index on the rest.
+    expect(res.positions[0].costBasis).toBeCloseTo(1000, 9);
+    expect(first.positionsValue).toBeCloseTo(1000 / 1.0005, 2);
+    expect(first.spyCashValue).toBeCloseTo(9000 / 1.0005, 2);
+    expect(first.cash).toBe(0);
+    // The idle-cash twin pays the same single side on the same position.
+    expect(first.equityIdle).toBeCloseTo(10_000 - 1000 + 1000 / 1.0005, 2);
+  });
+
+  it('still charges both sides when capital leaves the index on a LATER day', () => {
+    const days = calendar('2026-01-05', 5);
+    const res = simulatePortfolio(
+      input({ tradingDays: days, prices: { AAA: flat(days, 10) }, candidates: [cand({ earliestDate: days[1], score: 86 })] }),
+    );
+    expect(res.equity[0].equity).toBe(9995);
+    // ~$999.50 moves out of SPY (−5 bps) into the position (−5 bps): ~$1.00.
+    expect(res.equity[1].equity).toBeCloseTo(9994, 2);
   });
 
   it("leaves idle cash flat under the 'idle' policy", () => {

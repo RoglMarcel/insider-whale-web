@@ -3,7 +3,7 @@ import { checkCancelled } from './cancellation';
 import { scopedFetch } from './cancellation';
 import type { BrowserContext } from 'playwright';
 import type { InsiderTrackRecord, InsiderHistoricalTrade } from '../../src/types';
-import { classifyTransaction, classifyInsiderPattern } from '../../src/types';
+import { classifyTransaction, classifyInsiderPattern, independentPurchases } from '../../src/types';
 import { withPage } from './browser';
 import { extractTable, colIndex, cell, parseMoney, parseShares, parseDate, cleanTicker, cleanText, yahooTicker } from './util';
 
@@ -242,8 +242,11 @@ export async function fetchInsiderTrackRecord(
       });
     }
 
-    const with3m = history.filter((h) => h.return3m != null);
-    const with6m = history.filter((h) => h.wasProfitable6m != null);
+    // One observation per independent decision: repeat buys of a ticker inside
+    // one 3-month window would otherwise count the same outcome several times.
+    const decisions = independentPurchases(history);
+    const with3m = decisions.filter((h) => h.return3m != null);
+    const with6m = decisions.filter((h) => h.wasProfitable6m != null);
     const totalTrades = with3m.length;
     const profitable3m = with3m.filter((h) => h.wasProfitable3m).length;
     // 6-month accuracy must be measured over trades that actually have a 6-month

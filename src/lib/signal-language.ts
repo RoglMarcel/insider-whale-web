@@ -8,7 +8,7 @@ export function localizeScoreNote(value: string, language: Lang): string {
   const replacements: [RegExp, string][] = [
     [/Legacy flat-bonus score \(shadow\):/g, 'Vergleichsscore des früheren Modells:'],
     [/90d buys use dated observed records; source coverage may be incomplete\. The insider score uses a 30d pipeline window\./g, '90-Tage-Käufe basieren auf beobachteten, datierten Meldungen; die Quellenabdeckung kann unvollständig sein. Der Insider-Score berücksichtigt 30 Tage.'],
-    [/insiders buying \(cluster/g, 'Insider kaufen (Cluster'],
+    [/insiders buying \(cluster/g, 'Insider kaufen (Cluster'], [/read from the (\d+) largest/g, 'gebildet aus den $1 größten'],
     [/Insider buys ≈/g, 'Insider-Käufe ≈'], [/of market cap/g, 'der Marktkapitalisierung'],
     [/Weighted transaction quality/g, 'Gewichtete Transaktionsqualität'],
     [/Earnings in/g, 'Quartalszahlen in'], [/days \(insider/g, 'Tagen (Insider'],

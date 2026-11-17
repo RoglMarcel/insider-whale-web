@@ -11,6 +11,7 @@ import { tradeFingerprint, selectTradeRevisions } from './tradeRevisions';
 import { dedupTrades } from './tradeDedup';
 import { admissibleTrade } from '../src/lib/tradeEligibility';
 import { eventDate } from '../src/lib/utcDate';
+import { signalEntryDate } from '../src/lib/portfolio-rules';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
@@ -375,7 +376,7 @@ CREATE TABLE IF NOT EXISTS ticker_meta (
 -- grows on its own with every scheduled scrape.
 CREATE TABLE IF NOT EXISTS signal_outcomes (
   ticker TEXT NOT NULL,
-  entry_date TEXT NOT NULL,      -- YYYY-MM-DD, max(trade, filing, first-seen)
+  entry_date TEXT NOT NULL,      -- YYYY-MM-DD, signalEntryDate(): first close the sighting could trade
   horizon INTEGER NOT NULL,      -- calendar days forward (5 … 180; see label-outcomes.ts)
   entry_price REAL,
   exit_price REAL,
@@ -515,6 +516,39 @@ export function runMigrations(database: Database.Database): void {
   database.exec(BACKTEST_SCHEMA);
 }
 
+/**
+ * Outcome labels measured across a provider price series later shown to be
+ * corrupt, with the evidence. Labels are additive across machines (a device
+ * that still holds a row imports it again), so the correction runs on every
+ * open rather than once. Each set is archived in `portfolio_revisions` before
+ * its first removal. Only labels computed before `computedBefore` match: a
+ * label recomputed afterwards passed the outcome window's price screen
+ * (`windowDiscontinuity`) and stays.
+ *
+ * YYAI: the 2026-07-10 entry is 8.11 in the labels computed 2026-08-23 and
+ * 162.20 in the one computed 2026-09-09 (×20, a half-applied 1-for-20 split);
+ * one fetch ran 8.11 → 182.20 → 0.17 in 20 days. The 5-day labels end before
+ * the jump and stay.
+ */
+const CORRUPT_OUTCOME_LABELS: readonly { ticker: string; entryDates: readonly string[]; minHorizon: number; computedBefore: string }[] = [
+  { ticker: 'YYAI', entryDates: ['2026-07-10', '2026-07-11'], minHorizon: 10, computedBefore: '2026-11-17' },
+];
+
+function removeCorruptOutcomeLabels(database: Database.Database): void {
+  for (const c of CORRUPT_OUTCOME_LABELS) {
+    const where = `ticker = ? AND entry_date IN (${c.entryDates.map(() => '?').join(',')}) AND horizon >= ? AND computed_at < ?`;
+    const args = [c.ticker, ...c.entryDates, c.minHorizon, c.computedBefore];
+    database.transaction(() => {
+      const rows = database.prepare(`SELECT * FROM signal_outcomes WHERE ${where} ORDER BY entry_date, horizon`).all(...args);
+      if (!rows.length) return;
+      database.prepare(`INSERT OR IGNORE INTO portfolio_revisions(reason, saved_at, state_json) VALUES (?, ?, ?)`)
+        .run(`corrupt-outcome-labels:${c.ticker}:${c.entryDates.join(',')}`, new Date().toISOString(), JSON.stringify(rows));
+      const removed = database.prepare(`DELETE FROM signal_outcomes WHERE ${where}`).run(...args).changes;
+      console.log(`[db] removed ${removed} outcome label(s) measured on a corrupt ${c.ticker} price series (archived)`);
+    })();
+  }
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // Lifecycle
 // ──────────────────────────────────────────────────────────────────────────
@@ -541,6 +575,7 @@ export function initDatabase(dbPath: string, opts?: { readonly?: boolean }): Dat
   db.pragma('foreign_keys = ON');
   db.exec(SCHEMA);
   runMigrations(db);
+  removeCorruptOutcomeLabels(db);
   quarantineLegacyTickers();
   // Seed the trade window from signal history the first time `insider_trades`
   // exists, so the first run after this lands isn't scored against an empty
@@ -1006,10 +1041,17 @@ function rowToTrackRecord(row: TrackRecordRow): InsiderTrackRecord {
   };
 }
 
+/**
+ * Bumped when the way a record is computed changes; older rows stay on file but
+ * never feed the score again until they are refetched.
+ * 1: adjusted prices only. 2: one observation per independent purchase decision.
+ */
+const TRACK_RECORD_METHOD_VERSION = 2;
+
 export function getTrackRecord(name: string): InsiderTrackRecord | null {
   const row = getDb()
-    .prepare(`SELECT * FROM insider_track_records WHERE insider_name = ? AND price_method_version = 1`)
-    .get(name) as TrackRecordRow | undefined;
+    .prepare(`SELECT * FROM insider_track_records WHERE insider_name = ? AND price_method_version = ?`)
+    .get(name, TRACK_RECORD_METHOD_VERSION) as TrackRecordRow | undefined;
   return row ? rowToTrackRecord(row) : null;
 }
 
@@ -1023,7 +1065,7 @@ export function upsertTrackRecord(record: InsiderTrackRecord): void {
         accuracy_3m, accuracy_6m, avg_return_3m, recent_trades, last_updated, error, pattern, price_method_version
       ) VALUES (
         @insider_name, @insider_role, @total_trades, @profitable_3m, @profitable_6m,
-        @accuracy_3m, @accuracy_6m, @avg_return_3m, @recent_trades, @last_updated, @error, @pattern, 1
+        @accuracy_3m, @accuracy_6m, @avg_return_3m, @recent_trades, @last_updated, @error, @pattern, @price_method_version
       )
       ON CONFLICT(insider_name) DO UPDATE SET
         insider_role = excluded.insider_role,
@@ -1052,6 +1094,7 @@ export function upsertTrackRecord(record: InsiderTrackRecord): void {
       last_updated: record.lastUpdated ?? new Date().toISOString(),
       error: record.error ?? null,
       pattern: record.pattern ?? null,
+      price_method_version: TRACK_RECORD_METHOD_VERSION,
     });
 }
 
@@ -1399,7 +1442,7 @@ export interface OutcomeCandidate {
  * One candidate per ticker per entry date, taken from the FIRST time we saw that
  * signal (MIN(id)) so the score is the one that was actionable then — scoring a
  * signal by a later, already-decayed row would leak hindsight into the label.
- * Entry date follows the backtest convention: max(trade, filing, first-seen).
+ * Entry date is `signalEntryDate`: the first close the sighting could trade.
  */
 export function getOutcomeCandidates(): OutcomeCandidate[] {
   // Entry date is resolved in JS: SQLite's scalar MAX(a,b,c) cannot be mixed with
@@ -1407,7 +1450,7 @@ export function getOutcomeCandidates(): OutcomeCandidate[] {
   const rows = getDb()
     .prepare(
       `
-      SELECT ticker, trade_date, filing_date, substr(scraped_at, 1, 10) AS seen_date,
+      SELECT ticker, trade_date, filing_date, scraped_at, substr(scraped_at, 1, 10) AS seen_date,
              score, conviction_level AS conviction, score_breakdown AS breakdown, company_name, source_urls, politician_trades
       FROM signals
       WHERE id IN (
@@ -1424,6 +1467,7 @@ export function getOutcomeCandidates(): OutcomeCandidate[] {
     ticker: string;
     trade_date: string | null;
     filing_date: string | null;
+    scraped_at: string;
     seen_date: string;
     score: number;
     conviction: string | null;
@@ -1433,12 +1477,9 @@ export function getOutcomeCandidates(): OutcomeCandidate[] {
     politician_trades: string | null;
   }[];
 
-  const ymd = (v: string | null | undefined) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '');
   const out = new Map<string, OutcomeCandidate>();
   for (const r of rows) {
-    // max(trade, filing, first-seen) — the date the signal was actionable.
-    const entryDate = [ymd(r.trade_date), ymd(r.filing_date), ymd(r.seen_date)].sort().pop() || '';
-    if (!entryDate) continue;
+    const entryDate = signalEntryDate(r.trade_date, r.filing_date, r.scraped_at);
     const key = `${r.ticker}|${entryDate}`;
     if (!out.has(key)) {
       out.set(key, {
@@ -2638,7 +2679,12 @@ export function archiveExperimentCandidates(id: string, candidates: PortfolioCan
       insert.run(id, c.ticker, c.earliestDate, JSON.stringify(c));
     }
   })();
-  const rows = db.prepare('SELECT candidate_json FROM portfolio_experiment_candidates WHERE experiment_id = ? ORDER BY earliest_date, ticker').all(id) as { candidate_json: string }[];
+  return getArchivedExperimentCandidates(id);
+}
+
+/** The archived candidates exactly as the last run replayed them; reads only. */
+export function getArchivedExperimentCandidates(id: string): PortfolioCandidate[] {
+  const rows = getDb().prepare('SELECT candidate_json FROM portfolio_experiment_candidates WHERE experiment_id = ? ORDER BY earliest_date, ticker').all(id) as { candidate_json: string }[];
   return rows.map((r) => JSON.parse(r.candidate_json) as PortfolioCandidate);
 }
 

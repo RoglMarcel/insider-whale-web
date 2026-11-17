@@ -5,6 +5,7 @@ import {
   UNKNOWN_ROLE_WEIGHT,
   getDollarVolumePoints,
   getClusterMultiplier,
+  clusterSizeReading,
   getInsiderTimingMultiplier,
   getOptionsTimingMultiplier,
   getVixMultiplier,
@@ -21,6 +22,8 @@ import {
   getFreshnessMultiplier,
   getFreshnessLevel,
   shrunkAccuracy,
+  independentPurchases,
+  TRACK_RECORD_EVENT_WINDOW_DAYS,
   MAX_INSIDER_TIMING_MULT,
   MAX_SINGLE_OPTION_POINTS,
   MAX_OPTIONS_SCORE_TOTAL,
@@ -226,6 +229,78 @@ describe('getClusterMultiplier', () => {
   });
   it('non-finite input is neutral', () => {
     expect(getClusterMultiplier(NaN)).toBe(1.0);
+  });
+});
+
+describe('clusterSizeReading — size × cluster over the strongest sub-cluster', () => {
+  const product = (volumes: number[], cap?: number) => {
+    const r = clusterSizeReading(volumes, cap);
+    return r.dollarVolumePoints * r.clusterMultiplier;
+  };
+
+  it('reads equal-sized buyers exactly as a plain average would', () => {
+    for (const value of [50_000, 200_000, 1_000_000, 6_000_000]) {
+      for (let n = 1; n <= 6; n++) {
+        const r = clusterSizeReading(Array(n).fill(value));
+        expect(r).toEqual({
+          dollarVolumePoints: getDollarVolumePoints(value),
+          clusterMultiplier: getClusterMultiplier(n),
+          buyers: n,
+        });
+      }
+    }
+  });
+  it('a single buyer is a cluster of one', () => {
+    expect(clusterSizeReading([520_000])).toEqual({ dollarVolumePoints: 10, clusterMultiplier: 1.0, buyers: 1 });
+  });
+  it('a small co-buyer no longer dilutes the reading (regression: 10 × 1.0 fell to 5 × 1.5)', () => {
+    expect(clusterSizeReading([520_000, 20_000])).toEqual({ dollarVolumePoints: 10, clusterMultiplier: 1.0, buyers: 1 });
+    expect(product([520_000, 20_000])).toBeGreaterThanOrEqual(product([520_000]));
+  });
+  it('the stored KMPR cluster reads from its four largest buyers', () => {
+    // Buy sizes from stored signal #74. All five average $73.8k, the four largest
+    // $85.75k. The cap here is illustrative: at $1.5B the 0.005% rung is $75,000,
+    // which lies between the two averages, so the four clear a rung the five miss.
+    const volumes = [130_000, 106_000, 80_000, 27_000, 26_000];
+    const cap = 1_500_000_000;
+    expect(getDollarVolumePoints(369_000 / 5, cap)).toBe(1);
+    expect(getDollarVolumePoints(343_000 / 4, cap)).toBe(5);
+    expect(clusterSizeReading(volumes, cap)).toEqual({ dollarVolumePoints: 5, clusterMultiplier: 3.0, buyers: 4 });
+  });
+  it('still uses every buyer when the full cluster is the strongest reading', () => {
+    // $5M + three $10k directors: the average ($1.26M) keeps 14 points at ×3.0,
+    // which beats the lone $5M buy at 20 × 1.0.
+    expect(clusterSizeReading([5_000_000, 10_000, 10_000, 10_000])).toEqual({
+      dollarVolumePoints: 14,
+      clusterMultiplier: 3.0,
+      buyers: 4,
+    });
+  });
+  it('is order-independent and does not mutate its input', () => {
+    const volumes = [26_000, 130_000, 27_000, 106_000, 80_000];
+    const copy = [...volumes];
+    expect(clusterSizeReading(volumes, 1_500_000_000)).toEqual(clusterSizeReading([...volumes].reverse(), 1_500_000_000));
+    expect(volumes).toEqual(copy);
+  });
+  it('never falls when a buyer is added or a buy grows (deterministic sweep)', () => {
+    let s = 20261116;
+    const rand = () => {
+      s = (s * 1664525 + 1013904223) >>> 0;
+      return s / 0x1_0000_0000;
+    };
+    for (let round = 0; round < 2000; round++) {
+      const cap = rand() < 0.5 ? undefined : 10 ** (8 + rand() * 4);
+      const volumes = Array.from({ length: 1 + Math.floor(rand() * 6) }, () => 10 ** (3 + rand() * 4.5));
+      const base = product(volumes, cap);
+      expect(product([...volumes, 10 ** (3 + rand() * 4.5)], cap), `add to ${volumes}`).toBeGreaterThanOrEqual(base);
+      const grown = [...volumes];
+      grown[Math.floor(rand() * grown.length)] *= 1 + rand() * 9;
+      expect(product(grown, cap), `grow in ${volumes}`).toBeGreaterThanOrEqual(base);
+    }
+  });
+  it('empty and non-finite volumes are the floor, never NaN', () => {
+    expect(clusterSizeReading([])).toEqual({ dollarVolumePoints: 1, clusterMultiplier: 1.0, buyers: 0 });
+    expect(clusterSizeReading([NaN, -5, Infinity])).toEqual({ dollarVolumePoints: 1, clusterMultiplier: 2.0, buyers: 3 });
   });
 });
 
@@ -579,6 +654,34 @@ describe('getFreshnessLevel agrees with the multiplier', () => {
 // ──────────────────────────────────────────────────────────────────────────
 // Track-record shrinkage + tiers
 // ──────────────────────────────────────────────────────────────────────────
+
+describe('independentPurchases — one observation per decision', () => {
+  const buy = (ticker: string, tradeDate: string) => ({ ticker, tradeDate });
+
+  it('collapses a buying program in one stock into one decision (regression: 8 trades counted as 8)', () => {
+    const program = ['2026-01-05', '2026-01-06', '2026-01-08', '2026-01-20', '2026-02-02', '2026-03-01', '2026-03-20', '2026-04-04'];
+    expect(independentPurchases(program.map((d) => buy('AAA', d)))).toEqual([buy('AAA', '2026-01-05')]);
+  });
+  it('anchors the window on the decision, so a year of monthly buying is four decisions', () => {
+    const monthly = Array.from({ length: 12 }, (_, i) => buy('AAA', `2025-${String(i + 1).padStart(2, '0')}-01`));
+    expect(independentPurchases(monthly).map((t) => t.tradeDate)).toEqual(['2025-01-01', '2025-04-01', '2025-07-01', '2025-10-01']);
+  });
+  it('starts a new decision exactly when the outcome windows stop overlapping', () => {
+    expect(independentPurchases([buy('AAA', '2026-01-01'), buy('AAA', '2026-03-31')])).toHaveLength(1); // day 89
+    expect(independentPurchases([buy('AAA', '2026-01-01'), buy('AAA', '2026-04-01')])).toHaveLength(2); // day 90
+  });
+  it('keeps buys of different stocks apart, and is order-independent', () => {
+    const rows = [buy('BBB', '2026-01-02'), buy('AAA', '2026-01-03'), buy('AAA', '2026-01-02')];
+    expect(independentPurchases(rows)).toEqual([buy('AAA', '2026-01-02'), buy('BBB', '2026-01-02')]);
+    expect(independentPurchases([...rows].reverse())).toEqual(independentPurchases(rows));
+  });
+  it('drops undatable rows instead of guessing their place', () => {
+    expect(independentPurchases([buy('AAA', ''), buy('AAA', 'garbage'), buy('AAA', '2026-01-02')])).toEqual([buy('AAA', '2026-01-02')]);
+  });
+  it('the shipped window is the 3-month outcome horizon', () => {
+    expect(TRACK_RECORD_EVENT_WINDOW_DAYS).toBe(90);
+  });
+});
 
 describe('shrunkAccuracy', () => {
   it('an empty record is a coin flip', () => expect(shrunkAccuracy(0, 0)).toBe(0.5));

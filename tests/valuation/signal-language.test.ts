@@ -3,6 +3,7 @@ import {localizeScoreNote,localizeRole,localizeTransactionLabel} from '../../src
 it('translates recorded financial explanations without changing their numbers',()=>{
  for(const [input,output]of [
   ['5 insiders buying (cluster ×3)','5 Insider kaufen (Cluster ×3)'],
+  ['5 insiders buying (cluster ×3, read from the 4 largest)','5 Insider kaufen (Cluster ×3, gebildet aus den 4 größten)'],
   ['Insider buys ≈ 0.61% of market cap','Insider-Käufe ≈ 0.61% der Marktkapitalisierung'],
   ['Insider signal age decay ×0.82','Altersabschlag des Insider-Signals ×0.82'],
   ['⚡ Legacy flat-bonus score (shadow): 76.7','Vergleichsscore des früheren Modells: 76.7'],
