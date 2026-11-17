@@ -1,5 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { accessRequest, type AccessSession } from '@/lib/accessApi';
+import { forgetLicenseKey, saveLicenseKey } from '@/lib/licenseKey';
+import { AccessContext } from './AccessContext';
 import './access.css';
 import { TerminalLogo } from '@/components/UI/TerminalLogo';
 const AdminAccess = lazy(() => import('./AdminAccess'));
@@ -25,6 +27,8 @@ export default function AccessGate({ children }: { children: ReactNode }) {
   const check = useCallback(async () => {
     try {
       const result = await accessRequest<{ session: AccessSession | null }>('access/session');
+      // Only a server-confirmed end forgets the saved key; a network error does not.
+      if (!result.session) forgetLicenseKey();
       setSession(previous => { if (previous && !result.session) setNotice('Your access has ended. Enter a valid key to continue.'); return result.session; });
       setError('');
     } catch (err) {
@@ -38,7 +42,7 @@ export default function AccessGate({ children }: { children: ReactNode }) {
     const interval = window.setInterval(() => void check(), 15_000);
     const onFocus = () => void check();
     const onVisible = () => { if (document.visibilityState === 'visible') void check(); };
-    const onDenied = () => { setSession(null); setNotice('Your access has ended. Enter a valid key to continue.'); };
+    const onDenied = () => { forgetLicenseKey(); setSession(null); setNotice('Your access has ended. Enter a valid key to continue.'); };
     const ends = Math.min(session.expiresAt ?? Infinity, session.sessionExpiresAt);
     const timeout = window.setTimeout(() => { if (Date.now() >= ends) onDenied(); else void check(); }, Math.max(0, Math.min(ends - Date.now(), 2_147_000_000)));
     window.addEventListener('focus', onFocus); document.addEventListener('visibilitychange', onVisible);
@@ -48,18 +52,18 @@ export default function AccessGate({ children }: { children: ReactNode }) {
   const activate = async (event: FormEvent) => {
     event.preventDefault(); if (!key.trim() || busy) return;
     setBusy(true); setError(''); setNotice('');
-    try { const result = await accessRequest<{ session: AccessSession }>('access/activate', { key, rememberDevice }); setKey(''); setSession(result.session); }
+    try { const result = await accessRequest<{ session: AccessSession }>('access/activate', { key, rememberDevice }); saveLicenseKey(key, rememberDevice); setKey(''); setSession(result.session); }
     catch (err) { setError((err as Error).message); }
     finally { setBusy(false); }
   };
   const logout = async () => {
     setBusy(true);
-    try { await accessRequest(session?.role === 'admin' ? 'admin/logout' : 'access/logout', {}); location.reload(); }
+    try { await accessRequest(session?.role === 'admin' ? 'admin/logout' : 'access/logout', {}); forgetLicenseKey(); location.reload(); }
     catch (err) { setError((err as Error).message); setBusy(false); }
   };
   if (adminPage) return <Suspense fallback={<AccessLoading />}><AdminAccess /></Suspense>;
   if (checking) return <AccessLoading />;
-  if (session) return <>{children}<button className="access-lock-button" type="button" onClick={() => void logout()} disabled={busy} title={error || 'Sign out and forget this device'}>Lock terminal <Arrow /></button>{error && <div className="access-session-error" role="alert">{error}</div>}</>;
+  if (session) return <><AccessContext.Provider value={session}>{children}</AccessContext.Provider><button className="access-lock-button" type="button" onClick={() => void logout()} disabled={busy} title={error || 'Sign out and forget this device'}>Lock terminal <Arrow /></button>{error && <div className="access-session-error" role="alert">{error}</div>}</>;
   return <main className="access-screen">
     <header className="access-top gate-top"><TerminalLogo /></header>
     <div className="gate">
@@ -79,7 +83,7 @@ export default function AccessGate({ children }: { children: ReactNode }) {
         <div><dt>Insider transactions</dt><dd>Buys and sales by company insiders, scored so the strongest signals come first.</dd></div>
         <div><dt>Unusual options flow</dt><dd>Large and unusual options activity, shown alongside the insider record.</dd></div>
         <div><dt>Analysis and fair value</dt><dd>A valuation view for each stock, so a signal comes with context.</dd></div>
-        <div><dt>Portfolio and backtest</dt><dd>Model portfolios and backtests built on the same signals.</dd></div>
+        <div><dt>Model portfolios</dt><dd>Model portfolios built on the same signals.</dd></div>
       </dl>
     </div>
     <footer className="access-footer"><span>Insider &amp; Whale Terminal</span><a href={`${import.meta.env.BASE_URL}#/admin`}>Owner sign-in</a></footer>

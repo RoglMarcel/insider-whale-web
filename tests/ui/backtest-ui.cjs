@@ -5,7 +5,7 @@ const path = require('node:path');
 const http = require('node:http');
 const { buildSync } = require('esbuild');
 const { chromium } = require('playwright');
-const { mockMemberAccess } = require('./access-fixture.cjs');
+const { mockMemberAccess, mockOwnerAccess } = require('./access-fixture.cjs');
 const { assertThemeGeometry } = require('./theme-geometry.cjs');
 const root = path.resolve(__dirname, '../..');
 const out = path.join(root, 'tmp/backtest-ui');
@@ -30,7 +30,8 @@ let lastPage;
     const context = await browser.newContext({ viewport: { width, height: 1000 }, acceptDownloads: true });
     const page = await context.newPage();
     lastPage = page;
-    if (!desktop) await mockMemberAccess(page);
+    // On the web the backtest belongs to the owner; key holders are checked below.
+    if (!desktop) await mockOwnerAccess(page);
     const errors = []; page.on('pageerror', e => errors.push(e.message));
     const initialize = ({ desktop }) => {
       localStorage.setItem('language', 'de'); localStorage.setItem('last_seen_version', '1.7.0');
@@ -95,6 +96,20 @@ let lastPage;
       assert.equal(await page.getByLabel('Analyseversion', { exact: true }).locator('option').count(), 3);
     }
     console.log(`Backtest ${desktop ? 'desktop' : 'web'} ${width}px: navigation, details, filters, immutable original, version selection, retry, JSON export and layout passed.`);
+    await context.close();
+  }
+  for (const width of [390, 1280]) {
+    const context = await browser.newContext({ viewport: { width, height: 1000 } });
+    const page = await context.newPage();
+    lastPage = page;
+    await mockMemberAccess(page);
+    await page.route('**/data/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(route.request().url().endsWith('signals.json') ? [] : { version: '1.7.0' }) }));
+    await page.route('**/intro.mp4', route => route.abort());
+    await page.goto(`http://127.0.0.1:${server.address().port}/`);
+    const nav = width < 768 ? page.locator('nav').filter({ has: page.locator('button[aria-current]') }) : page.locator('aside');
+    await nav.getByRole('button', { name: /^(Alerts)$/ }).waitFor();
+    assert.equal(await nav.getByRole('button', { name: 'Backtest', exact: true }).count(), 0, 'Key holders have no backtest tab');
+    console.log(`Backtest web ${width}px: hidden from key holders.`);
     await context.close();
   }
 })().catch(async e => { console.error(e); process.exitCode = 1;

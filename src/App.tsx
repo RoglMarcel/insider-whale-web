@@ -12,11 +12,14 @@ import { SettingsPanel } from '@/components/Settings/SettingsPanel';
 import { NewsView } from '@/components/News/NewsView';
 import { SignalModal } from '@/components/Detail/SignalModal';
 import { useI18n } from '@/hooks/useI18n';
+import { MEMBER_HIDDEN_VIEWS, useIsMember } from '@/components/Access/AccessContext';
 
 export default function App() {
   const init = useStore((s) => s.init);
-  const view = useStore((s) => s.view);
+  const requested = useStore((s) => s.view);
   const { t } = useI18n();
+  // Owner-only pages are not rendered for key holders, whatever the view state says.
+  const view = useIsMember() && MEMBER_HIDDEN_VIEWS.includes(requested) ? 'dashboard' : requested;
   useEffect(() => { void init(); }, [init]);
 
   return (

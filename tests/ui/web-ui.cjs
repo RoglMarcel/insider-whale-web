@@ -5,7 +5,7 @@ const path = require('node:path');
 const http = require('node:http');
 const { buildSync } = require('esbuild');
 const { chromium } = require('playwright');
-const { mockMemberAccess } = require('./access-fixture.cjs');
+const { mockMemberAccess, mockOwnerAccess } = require('./access-fixture.cjs');
 const { assertThemeGeometry } = require('./theme-geometry.cjs');
 const root = path.resolve(__dirname, '../..');
 const out = path.join(root, 'tmp/ui');
@@ -82,11 +82,12 @@ async function navigate(page, width, view) {
     await page.locator('aside').getByRole('button', { name: labels[view] }).click();
   }
 }
-async function contextPage(width, mode = 'full') {
+/** `owner` sees every view; `member` (a key holder) has no backtest, history or source list. */
+async function contextPage(width, mode = 'full', role = 'owner') {
   const context = await browser.newContext({ viewport: { width, height: width < 768 ? 844 : 1000 }, locale: 'en-US', reducedMotion: 'reduce' });
   const page = await context.newPage();
   currentPage = page;
-  await mockMemberAccess(page);
+  await (role === 'member' ? mockMemberAccess : mockOwnerAccess)(page);
   const jsErrors = []; page.on('pageerror', e => jsErrors.push(e.message));
   await page.route('**/data/*.json', async route => {
     const name = new URL(route.request().url()).pathname.split('/').pop();
@@ -297,6 +298,21 @@ async function contextPage(width, mode = 'full') {
     await page.getByRole('button', {name:'Schließen',exact:true}).click();
     assert.equal(jsErrors.length, 0, jsErrors.join('\n'));
     results.push({ width, result: 'passed' });
+    await context.close();
+  }
+  for (const width of [1440, 820, 390, 320]) {
+    const { page, context, jsErrors } = await contextPage(width, 'full', 'member');
+    await page.locator('main [role="button"][aria-label="NVDA"]').waitFor();
+    if (width >= 768 && width < 1024) await page.getByRole('button', { name: /^(Open menu|Menü öffnen)$/, exact: true }).click();
+    const nav = width < 768 ? page.locator('nav').filter({ has: page.locator('button[aria-current]') }) : page.locator('aside');
+    for (const hidden of ['Backtest', 'History']) assert.equal(await nav.getByRole('button', { name: hidden, exact: true }).count(), 0, `${width}: ${hidden} hidden from key holders`);
+    await nav.getByRole('button', { name: /^(Setup|Settings)$/ }).click();
+    await page.getByRole('heading', { name: 'License key', exact: true }).waitFor();
+    assert.equal(await page.locator('.source-list').count(), 0, `${width}: no alert sources for key holders`);
+    assert((await page.locator('main').innerText()).includes('This device has no saved copy of your key'), `${width}: honest about a key entered before this update`);
+    await checkPage(page, `${width}-member-settings`);
+    assert.equal(jsErrors.length, 0, jsErrors.join('\n'));
+    results.push({ width, role: 'member', result: 'passed' });
     await context.close();
   }
   for (const mode of ['legacy-three', 'mismatched-fourth', 'mismatched-policy']) {

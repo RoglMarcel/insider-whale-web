@@ -3,6 +3,7 @@ import { GridIcon, StarIcon, HistoryIcon, SettingsIcon, NewsIcon, BriefcaseIcon 
 import { isWeb } from '@/lib/ipc';
 import { useI18n } from '@/hooks/useI18n';
 import type { TKey } from '@/lib/i18n';
+import { MEMBER_HIDDEN_VIEWS, useIsMember } from '@/components/Access/AccessContext';
 
 interface Tab {
   key: View;
@@ -47,6 +48,8 @@ export function BottomTabBar() {
   const setView = useStore((s) => s.setView);
   const watchlistCount = useStore((s) => s.watchlist.length);
   const { t } = useI18n();
+  const member = useIsMember();
+  const tabs = member ? VISIBLE_TABS.filter((tb) => !MEMBER_HIDDEN_VIEWS.includes(tb.key)) : VISIBLE_TABS;
 
   return (
     <nav
@@ -60,7 +63,7 @@ export function BottomTabBar() {
         borderTop: '1px solid var(--border-glass)',
       }}
     >
-      {VISIBLE_TABS.map((tab) => {
+      {tabs.map((tab) => {
         const Icon = tab.icon;
         const active = view === tab.key;
         return (
