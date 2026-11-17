@@ -578,6 +578,37 @@ describe('book invariants', () => {
     for (const p of res.equity) expect(p.equity).toBeCloseTo(p.benchmark, 2);
   });
 
+  it('opens at the benchmark value even when a signal is bought on opening day (regression: $9,994 vs $9,995)', () => {
+    // Flat prices, so only costs can move the curve. The book used to be parked
+    // in SPY before day one ran, and an opening-day entry then sold index shares
+    // bought at that very close — two extra sides of slippage on that position.
+    const days = calendar('2026-01-05', 5);
+    const res = simulatePortfolio(
+      input({ tradingDays: days, prices: { AAA: flat(days, 10) }, candidates: [cand({ earliestDate: days[0], score: 86 })] }),
+    );
+    const [first] = res.equity;
+    expect(res.positions.map((p) => p.entryDate)).toEqual([days[0]]);
+    expect(first.benchmark).toBe(9995);
+    expect(first.equity).toBe(first.benchmark);
+    // One side on everything: the position on its $1,000, the index on the rest.
+    expect(res.positions[0].costBasis).toBeCloseTo(1000, 9);
+    expect(first.positionsValue).toBeCloseTo(1000 / 1.0005, 2);
+    expect(first.spyCashValue).toBeCloseTo(9000 / 1.0005, 2);
+    expect(first.cash).toBe(0);
+    // The idle-cash twin pays the same single side on the same position.
+    expect(first.equityIdle).toBeCloseTo(10_000 - 1000 + 1000 / 1.0005, 2);
+  });
+
+  it('still charges both sides when capital leaves the index on a LATER day', () => {
+    const days = calendar('2026-01-05', 5);
+    const res = simulatePortfolio(
+      input({ tradingDays: days, prices: { AAA: flat(days, 10) }, candidates: [cand({ earliestDate: days[1], score: 86 })] }),
+    );
+    expect(res.equity[0].equity).toBe(9995);
+    // ~$999.50 moves out of SPY (−5 bps) into the position (−5 bps): ~$1.00.
+    expect(res.equity[1].equity).toBeCloseTo(9994, 2);
+  });
+
   it("leaves idle cash flat under the 'idle' policy", () => {
     const days = calendar('2026-01-05', 15);
     const res = simulatePortfolio(

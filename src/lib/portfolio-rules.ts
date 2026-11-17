@@ -334,19 +334,19 @@ interface Book {
   nextId: number;
 }
 
-function newBook(policy: PortfolioCashPolicy, startingCash: number, spyOpen: number, slipBps: number): Book {
-  // Under the `spy` policy the book is fully invested in the index from day one,
-  // and pays the same entry slippage the benchmark pays.
-  const spyShares = policy === 'spy' ? startingCash / applySlippage(spyOpen, 'buy', slipBps) : 0;
-  return {
-    policy,
-    cash: policy === 'spy' ? 0 : startingCash,
-    spyShares,
-    open: [],
-    closed: [],
-    cooldown: new Map(),
-    nextId: 1,
-  };
+function newBook(policy: PortfolioCashPolicy, startingCash: number): Book {
+  // Every book opens in CASH. Under the `spy` policy the first day's `parkCash`
+  // puts whatever the opening-day entries left over into the index, at that same
+  // close and with the entry slippage the benchmark pays — so on day one the
+  // book and the benchmark both hold the committed capital less one side.
+  //
+  // The book used to be parked in SPY before the first day ran. An entry on
+  // opening day then sold index shares it had bought at the very same close: a
+  // round trip nobody would trade, costing two extra sides of slippage on that
+  // position. The stored book opened at $9,993.92 against a benchmark of
+  // $9,995.00 for exactly that reason ($1,080.68 bought on day one × 10 bps),
+  // while its own idle-cash twin paid the single side.
+  return { policy, cash: startingCash, spyShares: 0, open: [], closed: [], cooldown: new Map(), nextId: 1 };
 }
 
 const positionsValue = (b: Book): number => b.open.reduce((s, p) => s + p.shares * p.lastPrice, 0);
@@ -455,11 +455,11 @@ export function simulatePortfolio(input: PortfolioSimInput): PortfolioSimResult 
   const spyStart = input.spy[days[0]];
   if (!(spyStart > 0)) return { equity, positions: [], events, untradable: [...untradable] };
 
-  const active = newBook(cfg.cashPolicy, cfg.startingCash, spyStart, slip);
+  const active = newBook(cfg.cashPolicy, cfg.startingCash);
   // The comparison book always runs the `idle` policy. When that IS the active
   // policy the two are the same object, so `equityIdle` equals `equity` instead
   // of drifting from a second, pointlessly re-simulated run.
-  const idle = cfg.cashPolicy === 'idle' ? active : newBook('idle', cfg.startingCash, spyStart, slip);
+  const idle = cfg.cashPolicy === 'idle' ? active : newBook('idle', cfg.startingCash);
 
   // Benchmark: buy & hold, same day, same capital, same entry slippage.
   const benchShares = cfg.startingCash / applySlippage(spyStart, 'buy', slip);

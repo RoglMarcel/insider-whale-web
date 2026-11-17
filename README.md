@@ -282,9 +282,12 @@ Die Depotansicht vergleicht drei Strategien mit gleichem Startkapital: SPY als S
 | Reentry-Sperre | 10 Kalendertage |
 | Stop-Loss / maximale Haltedauer | 25 % / 90 Kalendertage |
 | Take-Profit | deaktiviert (`null`) |
-| Trailing: Aktivierung / Abstand | 25 % / 20 % |
+| Trailing: Aktivierung / Abstand | 15 % / 10 % |
+| Ausführung eines Ausstiegs | nächster verfügbarer Schlusskurs nach dem Auslöser (`next_close`) |
 | Slippage | 5 Basispunkte je modellierter Transaktionsseite |
 | Freie Mittel | SPY |
+
+Jedes Depot startet in bar. Einstiege am Eröffnungstag werden direkt aus dem Startkapital bezahlt, der Rest geht zum selben Schlusskurs in SPY; Depot und Benchmark beginnen deshalb beim selben Wert (Startkapital abzüglich einer Slippage-Seite). Erst wenn Kapital an einem späteren Tag aus SPY in eine Position wechselt, fallen beide Seiten an.
 
 Benutzerkonfiguration kann diese Standardwerte überschreiben. `positionSize` nutzt Score, Eigenkapital und Gewichtsgrenzen; begrenzte Mittel müssen die Mindestfinanzierung erfüllen. Bruchteile von Aktien sind zulässig. Ausstiege verwenden die jeweils aktivierten Barrieren und Haltedauer. Optional konfigurierbare Sigma-Barrieren sind standardmäßig deaktiviert.
 
@@ -718,23 +721,23 @@ Das folgende Verzeichnis ist aus dem geprüften Quellstand abgeleitet. Es nennt 
 
 #### [electron/portfolio.ts](electron/portfolio.ts)
 
-- [L72](electron/portfolio.ts#L72) · intern · `BENCHMARK`
-- [L75](electron/portfolio.ts#L75) · intern · `todayYmd`
-- [L93](electron/portfolio.ts#L93) · intern · `CURVE_BUILDER_VERSION`
-- [L95](electron/portfolio.ts#L95) · intern · `runInFlight`
-- [L97](electron/portfolio.ts#L97) · export · `PortfolioSyncReport`
-- [L115](electron/portfolio.ts#L115) · intern · `sameConfig(a: PortfolioConfig, b: PortfolioConfig): boolean`
-- [L139](electron/portfolio.ts#L139) · export · `buildCandidates(config: PortfolioConfig): PortfolioCandidate[]`
-- [L164](electron/portfolio.ts#L164) · intern · `PriceSyncResult`
-- [L177](electron/portfolio.ts#L177) · export · `syncPrices(tickers: readonly string[], fromYmd: string): Promise<PriceSyncResult>`
-- [L225](electron/portfolio.ts#L225) · export · `syncPortfolio(): Promise<PortfolioSyncReport>`
-- [L235](electron/portfolio.ts#L235) · intern · `runSync(): Promise<PortfolioSyncReport>`
+- [L75](electron/portfolio.ts#L75) · intern · `BENCHMARK`
+- [L78](electron/portfolio.ts#L78) · intern · `todayYmd`
+- [L100](electron/portfolio.ts#L100) · intern · `CURVE_BUILDER_VERSION`
+- [L102](electron/portfolio.ts#L102) · intern · `runInFlight`
+- [L104](electron/portfolio.ts#L104) · export · `PortfolioSyncReport`
+- [L122](electron/portfolio.ts#L122) · intern · `sameConfig(a: PortfolioConfig, b: PortfolioConfig): boolean`
+- [L146](electron/portfolio.ts#L146) · export · `buildCandidates(config: PortfolioConfig): PortfolioCandidate[]`
+- [L171](electron/portfolio.ts#L171) · intern · `PriceSyncResult`
+- [L183](electron/portfolio.ts#L183) · export · `syncPrices(tickers: readonly string[], fromYmd: string): Promise<PriceSyncResult>`
+- [L229](electron/portfolio.ts#L229) · export · `syncPortfolio(): Promise<PortfolioSyncReport>`
+- [L239](electron/portfolio.ts#L239) · intern · `runSync(): Promise<PortfolioSyncReport>`
 - [L405](electron/portfolio.ts#L405) · intern · `liveBoundary(firstDay: string | null): string | null`
-- [L411](electron/portfolio.ts#L411) · intern · `countEvents(events: readonly PortfolioEvent[]): { skippedNoCash: number; skippedCap: number; dataMissing: number; }`
-- [L432](electron/portfolio.ts#L432) · export · `rebuildPortfolio(): Promise<PortfolioSyncReport>`
-- [L437](electron/portfolio.ts#L437) · export · `updatePortfolioConfig(partial: Partial<PortfolioConfig>): Promise<PortfolioSyncReport>`
-- [L455](electron/portfolio.ts#L455) · export · `writePortfolioJson(outDir: string): number`
-- [L472](electron/portfolio.ts#L472) · export · `getPortfolioState(): PortfolioState`
+- [L419](electron/portfolio.ts#L419) · intern · `countEvents(events: readonly PortfolioEvent[]): { skippedNoCash: number; skippedCap: number; dataMissing: number; }`
+- [L440](electron/portfolio.ts#L440) · export · `rebuildPortfolio(): Promise<PortfolioSyncReport>`
+- [L445](electron/portfolio.ts#L445) · export · `updatePortfolioConfig(partial: Partial<PortfolioConfig>): Promise<PortfolioSyncReport>`
+- [L463](electron/portfolio.ts#L463) · export · `writePortfolioJson(outDir: string): number`
+- [L490](electron/portfolio.ts#L490) · export · `getPortfolioState(): PortfolioState`
 
 #### [electron/preload.ts](electron/preload.ts)
 
@@ -1739,44 +1742,44 @@ Das folgende Verzeichnis ist aus dem geprüften Quellstand abgeleitet. Es nennt 
 - [L42](src/lib/portfolio-rules.ts#L42) · export · `ymdToUtcMs(ymd: string): number`
 - [L47](src/lib/portfolio-rules.ts#L47) · export · `addDaysYmd(ymd: string, days: number): string`
 - [L51](src/lib/portfolio-rules.ts#L51) · export · `diffDaysYmd(from: string, to: string): number`
-- [L65](src/lib/portfolio-rules.ts#L65) · export · `earliestEntryDate(seenAt: string, closeUtcHour: number = PORTFOLIO_SESSION_CLOSE_UTC_HOUR): string`
-- [L77](src/lib/portfolio-rules.ts#L77) · export · `applySlippage(price: number, side: 'buy' | 'sell', slippageBps: number): number`
-- [L82](src/lib/portfolio-rules.ts#L82) · intern · `clamp`
-- [L90](src/lib/portfolio-rules.ts#L90) · intern · `BARRIER_EPS`
-- [L92](src/lib/portfolio-rules.ts#L92) · export · `PositionSizing`
-- [L102](src/lib/portfolio-rules.ts#L102) · export · `positionSize(score: number, equity: number, config: PortfolioConfig = DEFAULT_PORTFOLIO_CONFIG): PositionSizing`
-- [L113](src/lib/portfolio-rules.ts#L113) · export · `ExitContext`
-- [L141](src/lib/portfolio-rules.ts#L141) · export · `realizedDailyVol(series: Record<string, number> | undefined, asOf: string, lookback: number = PORTFOLIO_SIGMA_LOOKBACK_DAYS): number | null`
-- [L167](src/lib/portfolio-rules.ts#L167) · export · `ResolvedBarriers`
-- [L186](src/lib/portfolio-rules.ts#L186) · export · `resolveBarriers(config: PortfolioConfig = DEFAULT_PORTFOLIO_CONFIG, sigmaDaily: number | null | undefined = null): ResolvedBarriers`
-- [L225](src/lib/portfolio-rules.ts#L225) · export · `evaluateExit(ctx: ExitContext, config: PortfolioConfig = DEFAULT_PORTFOLIO_CONFIG): PortfolioExitReason | null`
-- [L251](src/lib/portfolio-rules.ts#L251) · export · `nearestBarrier(ctx: ExitContext, config: PortfolioConfig = DEFAULT_PORTFOLIO_CONFIG): { reason: PortfolioExitReason; distance: number } | null`
-- [L276](src/lib/portfolio-rules.ts#L276) · export · `PortfolioSimInput`
-- [L288](src/lib/portfolio-rules.ts#L288) · export · `PortfolioSimResult`
-- [L297](src/lib/portfolio-rules.ts#L297) · intern · `LivePosition`
-- [L320](src/lib/portfolio-rules.ts#L320) · intern · `Book`
-- [L330](src/lib/portfolio-rules.ts#L330) · intern · `newBook(policy: PortfolioCashPolicy, startingCash: number, spyOpen: number, slipBps: number): Book`
-- [L345](src/lib/portfolio-rules.ts#L345) · intern · `positionsValue`
-- [L346](src/lib/portfolio-rules.ts#L346) · intern · `bookEquity`
-- [L349](src/lib/portfolio-rules.ts#L349) · intern · `available(b: Book, spyPx: number, slipBps: number): number`
-- [L354](src/lib/portfolio-rules.ts#L354) · intern · `raiseCash(b: Book, amount: number, spyPx: number, slipBps: number): void`
-- [L364](src/lib/portfolio-rules.ts#L364) · intern · `parkCash(b: Book, spyPx: number, slipBps: number): void`
-- [L375](src/lib/portfolio-rules.ts#L375) · export · `firstTradableDay(ticker: string, from: string, tradingDays: readonly string[], prices: Record<string, Record<string, number>>, maxSearchDays: number = PORTFOLIO_PRICE_SEARCH_DAYS): string | null`
-- [L392](src/lib/portfolio-rules.ts#L392) · export · `simulatePortfolio(input: PortfolioSimInput): PortfolioSimResult`
-- [L681](src/lib/portfolio-rules.ts#L681) · export · `round2(v: number): number`
-- [L687](src/lib/portfolio-rules.ts#L687) · export · `toClosedPosition(p: PortfolioPosition): PortfolioClosedPosition`
-- [L698](src/lib/portfolio-rules.ts#L698) · export · `toOpenPosition(p: PortfolioPosition, lastPrice: number | null, asOf: string, equity: number, config: PortfolioConfig = DEFAULT_PORTFOLIO_CONFIG, sigmaDaily: number | null = null): PortfolioOpenPosition`
-- [L744](src/lib/portfolio-rules.ts#L744) · export · `emptyPortfolioState(note: string | null = null): PortfolioState`
-- [L773](src/lib/portfolio-rules.ts#L773) · export · `rebase(values: readonly number[]): number[]`
-- [L781](src/lib/portfolio-rules.ts#L781) · intern · `lastAtOrBefore(points: readonly PortfolioEquityPoint[], date: string): number`
-- [L790](src/lib/portfolio-rules.ts#L790) · intern · `dailyReturns(values: readonly number[]): number[]`
-- [L799](src/lib/portfolio-rules.ts#L799) · intern · `mean`
-- [L801](src/lib/portfolio-rules.ts#L801) · intern · `stdev(xs: readonly number[]): number`
-- [L807](src/lib/portfolio-rules.ts#L807) · intern · `maxDrawdown(values: readonly number[]): number`
-- [L817](src/lib/portfolio-rules.ts#L817) · intern · `TRADING_DAYS_PER_YEAR`
-- [L819](src/lib/portfolio-rules.ts#L819) · intern · `metric(portfolio: number | null, benchmark: number | null, daysRemaining: number | null): PortfolioMetric`
-- [L828](src/lib/portfolio-rules.ts#L828) · export · `computeStats(equity: readonly PortfolioEquityPoint[], closed: readonly PortfolioClosedPosition[], open: readonly PortfolioOpenPosition[], config: PortfolioConfig = DEFAULT_PORTFOLIO_CONFIG): PortfolioStats`
-- [L939](src/lib/portfolio-rules.ts#L939) · intern · `tradeStats(closed: readonly PortfolioClosedPosition[], open: readonly PortfolioOpenPosition[], equity: readonly PortfolioEquityPoint[]): PortfolioTradeStats`
+- [L56](src/lib/portfolio-rules.ts#L56) · export · `earliestEntryDate(seenAt: string, closeUtcHour: number = PORTFOLIO_SESSION_CLOSE_UTC_HOUR): string`
+- [L74](src/lib/portfolio-rules.ts#L74) · export · `applySlippage(price: number, side: 'buy' | 'sell', slippageBps: number): number`
+- [L79](src/lib/portfolio-rules.ts#L79) · intern · `clamp`
+- [L87](src/lib/portfolio-rules.ts#L87) · intern · `BARRIER_EPS`
+- [L97](src/lib/portfolio-rules.ts#L97) · export · `PositionSizing`
+- [L107](src/lib/portfolio-rules.ts#L107) · export · `positionSize(score: number, equity: number, config: PortfolioConfig = DEFAULT_PORTFOLIO_CONFIG): PositionSizing`
+- [L118](src/lib/portfolio-rules.ts#L118) · export · `ExitContext`
+- [L146](src/lib/portfolio-rules.ts#L146) · export · `realizedDailyVol(series: Record<string, number> | undefined, asOf: string, lookback: number = PORTFOLIO_SIGMA_LOOKBACK_DAYS): number | null`
+- [L172](src/lib/portfolio-rules.ts#L172) · export · `ResolvedBarriers`
+- [L191](src/lib/portfolio-rules.ts#L191) · export · `resolveBarriers(config: PortfolioConfig = DEFAULT_PORTFOLIO_CONFIG, sigmaDaily: number | null | undefined = null): ResolvedBarriers`
+- [L229](src/lib/portfolio-rules.ts#L229) · export · `evaluateExit(ctx: ExitContext, config: PortfolioConfig = DEFAULT_PORTFOLIO_CONFIG): PortfolioExitReason | null`
+- [L255](src/lib/portfolio-rules.ts#L255) · export · `nearestBarrier(ctx: ExitContext, config: PortfolioConfig = DEFAULT_PORTFOLIO_CONFIG): { reason: PortfolioExitReason; distance: number } | null`
+- [L281](src/lib/portfolio-rules.ts#L281) · export · `PortfolioSimInput`
+- [L293](src/lib/portfolio-rules.ts#L293) · export · `PortfolioSimResult`
+- [L303](src/lib/portfolio-rules.ts#L303) · intern · `LivePosition`
+- [L327](src/lib/portfolio-rules.ts#L327) · intern · `Book`
+- [L337](src/lib/portfolio-rules.ts#L337) · intern · `newBook(policy: PortfolioCashPolicy, startingCash: number, spyOpen: number, slipBps: number): Book`
+- [L352](src/lib/portfolio-rules.ts#L352) · intern · `positionsValue`
+- [L353](src/lib/portfolio-rules.ts#L353) · intern · `bookEquity`
+- [L356](src/lib/portfolio-rules.ts#L356) · intern · `available(b: Book, spyPx: number, slipBps: number): number`
+- [L361](src/lib/portfolio-rules.ts#L361) · intern · `raiseCash(b: Book, amount: number, spyPx: number, slipBps: number): void`
+- [L371](src/lib/portfolio-rules.ts#L371) · intern · `parkCash(b: Book, spyPx: number, slipBps: number): void`
+- [L382](src/lib/portfolio-rules.ts#L382) · export · `firstTradableDay(ticker: string, from: string, tradingDays: readonly string[], prices: Record<string, Record<string, number>>, maxSearchDays: number = PORTFOLIO_PRICE_SEARCH_DAYS): string | null`
+- [L399](src/lib/portfolio-rules.ts#L399) · export · `simulatePortfolio(input: PortfolioSimInput): PortfolioSimResult`
+- [L697](src/lib/portfolio-rules.ts#L697) · export · `round2(v: number): number`
+- [L703](src/lib/portfolio-rules.ts#L703) · export · `toClosedPosition(p: PortfolioPosition): PortfolioClosedPosition`
+- [L714](src/lib/portfolio-rules.ts#L714) · export · `toOpenPosition(p: PortfolioPosition, lastPrice: number | null, asOf: string, equity: number, config: PortfolioConfig = DEFAULT_PORTFOLIO_CONFIG, sigmaDaily: number | null = null): PortfolioOpenPosition`
+- [L760](src/lib/portfolio-rules.ts#L760) · export · `emptyPortfolioState(note: string | null = null): PortfolioState`
+- [L789](src/lib/portfolio-rules.ts#L789) · export · `rebase(values: readonly number[]): number[]`
+- [L797](src/lib/portfolio-rules.ts#L797) · intern · `lastAtOrBefore(points: readonly PortfolioEquityPoint[], date: string): number`
+- [L806](src/lib/portfolio-rules.ts#L806) · intern · `dailyReturns(values: readonly number[]): number[]`
+- [L815](src/lib/portfolio-rules.ts#L815) · intern · `mean`
+- [L817](src/lib/portfolio-rules.ts#L817) · intern · `stdev(xs: readonly number[]): number`
+- [L823](src/lib/portfolio-rules.ts#L823) · intern · `maxDrawdown(values: readonly number[]): number`
+- [L833](src/lib/portfolio-rules.ts#L833) · intern · `TRADING_DAYS_PER_YEAR`
+- [L835](src/lib/portfolio-rules.ts#L835) · intern · `metric(portfolio: number | null, benchmark: number | null, daysRemaining: number | null): PortfolioMetric`
+- [L844](src/lib/portfolio-rules.ts#L844) · export · `computeStats(equity: readonly PortfolioEquityPoint[], closed: readonly PortfolioClosedPosition[], open: readonly PortfolioOpenPosition[], config: PortfolioConfig = DEFAULT_PORTFOLIO_CONFIG): PortfolioStats`
+- [L955](src/lib/portfolio-rules.ts#L955) · intern · `tradeStats(closed: readonly PortfolioClosedPosition[], open: readonly PortfolioOpenPosition[], equity: readonly PortfolioEquityPoint[]): PortfolioTradeStats`
 
 #### [src/lib/sampleData.ts](src/lib/sampleData.ts)
 

@@ -130,9 +130,13 @@ function main(): void {
     // Both series mark at the starting capital MINUS one side of slippage on
     // day one — that is the cost of getting in, and both pay it identically.
     const afterEntryCost = config.startingCash * (1 - config.slippageBps / 10_000);
+    // Compared in whole cents with room for rounding. Equity is the sum of three
+    // components each rounded to the cent, the benchmark is rounded once, so the
+    // same value can print up to two cents apart — and `9995.01 - 9995` is
+    // 0.0100000000002 in floating point, which a bare `<= 0.01` rejects.
     check(
-      'both series start on the same day at the same value',
-      Math.abs(first.equity - first.benchmark) <= 0.01,
+      'both series start on the same day at the same value (±$0.02)',
+      Math.round(Math.abs(first.equity - first.benchmark) * 100) <= 2,
       `equity ${money(first.equity)} vs benchmark ${money(first.benchmark)}`,
     );
     check(

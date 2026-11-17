@@ -95,7 +95,9 @@ const todayYmd = (): string => new Date().toISOString().slice(0, 10);
 // 5: verified ticker identity repair; retain the previous book in portfolio_revisions.
 // 6: complete price vintages and coherent, versioned replay snapshots.
 // 7: owner-selected exit policy, first-qualified clocks and aligned fourth book.
-const CURVE_BUILDER_VERSION = 7;
+// 8: opening-day entries are funded from the opening cash instead of through a
+//    same-close SPY round trip; the book and the benchmark start at one value.
+const CURVE_BUILDER_VERSION = 8;
 
 let runInFlight = false;
 
