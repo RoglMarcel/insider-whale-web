@@ -56,6 +56,7 @@ import {
 } from '../src/types';
 import { getRankWeight, getDollarVolumePoints, SCORE_HALF_SATURATION } from '../electron/scoring';
 import { mapOwnershipDocument } from '../electron/scraper/edgar';
+import { signalEntryDate } from '../src/lib/portfolio-rules';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Protocol constants — the entire test design, fixed up-front.
@@ -665,7 +666,9 @@ function loadDbObservations(): { obs: Observation[]; note: string } {
 
     obs.push({
       ticker: row.ticker.toUpperCase(),
-      date: row.scraped_at.slice(0, 10),
+      // The first close the sighting could trade — not its calendar date, whose
+      // close has already passed when the row was scraped after 16:00 New York.
+      date: signalEntryDate(null, null, row.scraped_at),
       score: finite(row.score) ?? 0,
       fromDb: true,
       components,

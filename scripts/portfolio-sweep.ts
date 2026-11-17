@@ -93,7 +93,9 @@ const T95: Record<number, number> = {
   16: 2.12, 17: 2.11, 18: 2.101, 19: 2.093, 20: 2.086, 21: 2.08, 22: 2.074,
   23: 2.069, 24: 2.064, 25: 2.06, 26: 2.056, 27: 2.052, 28: 2.048, 29: 2.045,
 };
-const tCrit = (df: number): number => (df <= 0 ? NaN : df <= 29 ? T95[df] : df <= 60 ? 2.0 : 1.96);
+/** Above the table, the value at the LOWER end of each band: never narrower than exact. */
+const tCrit = (df: number): number =>
+  df <= 0 ? NaN : df <= 29 ? T95[df] : df < 40 ? 2.043 : df < 60 ? 2.022 : df < 120 ? 2.001 : 1.98;
 
 /** Below this a row is arithmetic, not evidence, and is marked as such. */
 const MIN_INTERPRETABLE_N = 10;

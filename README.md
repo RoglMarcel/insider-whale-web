@@ -2123,86 +2123,86 @@ Ausführbare Tests, Ablaufskript oder Konfiguration; die verlinkte Datei enthäl
 
 #### [scripts/backtest-components.ts](scripts/backtest-components.ts)
 
-- [L64](scripts/backtest-components.ts#L64) · intern · `HORIZONS`
-- [L65](scripts/backtest-components.ts#L65) · intern · `PRIMARY_H`
-- [L66](scripts/backtest-components.ts#L66) · intern · `MIN_OBS`
-- [L67](scripts/backtest-components.ts#L67) · intern · `MIN_MINORITY`
-- [L68](scripts/backtest-components.ts#L68) · intern · `IC_MEANINGFUL`
-- [L69](scripts/backtest-components.ts#L69) · intern · `IC_STRONG`
-- [L70](scripts/backtest-components.ts#L70) · intern · `P_MAX`
-- [L71](scripts/backtest-components.ts#L71) · intern · `OOS_COLLAPSE`
-- [L72](scripts/backtest-components.ts#L72) · intern · `MIN_OOS`
-- [L73](scripts/backtest-components.ts#L73) · intern · `TRAIN_FRACTION`
-- [L74](scripts/backtest-components.ts#L74) · intern · `DEDUP_MIN_GAP_DAYS`
-- [L75](scripts/backtest-components.ts#L75) · intern · `RIPENESS_DAYS`
-- [L76](scripts/backtest-components.ts#L76) · intern · `ENTRY_SEARCH_DAYS`
-- [L77](scripts/backtest-components.ts#L77) · intern · `EXIT_SEARCH_DAYS`
-- [L79](scripts/backtest-components.ts#L79) · intern · `EDGAR_LOOKBACK_DAYS`
-- [L80](scripts/backtest-components.ts#L80) · intern · `EDGAR_MAX_FILINGS`
-- [L81](scripts/backtest-components.ts#L81) · intern · `EDGAR_SAMPLE_DAYS`
-- [L83](scripts/backtest-components.ts#L83) · intern · `YF_UA`
-- [L85](scripts/backtest-components.ts#L85) · intern · `SEC_UA`
-- [L87](scripts/backtest-components.ts#L87) · intern · `ComponentKey`
-- [L101](scripts/backtest-components.ts#L101) · intern · `ComponentMeta`
-- [L115](scripts/backtest-components.ts#L115) · intern · `one`
-- [L116](scripts/backtest-components.ts#L116) · intern · `zero`
-- [L117](scripts/backtest-components.ts#L117) · intern · `median`
-- [L123](scripts/backtest-components.ts#L123) · intern · `COMPONENTS`
-- [L262](scripts/backtest-components.ts#L262) · intern · `envInt(name: string, fallback: number): number`
-- [L269](scripts/backtest-components.ts#L269) · intern · `sleep(ms: number): Promise<void>`
-- [L273](scripts/backtest-components.ts#L273) · intern · `ymdOf(d: Date): string`
-- [L278](scripts/backtest-components.ts#L278) · intern · `ymdUtcMs(s: string): number`
-- [L285](scripts/backtest-components.ts#L285) · intern · `ymdLocalMs(s: string): number`
-- [L291](scripts/backtest-components.ts#L291) · intern · `addDaysYmd(s: string, days: number): string`
-- [L298](scripts/backtest-components.ts#L298) · intern · `diffDaysYmd(a: string, b: string): number`
-- [L303](scripts/backtest-components.ts#L303) · intern · `makeLcg(seed: number): () => number`
-- [L311](scripts/backtest-components.ts#L311) · intern · `mean(xs: readonly number[]): number`
-- [L315](scripts/backtest-components.ts#L315) · intern · `variance(xs: readonly number[], m: number): number`
-- [L325](scripts/backtest-components.ts#L325) · intern · `tieRanks(xs: readonly number[]): number[]`
-- [L339](scripts/backtest-components.ts#L339) · intern · `pearson(xs: readonly number[], ys: readonly number[]): number`
-- [L357](scripts/backtest-components.ts#L357) · intern · `spearman(xs: readonly number[], ys: readonly number[]): number`
-- [L361](scripts/backtest-components.ts#L361) · intern · `LANCZOS`
-- [L366](scripts/backtest-components.ts#L366) · intern · `lgamma(z: number): number`
-- [L376](scripts/backtest-components.ts#L376) · intern · `betacf(a: number, b: number, x: number): number`
-- [L410](scripts/backtest-components.ts#L410) · intern · `ibeta(a: number, b: number, x: number): number`
-- [L418](scripts/backtest-components.ts#L418) · intern · `tTwoSidedP(t: number, df: number): number`
-- [L423](scripts/backtest-components.ts#L423) · intern · `welch(a: readonly number[], b: readonly number[]): { t: number; df: number; p: number }`
-- [L438](scripts/backtest-components.ts#L438) · intern · `spearmanP(rho: number, n: number): number`
-- [L448](scripts/backtest-components.ts#L448) · intern · `lastFetchAt`
-- [L449](scripts/backtest-components.ts#L449) · intern · `FETCH_GAP_MS`
-- [L451](scripts/backtest-components.ts#L451) · intern · `fetchWithRetry(url: string, headers: Record<string, string>): Promise<Response | null>`
-- [L473](scripts/backtest-components.ts#L473) · intern · `Series`
-- [L478](scripts/backtest-components.ts#L478) · intern · `YahooChart`
-- [L487](scripts/backtest-components.ts#L487) · intern · `seriesCache`
-- [L488](scripts/backtest-components.ts#L488) · intern · `skippedTickers`
-- [L490](scripts/backtest-components.ts#L490) · intern · `fetchSeries(symbol: string, fromYmd: string): Promise<Series | null>`
-- [L530](scripts/backtest-components.ts#L530) · intern · `firstOnOrAfter(series: Series, target: string, maxDays: number): string | null`
-- [L548](scripts/backtest-components.ts#L548) · intern · `Observation`
-- [L560](scripts/backtest-components.ts#L560) · intern · `SqliteStatement`
-- [L563](scripts/backtest-components.ts#L563) · intern · `SqliteDb`
-- [L567](scripts/backtest-components.ts#L567) · intern · `SqliteCtor`
-- [L569](scripts/backtest-components.ts#L569) · intern · `DbSignalRow`
-- [L577](scripts/backtest-components.ts#L577) · intern · `safeJson(raw: string | null): T | null`
-- [L586](scripts/backtest-components.ts#L586) · intern · `finite(v: unknown): number | undefined`
-- [L590](scripts/backtest-components.ts#L590) · intern · `findDbPath(): string | null`
-- [L600](scripts/backtest-components.ts#L600) · intern · `loadDbObservations(): { obs: Observation[]; note: string }`
-- [L680](scripts/backtest-components.ts#L680) · intern · `xmlParser`
-- [L682](scripts/backtest-components.ts#L682) · intern · `EdgarIndexJson`
-- [L686](scripts/backtest-components.ts#L686) · intern · `loadEdgarObservations(endYmd: string): Promise<{ obs: Observation[]; note: string }>`
-- [L789](scripts/backtest-components.ts#L789) · intern · `dedupObservations(all: Observation[]): { kept: Observation[]; rawCount: number; dailyCount: number }`
-- [L816](scripts/backtest-components.ts#L816) · intern · `attachAlpha(observations: Observation[]): Promise<{ withAlpha: Observation[]; skippedWindows: number }>`
-- [L871](scripts/backtest-components.ts#L871) · intern · `BucketRow`
-- [L877](scripts/backtest-components.ts#L877) · intern · `ComponentResult`
-- [L892](scripts/backtest-components.ts#L892) · intern · `analyzeComponent(meta: ComponentMeta, observations: Observation[]): ComponentResult`
-- [L1011](scripts/backtest-components.ts#L1011) · intern · `RemovalRow`
-- [L1020](scripts/backtest-components.ts#L1020) · intern · `FORMULA_KEYS`
-- [L1034](scripts/backtest-components.ts#L1034) · intern · `reconstructScore(o: Observation, overrides: Partial<Record<ComponentKey, number>>): number`
-- [L1046](scripts/backtest-components.ts#L1046) · intern · `runRemovalTest(observations: Observation[]): { rows: RemovalRow[]; baseIC: number; n: number; sanity: string }`
-- [L1086](scripts/backtest-components.ts#L1086) · intern · `f2`
-- [L1087](scripts/backtest-components.ts#L1087) · intern · `f3`
-- [L1088](scripts/backtest-components.ts#L1088) · intern · `fp`
-- [L1090](scripts/backtest-components.ts#L1090) · intern · `recommendation(r: ComponentResult): string`
-- [L1108](scripts/backtest-components.ts#L1108) · intern · `buildReport(args: { results: ComponentResult[]; removal: { rows: RemovalRow[]; baseIC: number; n: number; sanity: string }; periodStart: string; periodEnd: string; nObs: number; nDb: number; nEdgar: number; dedupNote: string; dbNote: string; edgarNote: string; skippedWindows: number; }): string`
+- [L65](scripts/backtest-components.ts#L65) · intern · `HORIZONS`
+- [L66](scripts/backtest-components.ts#L66) · intern · `PRIMARY_H`
+- [L67](scripts/backtest-components.ts#L67) · intern · `MIN_OBS`
+- [L68](scripts/backtest-components.ts#L68) · intern · `MIN_MINORITY`
+- [L69](scripts/backtest-components.ts#L69) · intern · `IC_MEANINGFUL`
+- [L70](scripts/backtest-components.ts#L70) · intern · `IC_STRONG`
+- [L71](scripts/backtest-components.ts#L71) · intern · `P_MAX`
+- [L72](scripts/backtest-components.ts#L72) · intern · `OOS_COLLAPSE`
+- [L73](scripts/backtest-components.ts#L73) · intern · `MIN_OOS`
+- [L74](scripts/backtest-components.ts#L74) · intern · `TRAIN_FRACTION`
+- [L75](scripts/backtest-components.ts#L75) · intern · `DEDUP_MIN_GAP_DAYS`
+- [L76](scripts/backtest-components.ts#L76) · intern · `RIPENESS_DAYS`
+- [L77](scripts/backtest-components.ts#L77) · intern · `ENTRY_SEARCH_DAYS`
+- [L78](scripts/backtest-components.ts#L78) · intern · `EXIT_SEARCH_DAYS`
+- [L80](scripts/backtest-components.ts#L80) · intern · `EDGAR_LOOKBACK_DAYS`
+- [L81](scripts/backtest-components.ts#L81) · intern · `EDGAR_MAX_FILINGS`
+- [L82](scripts/backtest-components.ts#L82) · intern · `EDGAR_SAMPLE_DAYS`
+- [L84](scripts/backtest-components.ts#L84) · intern · `YF_UA`
+- [L86](scripts/backtest-components.ts#L86) · intern · `SEC_UA`
+- [L88](scripts/backtest-components.ts#L88) · intern · `ComponentKey`
+- [L102](scripts/backtest-components.ts#L102) · intern · `ComponentMeta`
+- [L116](scripts/backtest-components.ts#L116) · intern · `one`
+- [L117](scripts/backtest-components.ts#L117) · intern · `zero`
+- [L118](scripts/backtest-components.ts#L118) · intern · `median`
+- [L124](scripts/backtest-components.ts#L124) · intern · `COMPONENTS`
+- [L263](scripts/backtest-components.ts#L263) · intern · `envInt(name: string, fallback: number): number`
+- [L270](scripts/backtest-components.ts#L270) · intern · `sleep(ms: number): Promise<void>`
+- [L274](scripts/backtest-components.ts#L274) · intern · `ymdOf(d: Date): string`
+- [L279](scripts/backtest-components.ts#L279) · intern · `ymdUtcMs(s: string): number`
+- [L286](scripts/backtest-components.ts#L286) · intern · `ymdLocalMs(s: string): number`
+- [L292](scripts/backtest-components.ts#L292) · intern · `addDaysYmd(s: string, days: number): string`
+- [L299](scripts/backtest-components.ts#L299) · intern · `diffDaysYmd(a: string, b: string): number`
+- [L304](scripts/backtest-components.ts#L304) · intern · `makeLcg(seed: number): () => number`
+- [L312](scripts/backtest-components.ts#L312) · intern · `mean(xs: readonly number[]): number`
+- [L316](scripts/backtest-components.ts#L316) · intern · `variance(xs: readonly number[], m: number): number`
+- [L326](scripts/backtest-components.ts#L326) · intern · `tieRanks(xs: readonly number[]): number[]`
+- [L340](scripts/backtest-components.ts#L340) · intern · `pearson(xs: readonly number[], ys: readonly number[]): number`
+- [L358](scripts/backtest-components.ts#L358) · intern · `spearman(xs: readonly number[], ys: readonly number[]): number`
+- [L362](scripts/backtest-components.ts#L362) · intern · `LANCZOS`
+- [L367](scripts/backtest-components.ts#L367) · intern · `lgamma(z: number): number`
+- [L377](scripts/backtest-components.ts#L377) · intern · `betacf(a: number, b: number, x: number): number`
+- [L411](scripts/backtest-components.ts#L411) · intern · `ibeta(a: number, b: number, x: number): number`
+- [L419](scripts/backtest-components.ts#L419) · intern · `tTwoSidedP(t: number, df: number): number`
+- [L424](scripts/backtest-components.ts#L424) · intern · `welch(a: readonly number[], b: readonly number[]): { t: number; df: number; p: number }`
+- [L439](scripts/backtest-components.ts#L439) · intern · `spearmanP(rho: number, n: number): number`
+- [L449](scripts/backtest-components.ts#L449) · intern · `lastFetchAt`
+- [L450](scripts/backtest-components.ts#L450) · intern · `FETCH_GAP_MS`
+- [L452](scripts/backtest-components.ts#L452) · intern · `fetchWithRetry(url: string, headers: Record<string, string>): Promise<Response | null>`
+- [L474](scripts/backtest-components.ts#L474) · intern · `Series`
+- [L479](scripts/backtest-components.ts#L479) · intern · `YahooChart`
+- [L488](scripts/backtest-components.ts#L488) · intern · `seriesCache`
+- [L489](scripts/backtest-components.ts#L489) · intern · `skippedTickers`
+- [L491](scripts/backtest-components.ts#L491) · intern · `fetchSeries(symbol: string, fromYmd: string): Promise<Series | null>`
+- [L531](scripts/backtest-components.ts#L531) · intern · `firstOnOrAfter(series: Series, target: string, maxDays: number): string | null`
+- [L549](scripts/backtest-components.ts#L549) · intern · `Observation`
+- [L561](scripts/backtest-components.ts#L561) · intern · `SqliteStatement`
+- [L564](scripts/backtest-components.ts#L564) · intern · `SqliteDb`
+- [L568](scripts/backtest-components.ts#L568) · intern · `SqliteCtor`
+- [L570](scripts/backtest-components.ts#L570) · intern · `DbSignalRow`
+- [L578](scripts/backtest-components.ts#L578) · intern · `safeJson(raw: string | null): T | null`
+- [L587](scripts/backtest-components.ts#L587) · intern · `finite(v: unknown): number | undefined`
+- [L591](scripts/backtest-components.ts#L591) · intern · `findDbPath(): string | null`
+- [L601](scripts/backtest-components.ts#L601) · intern · `loadDbObservations(): { obs: Observation[]; note: string }`
+- [L683](scripts/backtest-components.ts#L683) · intern · `xmlParser`
+- [L685](scripts/backtest-components.ts#L685) · intern · `EdgarIndexJson`
+- [L689](scripts/backtest-components.ts#L689) · intern · `loadEdgarObservations(endYmd: string): Promise<{ obs: Observation[]; note: string }>`
+- [L792](scripts/backtest-components.ts#L792) · intern · `dedupObservations(all: Observation[]): { kept: Observation[]; rawCount: number; dailyCount: number }`
+- [L819](scripts/backtest-components.ts#L819) · intern · `attachAlpha(observations: Observation[]): Promise<{ withAlpha: Observation[]; skippedWindows: number }>`
+- [L874](scripts/backtest-components.ts#L874) · intern · `BucketRow`
+- [L880](scripts/backtest-components.ts#L880) · intern · `ComponentResult`
+- [L895](scripts/backtest-components.ts#L895) · intern · `analyzeComponent(meta: ComponentMeta, observations: Observation[]): ComponentResult`
+- [L1014](scripts/backtest-components.ts#L1014) · intern · `RemovalRow`
+- [L1023](scripts/backtest-components.ts#L1023) · intern · `FORMULA_KEYS`
+- [L1037](scripts/backtest-components.ts#L1037) · intern · `reconstructScore(o: Observation, overrides: Partial<Record<ComponentKey, number>>): number`
+- [L1049](scripts/backtest-components.ts#L1049) · intern · `runRemovalTest(observations: Observation[]): { rows: RemovalRow[]; baseIC: number; n: number; sanity: string }`
+- [L1089](scripts/backtest-components.ts#L1089) · intern · `f2`
+- [L1090](scripts/backtest-components.ts#L1090) · intern · `f3`
+- [L1091](scripts/backtest-components.ts#L1091) · intern · `fp`
+- [L1093](scripts/backtest-components.ts#L1093) · intern · `recommendation(r: ComponentResult): string`
+- [L1111](scripts/backtest-components.ts#L1111) · intern · `buildReport(args: { results: ComponentResult[]; removal: { rows: RemovalRow[]; baseIC: number; n: number; sanity: string }; periodStart: string; periodEnd: string; nObs: number; nDb: number; nEdgar: number; dedupNote: string; dbNote: string; edgarNote: string; skippedWindows: number; }): string`
 
 #### [scripts/backtest-opportunistic.ts](scripts/backtest-opportunistic.ts)
 
@@ -2392,16 +2392,16 @@ Ausführbare Tests, Ablaufskript oder Konfiguration; die verlinkte Datei enthäl
 - [L74](scripts/portfolio-sweep.ts#L74) · intern · `SIGMA_WARMUP_DAYS`
 - [L76](scripts/portfolio-sweep.ts#L76) · intern · `SIGMA_VARIANTS`
 - [L90](scripts/portfolio-sweep.ts#L90) · intern · `T95`
-- [L96](scripts/portfolio-sweep.ts#L96) · intern · `tCrit`
-- [L99](scripts/portfolio-sweep.ts#L99) · intern · `MIN_INTERPRETABLE_N`
-- [L101](scripts/portfolio-sweep.ts#L101) · intern · `AlphaStat`
-- [L110](scripts/portfolio-sweep.ts#L110) · intern · `alphaStat(alphas: readonly number[]): AlphaStat`
-- [L122](scripts/portfolio-sweep.ts#L122) · intern · `pct`
-- [L125](scripts/portfolio-sweep.ts#L125) · intern · `Row`
-- [L141](scripts/portfolio-sweep.ts#L141) · intern · `pad(s: string, n: number): string`
-- [L144](scripts/portfolio-sweep.ts#L144) · intern · `padL(s: string, n: number): string`
-- [L148](scripts/portfolio-sweep.ts#L148) · intern · `printTable(title: string, rows: Row[]): void`
-- [L173](scripts/portfolio-sweep.ts#L173) · intern · `main(): Promise<void>`
+- [L97](scripts/portfolio-sweep.ts#L97) · intern · `tCrit`
+- [L101](scripts/portfolio-sweep.ts#L101) · intern · `MIN_INTERPRETABLE_N`
+- [L103](scripts/portfolio-sweep.ts#L103) · intern · `AlphaStat`
+- [L112](scripts/portfolio-sweep.ts#L112) · intern · `alphaStat(alphas: readonly number[]): AlphaStat`
+- [L124](scripts/portfolio-sweep.ts#L124) · intern · `pct`
+- [L127](scripts/portfolio-sweep.ts#L127) · intern · `Row`
+- [L143](scripts/portfolio-sweep.ts#L143) · intern · `pad(s: string, n: number): string`
+- [L146](scripts/portfolio-sweep.ts#L146) · intern · `padL(s: string, n: number): string`
+- [L150](scripts/portfolio-sweep.ts#L150) · intern · `printTable(title: string, rows: Row[]): void`
+- [L175](scripts/portfolio-sweep.ts#L175) · intern · `main(): Promise<void>`
 
 #### [scripts/publish-data.ts](scripts/publish-data.ts)
 
