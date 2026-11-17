@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fetchAdjCloseSeries, outcomeCutoff, outcomePricePair } from '../electron/prices';
+import { fetchAdjCloseSeries, outcomeCutoff, outcomePricePair, windowDiscontinuity } from '../electron/prices';
 const payload = { chart: { result: [{ timestamp: [1790294400], indicators: { adjclose: [{ adjclose: [100] }] } }] } };
 const ok = () => ({ ok: true, json: async () => payload });
 const fail = (status: number) => ({ ok: false, status });
@@ -73,5 +73,27 @@ describe('outcome trading-calendar cutoff', () => {
   it('uses observed sessions across holidays and rejects future/invalid points', () => {
     expect(outcomeCutoff([{ date: '2026-09-04', px: 100 }, { date: '2026-09-08', px: 101 }], '2026-09-07')).toBe('2026-09-04');
     expect(outcomeCutoff([{ date: '2026-09-25', px: NaN }], '2026-09-26')).toBeNull();
+  });
+});
+
+describe('windowDiscontinuity — outcome windows that need a price review', () => {
+  // The shape of YYAI's stored August fetch: a half-applied 1-for-20 split.
+  const yyai = [
+    { date: '2026-07-10', px: 8.11 }, { date: '2026-07-15', px: 9.47 }, { date: '2026-07-17', px: 9.1 },
+    { date: '2026-07-20', px: 182.2 }, { date: '2026-07-31', px: 0.17 }, { date: '2026-08-19', px: 1.18 },
+  ];
+  it('holds a window that crosses the jump (regression: labeled +2,148% then −98%)', () => {
+    expect(windowDiscontinuity(yyai, '2026-07-10', '2026-07-20')).toBe(true);
+    expect(windowDiscontinuity(yyai, '2026-07-10', '2026-07-31')).toBe(true);
+  });
+  it('labels a window that stays clear of it', () => {
+    expect(windowDiscontinuity(yyai, '2026-07-10', '2026-07-17')).toBe(false);
+  });
+  it('flags only moves beyond the 60% screen, in either direction', () => {
+    const at = (px: number) => [{ date: '2026-01-05', px: 100 }, { date: '2026-01-06', px }];
+    expect(windowDiscontinuity(at(159), '2026-01-05', '2026-01-06')).toBe(false);
+    expect(windowDiscontinuity(at(161), '2026-01-05', '2026-01-06')).toBe(true);
+    expect(windowDiscontinuity(at(41), '2026-01-05', '2026-01-06')).toBe(false);
+    expect(windowDiscontinuity(at(39), '2026-01-05', '2026-01-06')).toBe(true);
   });
 });

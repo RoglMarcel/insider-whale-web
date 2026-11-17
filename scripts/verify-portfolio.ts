@@ -23,8 +23,10 @@ import {
   getPortfolioPositions,
   getPortfolioRunMeta,
   getPriceBook,
+  getArchivedExperimentCandidates,
 } from '../electron/database';
-import { buildCandidates } from '../electron/portfolio';
+import { MAIN_BOOK_CANDIDATE_ARCHIVE } from '../electron/portfolio';
+import { cleanPortfolioCandidates } from '../src/lib/ticker-quality';
 import { applySlippage, diffDaysYmd, simulatePortfolio } from '../src/lib/portfolio-rules';
 
 let failures = 0;
@@ -241,7 +243,12 @@ function main(): void {
   );
 
   // ── 7. Determinism: re-run the engine and compare with what is on disk ──
-  const candidates = buildCandidates(config);
+  // The run replays its ARCHIVED candidates: the first observed entry of each
+  // ticker and day, which can differ from what the rolling signal tables say
+  // today (a sighting imported later must not rewrite an earlier decision).
+  // Rebuilding from live signals instead reported a restatement that never
+  // happened (GME 2026-09-11: archived 70.1, live 74.1).
+  const candidates = cleanPortfolioCandidates(getArchivedExperimentCandidates(MAIN_BOOK_CANDIDATE_ARCHIVE));
   const universe = [...new Set(candidates.map((c) => c.ticker))];
   const book = getPriceBook(universe, first.date);
   const tradingDays = Object.keys(spy).sort();

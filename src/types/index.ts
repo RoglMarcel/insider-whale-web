@@ -1336,8 +1336,42 @@ export const MAX_OPTIONS_SCORE_TOTAL = MAX_SINGLE_OPTION_POINTS * 2; // 227.136
 // Track-record reliability controls (Feature 6). A win rate over a handful of
 // trades is mostly noise, so the scoring multiplier ignores insiders below a
 // minimum sample and shrinks the rest toward 0.5 (coin-flip) before judging them.
-/** Minimum number of completed-outcome trades for an insider's record to influence scoring. */
+/** Minimum number of independent purchase decisions (see `independentPurchases`)
+ * with a completed outcome before an insider's record influences scoring. */
 export const MIN_TRACK_RECORD_TRADES = 5;
+/** Repeat buys of one ticker within this many days are one decision: the 3-month
+ * outcome windows they open overlap, so their results are nearly the same draw. */
+export const TRACK_RECORD_EVENT_WINDOW_DAYS = 90;
+
+/**
+ * One purchase per independent decision. A purchase opens an event for its
+ * ticker; further purchases of that ticker within `windowDays` of the event's
+ * first purchase belong to it. The first purchase represents the event.
+ *
+ * The track record used to count every row of an insider's buying program as a
+ * separate trial, while the shrinkage and the five-trade minimum assume
+ * independent ones. Of the 23 stored records whose full trade list is on file,
+ * 20 had fewer than five such decisions: "6 of 7 trades beat the S&P" was two
+ * decisions, and it earned the ×1.16 boost reserved for a proven record.
+ */
+export function independentPurchases<T extends { ticker: string; tradeDate: string }>(
+  trades: readonly T[],
+  windowDays = TRACK_RECORD_EVENT_WINDOW_DAYS,
+): T[] {
+  const ordered = [...trades]
+    .map((t) => ({ t, at: utcInstantMs(t.tradeDate) }))
+    .filter((x): x is { t: T; at: number } => x.at !== null)
+    .sort((a, b) => a.at - b.at || a.t.ticker.localeCompare(b.t.ticker));
+  const eventStart = new Map<string, number>();
+  const out: T[] = [];
+  for (const { t, at } of ordered) {
+    const start = eventStart.get(t.ticker);
+    if (start !== undefined && at - start < windowDays * 86_400_000) continue;
+    eventStart.set(t.ticker, at);
+    out.push(t);
+  }
+  return out;
+}
 /** Pseudo-count for Bayesian shrinkage toward 0.5 (higher = more regression to the mean). */
 export const TRACK_RECORD_SHRINKAGE_K = 3;
 

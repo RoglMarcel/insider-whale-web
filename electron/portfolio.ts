@@ -73,6 +73,8 @@ import { PRICE_REQUEST_GAP_MS, fetchPriceSnapshot, sleep } from './prices';
  */
 
 const BENCHMARK = 'SPY';
+/** Candidate archive of the main book: first-observed entries survive source pruning. */
+export const MAIN_BOOK_CANDIDATE_ARCHIVE = 'main-backtest-v1.7';
 
 /** UTC, to match every other date in this module — all of them are YYYY-MM-DD. */
 const todayYmd = (): string => new Date().toISOString().slice(0, 10);
@@ -306,7 +308,7 @@ async function runSync(): Promise<PortfolioSyncReport> {
   // A 90-day holding must survive the rolling signal/outcome window. Keep the
   // first observed entry candidates so the SAME purchase can eventually close,
   // rather than vanish from a replay when its source row expires.
-  const candidates = cleanPortfolioCandidates(archiveExperimentCandidates('main-backtest-v1.7', [...retainedEntries, ...sourceCandidates]));
+  const candidates = cleanPortfolioCandidates(archiveExperimentCandidates(MAIN_BOOK_CANDIDATE_ARCHIVE, [...retainedEntries, ...sourceCandidates]));
   const experimentCandidates = cleanPortfolioCandidates(archiveExperimentCandidates(INSIDER_ONLY_ID, [...candidates, ...retainedEntries]));
   const above80Sources = buildCandidates(alertsAbove80Config(config));
   const above80Retained = recoverPortfolioEntryCandidates([...(previousAbove80?.state.open ?? []), ...(previousAbove80?.state.closed ?? [])]);

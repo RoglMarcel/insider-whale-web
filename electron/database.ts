@@ -1007,10 +1007,17 @@ function rowToTrackRecord(row: TrackRecordRow): InsiderTrackRecord {
   };
 }
 
+/**
+ * Bumped when the way a record is computed changes; older rows stay on file but
+ * never feed the score again until they are refetched.
+ * 1: adjusted prices only. 2: one observation per independent purchase decision.
+ */
+const TRACK_RECORD_METHOD_VERSION = 2;
+
 export function getTrackRecord(name: string): InsiderTrackRecord | null {
   const row = getDb()
-    .prepare(`SELECT * FROM insider_track_records WHERE insider_name = ? AND price_method_version = 1`)
-    .get(name) as TrackRecordRow | undefined;
+    .prepare(`SELECT * FROM insider_track_records WHERE insider_name = ? AND price_method_version = ?`)
+    .get(name, TRACK_RECORD_METHOD_VERSION) as TrackRecordRow | undefined;
   return row ? rowToTrackRecord(row) : null;
 }
 
@@ -1024,7 +1031,7 @@ export function upsertTrackRecord(record: InsiderTrackRecord): void {
         accuracy_3m, accuracy_6m, avg_return_3m, recent_trades, last_updated, error, pattern, price_method_version
       ) VALUES (
         @insider_name, @insider_role, @total_trades, @profitable_3m, @profitable_6m,
-        @accuracy_3m, @accuracy_6m, @avg_return_3m, @recent_trades, @last_updated, @error, @pattern, 1
+        @accuracy_3m, @accuracy_6m, @avg_return_3m, @recent_trades, @last_updated, @error, @pattern, @price_method_version
       )
       ON CONFLICT(insider_name) DO UPDATE SET
         insider_role = excluded.insider_role,
@@ -1053,6 +1060,7 @@ export function upsertTrackRecord(record: InsiderTrackRecord): void {
       last_updated: record.lastUpdated ?? new Date().toISOString(),
       error: record.error ?? null,
       pattern: record.pattern ?? null,
+      price_method_version: TRACK_RECORD_METHOD_VERSION,
     });
 }
 
@@ -2637,7 +2645,12 @@ export function archiveExperimentCandidates(id: string, candidates: PortfolioCan
       insert.run(id, c.ticker, c.earliestDate, JSON.stringify(c));
     }
   })();
-  const rows = db.prepare('SELECT candidate_json FROM portfolio_experiment_candidates WHERE experiment_id = ? ORDER BY earliest_date, ticker').all(id) as { candidate_json: string }[];
+  return getArchivedExperimentCandidates(id);
+}
+
+/** The archived candidates exactly as the last run replayed them; reads only. */
+export function getArchivedExperimentCandidates(id: string): PortfolioCandidate[] {
+  const rows = getDb().prepare('SELECT candidate_json FROM portfolio_experiment_candidates WHERE experiment_id = ? ORDER BY earliest_date, ticker').all(id) as { candidate_json: string }[];
   return rows.map((r) => JSON.parse(r.candidate_json) as PortfolioCandidate);
 }
 

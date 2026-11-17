@@ -22,6 +22,8 @@ import {
   getFreshnessMultiplier,
   getFreshnessLevel,
   shrunkAccuracy,
+  independentPurchases,
+  TRACK_RECORD_EVENT_WINDOW_DAYS,
   MAX_INSIDER_TIMING_MULT,
   MAX_SINGLE_OPTION_POINTS,
   MAX_OPTIONS_SCORE_TOTAL,
@@ -652,6 +654,34 @@ describe('getFreshnessLevel agrees with the multiplier', () => {
 // ──────────────────────────────────────────────────────────────────────────
 // Track-record shrinkage + tiers
 // ──────────────────────────────────────────────────────────────────────────
+
+describe('independentPurchases — one observation per decision', () => {
+  const buy = (ticker: string, tradeDate: string) => ({ ticker, tradeDate });
+
+  it('collapses a buying program in one stock into one decision (regression: 8 trades counted as 8)', () => {
+    const program = ['2026-01-05', '2026-01-06', '2026-01-08', '2026-01-20', '2026-02-02', '2026-03-01', '2026-03-20', '2026-04-04'];
+    expect(independentPurchases(program.map((d) => buy('AAA', d)))).toEqual([buy('AAA', '2026-01-05')]);
+  });
+  it('anchors the window on the decision, so a year of monthly buying is four decisions', () => {
+    const monthly = Array.from({ length: 12 }, (_, i) => buy('AAA', `2025-${String(i + 1).padStart(2, '0')}-01`));
+    expect(independentPurchases(monthly).map((t) => t.tradeDate)).toEqual(['2025-01-01', '2025-04-01', '2025-07-01', '2025-10-01']);
+  });
+  it('starts a new decision exactly when the outcome windows stop overlapping', () => {
+    expect(independentPurchases([buy('AAA', '2026-01-01'), buy('AAA', '2026-03-31')])).toHaveLength(1); // day 89
+    expect(independentPurchases([buy('AAA', '2026-01-01'), buy('AAA', '2026-04-01')])).toHaveLength(2); // day 90
+  });
+  it('keeps buys of different stocks apart, and is order-independent', () => {
+    const rows = [buy('BBB', '2026-01-02'), buy('AAA', '2026-01-03'), buy('AAA', '2026-01-02')];
+    expect(independentPurchases(rows)).toEqual([buy('AAA', '2026-01-02'), buy('BBB', '2026-01-02')]);
+    expect(independentPurchases([...rows].reverse())).toEqual(independentPurchases(rows));
+  });
+  it('drops undatable rows instead of guessing their place', () => {
+    expect(independentPurchases([buy('AAA', ''), buy('AAA', 'garbage'), buy('AAA', '2026-01-02')])).toEqual([buy('AAA', '2026-01-02')]);
+  });
+  it('the shipped window is the 3-month outcome horizon', () => {
+    expect(TRACK_RECORD_EVENT_WINDOW_DAYS).toBe(90);
+  });
+});
 
 describe('shrunkAccuracy', () => {
   it('an empty record is a coin flip', () => expect(shrunkAccuracy(0, 0)).toBe(0.5));

@@ -213,7 +213,7 @@ finalScore = clamp(corroboration applies ? normalized × softMult : normalized, 
 | VIX | Begrenzte graduelle Kontextverstärkung; fehlender VIX bleibt neutral |
 | Aktualität | Getrennte Alterung von Insider- und Optionsbelegen; zukünftige/fehlende Daten nicht als frische Beobachtung behandeln |
 | Optionen | Bullische minus bearische Prints; geometrisch abnehmende Zusatzwirkung verhindert beliebige Verstärkung durch Zeilenanzahl |
-| Track Record | Begrenzte Verstärkung/Abschwächung bei geeigneter historischer Abdeckung |
+| Track Record | Begrenzte Verstärkung/Abschwächung bei geeigneter historischer Abdeckung. Gezählt werden unabhängige Kaufentscheidungen: Wiederholungskäufe derselben Aktie innerhalb von 90 Tagen (dem 3-Monats-Messfenster) zählen einmal, mindestens fünf sind nötig |
 | Bewertung | Aktueller `fairValue.multiplier`; alter `upsidePct`-Pfad ist eine Kompatibilitätsnaht |
 | Politik und Bestätigung | Eigener politischer Beitrag; Combo-Stufen verwenden das Maximum der passenden Soft-Multiplikatoren, nicht deren Produkt |
 
@@ -301,7 +301,7 @@ Kandidaten aus Signalen verwenden den ersten legitim handelbaren Schlusskurs nac
 
 Bei geänderter Konfiguration oder veralteter Curve-Builder-Version wird die zusammengehörige Simulation neu erstellt; historische Kurven dürfen nicht mit Positionen einer anderen Regelversion kombiniert werden. Abweichungen nach Kurs-Neudarstellungen werden gezählt. `portfolio_revisions` bewahrt bestimmte frühere Bücher bei Migrationen. Statistiken begrenzen CAGR-/Sharpe-Ausgaben bei zu kurzen Beobachtungsfenstern; aus wenigen Trades darf keine belastbare Erfolgsquote abgeleitet werden.
 
-`performance.ts`, `scripts/label-outcomes.ts` und die Backtest-/Analyse-Skripte bewerten gereifte Signale gegen SPY. Sie messen wie das Depot ab `signalEntryDate`: dem ersten Schlusskurs, den die Beobachtung noch handeln konnte; eine Sichtung nach Börsenschluss beginnt erst mit der nächsten Sitzung. Preispaare müssen vergleichbare Zeitpunkte besitzen; Ergebnisfenster, fehlende Kurse, wiederholte Ticker und überlappende Perioden beeinflussen die Aussage. Shadow-/Backtest-Ergebnisse ändern nicht selbstständig Live-Regeln.
+`performance.ts`, `scripts/label-outcomes.ts` und die Backtest-/Analyse-Skripte bewerten gereifte Signale gegen SPY. Sie messen wie das Depot ab `signalEntryDate`: dem ersten Schlusskurs, den die Beobachtung noch handeln konnte; eine Sichtung nach Börsenschluss beginnt erst mit der nächsten Sitzung. Enthält das Messfenster eine Kursbewegung von mehr als 60 % zwischen zwei Sitzungen, wird das Ergebnis erst nach einer Kursprüfung (`scripts/review-price-vintage.ts`) oder einer korrigierten Anbieterreihe geschrieben — dieselbe Regel wie für Depotkurse. Preispaare müssen vergleichbare Zeitpunkte besitzen; Ergebnisfenster, fehlende Kurse, wiederholte Ticker und überlappende Perioden beeinflussen die Aussage. Shadow-/Backtest-Ergebnisse ändern nicht selbstständig Live-Regeln.
 
 ### Speicherung und Synchronisierung
 
@@ -509,101 +509,103 @@ Das folgende Verzeichnis ist aus dem geprüften Quellstand abgeleitet. Es nennt 
 - [L967](electron/database.ts#L967) · export · `getLastScrapeTime(): string | null`
 - [L978](electron/database.ts#L978) · intern · `TrackRecordRow`
 - [L993](electron/database.ts#L993) · intern · `rowToTrackRecord(row: TrackRecordRow): InsiderTrackRecord`
-- [L1010](electron/database.ts#L1010) · export · `getTrackRecord(name: string): InsiderTrackRecord | null`
-- [L1017](electron/database.ts#L1017) · export · `upsertTrackRecord(record: InsiderTrackRecord): void`
-- [L1063](electron/database.ts#L1063) · export · `getSettings(): AppSettings`
-- [L1077](electron/database.ts#L1077) · export · `setSettings(partial: Partial<AppSettings>): AppSettings`
-- [L1099](electron/database.ts#L1099) · export · `getShadowScoringConfig(): Partial<ScoringConfig> | null`
-- [L1108](electron/database.ts#L1108) · export · `setShadowScoringConfig(config: Partial<ScoringConfig> | null): Partial<ScoringConfig> | null`
-- [L1127](electron/database.ts#L1127) · export · `clearDatabase(): void`
-- [L1137](electron/database.ts#L1137) · export · `insertNewsItem(news: { tweetId: string; text: string; timestamp: string; url: string }): boolean`
-- [L1148](electron/database.ts#L1148) · export · `getNewsItems(): NewsItem[]`
-- [L1179](electron/database.ts#L1179) · export · `getNewsForTicker(ticker: string): NewsItem[]`
-- [L1213](electron/database.ts#L1213) · export · `upsertPoliticianTrades(trades: PoliticianTrade[]): number`
-- [L1263](electron/database.ts#L1263) · intern · `PoliticianTradeRow`
-- [L1278](electron/database.ts#L1278) · intern · `rowToPoliticianTrade(r: PoliticianTradeRow): PoliticianTrade`
-- [L1296](electron/database.ts#L1296) · export · `getPoliticianTradesForTicker(ticker: string, days = 90): PoliticianTrade[]`
-- [L1307](electron/database.ts#L1307) · export · `getPoliticianTradeTickers(days = 90): string[]`
-- [L1320](electron/database.ts#L1320) · export · `upsertFilingEvents(events: FilingEvent[]): FilingEvent[]`
-- [L1339](electron/database.ts#L1339) · export · `getRecentFilingEvents(ticker: string, days = 90): FilingEvent[]`
-- [L1360](electron/database.ts#L1360) · export · `insertBacktestRun(report: PerformanceReport): void`
-- [L1366](electron/database.ts#L1366) · export · `getLatestBacktestRun(): PerformanceReport | null`
-- [L1374](electron/database.ts#L1374) · export · `BacktestSignalRow`
-- [L1387](electron/database.ts#L1387) · export · `OutcomeCandidate`
-- [L1405](electron/database.ts#L1405) · export · `getOutcomeCandidates(): OutcomeCandidate[]`
-- [L1480](electron/database.ts#L1480) · export · `getOutcomeBackfillCandidates(): OutcomeCandidate[]`
-- [L1498](electron/database.ts#L1498) · export · `getLabeledKeys(): Set<string>`
-- [L1505](electron/database.ts#L1505) · export · `SignalOutcome`
-- [L1519](electron/database.ts#L1519) · export · `upsertSignalOutcomes(rows: SignalOutcome[]): number`
-- [L1537](electron/database.ts#L1537) · export · `getOutcomeCoverage(): { perHorizon: { horizon: number; n: number }[]; components: { name: string; varying: number; total: number }[]; }`
-- [L1584](electron/database.ts#L1584) · export · `getScoreOutcomeRows(horizon: number): { score: number; alpha: number; entryDate: string; ticker: string; breakdown: string | null }[]`
-- [L1602](electron/database.ts#L1602) · export · `getFactorActivity(): { name: string; active: number; total: number }[]`
-- [L1637](electron/database.ts#L1637) · export · `getSignalRowsForBacktest(): BacktestSignalRow[]`
-- [L1649](electron/database.ts#L1649) · intern · `AlertRuleRow`
-- [L1659](electron/database.ts#L1659) · intern · `rowToAlertRule(row: AlertRuleRow): AlertRule`
-- [L1671](electron/database.ts#L1671) · export · `getAlertRules(): AlertRule[]`
-- [L1676](electron/database.ts#L1676) · export · `addAlertRule(rule: AlertRule): void`
-- [L1692](electron/database.ts#L1692) · export · `deleteAlertRule(id: number): void`
-- [L1696](electron/database.ts#L1696) · export · `setAlertRuleEnabled(id: number, enabled: boolean): void`
-- [L1701](electron/database.ts#L1701) · export · `getWatchlistTickers(): string[]`
-- [L1712](electron/database.ts#L1712) · export · `InsiderFlowInput`
-- [L1721](electron/database.ts#L1721) · export · `upsertInsiderFlow(rows: InsiderFlowInput[]): void`
-- [L1751](electron/database.ts#L1751) · export · `replaceInsiderSalesSnapshot(snapshot: { rows: InsiderFlowInput[]; complete: boolean; from: string; through: string; startedAt: string; }): boolean`
-- [L1782](electron/database.ts#L1782) · export · `InsiderFlowSummary`
-- [L1795](electron/database.ts#L1795) · export · `getNetInsiderFlow(ticker: string, days = 90): InsiderFlowSummary`
-- [L1830](electron/database.ts#L1830) · intern · `TRADE_SOURCE_RANK`
-- [L1838](electron/database.ts#L1838) · intern · `DEFAULT_TRADE_SOURCE_RANK`
-- [L1840](electron/database.ts#L1840) · intern · `tradeSourceRank(source: string): number`
-- [L1850](electron/database.ts#L1850) · export · `upsertInsiderTrades(trades: RawInsiderTrade[]): number`
-- [L1873](electron/database.ts#L1873) · intern · `isStoredTrade(value: unknown): value is RawInsiderTrade`
-- [L1883](electron/database.ts#L1883) · intern · `readCanonicalInsiderTrades(ticker?: string): RawInsiderTrade[]`
-- [L1898](electron/database.ts#L1898) · export · `getUnresolvedInsiderTrades(ticker?: string): RawInsiderTrade[]`
-- [L1902](electron/database.ts#L1902) · export · `getRecentInsiderTrades(days = 30, ticker?: string): RawInsiderTrade[]`
-- [L1913](electron/database.ts#L1913) · export · `backfillInsiderTradesFromSignals(days = 30): number`
-- [L1945](electron/database.ts#L1945) · export · `TickerMeta`
-- [L1958](electron/database.ts#L1958) · export · `getTickerMeta(ticker: string, maxAgeMs: number): TickerMeta | null`
-- [L1992](electron/database.ts#L1992) · export · `upsertTickerMeta(meta: { ticker: string; marketCap?: number; sector?: string; earningsDate?: string; earningsTiming?: string; shortPctFloat?: number; floatShares?: number; avgDollarVolume?: number; pctFrom52wHigh?: number; }): void`
-- [L2032](electron/database.ts#L2032) · export · `updateEarnings(ticker: string, earningsDate: string, earningsTiming: string | null, daysToEarnings: number | null): void`
-- [L2054](electron/database.ts#L2054) · export · `pruneOldData(retentionDays = 365): void`
-- [L2074](electron/database.ts#L2074) · export · `PriceRow`
-- [L2089](electron/database.ts#L2089) · export · `upsertPriceRows(rows: readonly PriceRow[]): number`
-- [L2128](electron/database.ts#L2128) · export · `getPriceBook(tickers: readonly string[], fromYmd: string): Record<string, Record<string, number>>`
-- [L2148](electron/database.ts#L2148) · export · `getPriceCoverage(): Record<string, { last: string; n: number; fetchedAt: string | null }>`
-- [L2161](electron/database.ts#L2161) · export · `getPriceAsOf(): string | null`
-- [L2166](electron/database.ts#L2166) · export · `PortfolioCandidateRow`
-- [L2180](electron/database.ts#L2180) · export · `getPortfolioSignalCandidates(minScore: number): PortfolioCandidateRow[]`
-- [L2199](electron/database.ts#L2199) · export · `getPortfolioOutcomeCandidates(minScore: number): PortfolioCandidateRow[]`
-- [L2212](electron/database.ts#L2212) · export · `getPortfolioUniverse(minScore: number): string[]`
-- [L2224](electron/database.ts#L2224) · export · `getPortfolioHistoryStart(minScore: number): string | null`
-- [L2238](electron/database.ts#L2238) · export · `getPortfolioLiveStart(): string | null`
-- [L2247](electron/database.ts#L2247) · intern · `EquityRow`
-- [L2258](electron/database.ts#L2258) · intern · `toEquityPoint`
-- [L2269](electron/database.ts#L2269) · export · `getPortfolioEquity(): PortfolioEquityPoint[]`
-- [L2279](electron/database.ts#L2279) · export · `insertPortfolioEquity(points: readonly PortfolioEquityPoint[]): number`
-- [L2305](electron/database.ts#L2305) · intern · `PositionRow`
-- [L2334](electron/database.ts#L2334) · export · `clearPortfolioEquity(): void`
-- [L2342](electron/database.ts#L2342) · export · `deletePortfolioEquityDay(date: string): void`
-- [L2346](electron/database.ts#L2346) · export · `getPortfolioPositions(): PortfolioPosition[]`
-- [L2376](electron/database.ts#L2376) · export · `replacePortfolioPositions(positions: readonly PortfolioPosition[]): void`
-- [L2409](electron/database.ts#L2409) · export · `getPortfolioEvents(limit = 500): PortfolioEvent[]`
-- [L2429](electron/database.ts#L2429) · export · `replacePortfolioEvents(events: readonly PortfolioEvent[]): void`
-- [L2442](electron/database.ts#L2442) · export · `insertPortfolioSuspectEvents(events: readonly PortfolioEvent[]): number`
-- [L2474](electron/database.ts#L2474) · export · `clearPortfolio(): void`
-- [L2486](electron/database.ts#L2486) · intern · `PORTFOLIO_CONFIG_KEY`
-- [L2487](electron/database.ts#L2487) · intern · `PORTFOLIO_META_KEY`
-- [L2489](electron/database.ts#L2489) · export · `getPortfolioConfig(): PortfolioConfig`
-- [L2496](electron/database.ts#L2496) · intern · `PORTFOLIO_CONFIG_VERSION_KEY`
-- [L2513](electron/database.ts#L2513) · export · `migratePortfolioConfig(): { migrated: string[]; kept: string[] } | null`
-- [L2560](electron/database.ts#L2560) · export · `setPortfolioConfig(partial: Partial<PortfolioConfig>): PortfolioConfig`
-- [L2578](electron/database.ts#L2578) · export · `PortfolioRunMeta`
-- [L2601](electron/database.ts#L2601) · export · `getPortfolioRunMeta(): PortfolioRunMeta | null`
-- [L2610](electron/database.ts#L2610) · export · `setPortfolioRunMeta(meta: PortfolioRunMeta): void`
-- [L2621](electron/database.ts#L2621) · export · `getPortfolioExperiment(id: string): PortfolioExperiment | null`
-- [L2626](electron/database.ts#L2626) · export · `setPortfolioExperiment(experiment: PortfolioExperiment): void`
-- [L2632](electron/database.ts#L2632) · export · `archiveExperimentCandidates(id: string, candidates: PortfolioCandidate[]): PortfolioCandidate[]`
-- [L2645](electron/database.ts#L2645) · export · `recordTickerQuality(ticker: string): void`
-- [L2653](electron/database.ts#L2653) · intern · `quarantineLegacyTickers(): void`
-- [L2658](electron/database.ts#L2658) · export · `archivePortfolioRevision(reason: string, state: unknown): void`
+- [L1015](electron/database.ts#L1015) · intern · `TRACK_RECORD_METHOD_VERSION`
+- [L1017](electron/database.ts#L1017) · export · `getTrackRecord(name: string): InsiderTrackRecord | null`
+- [L1024](electron/database.ts#L1024) · export · `upsertTrackRecord(record: InsiderTrackRecord): void`
+- [L1071](electron/database.ts#L1071) · export · `getSettings(): AppSettings`
+- [L1085](electron/database.ts#L1085) · export · `setSettings(partial: Partial<AppSettings>): AppSettings`
+- [L1107](electron/database.ts#L1107) · export · `getShadowScoringConfig(): Partial<ScoringConfig> | null`
+- [L1116](electron/database.ts#L1116) · export · `setShadowScoringConfig(config: Partial<ScoringConfig> | null): Partial<ScoringConfig> | null`
+- [L1135](electron/database.ts#L1135) · export · `clearDatabase(): void`
+- [L1145](electron/database.ts#L1145) · export · `insertNewsItem(news: { tweetId: string; text: string; timestamp: string; url: string }): boolean`
+- [L1156](electron/database.ts#L1156) · export · `getNewsItems(): NewsItem[]`
+- [L1187](electron/database.ts#L1187) · export · `getNewsForTicker(ticker: string): NewsItem[]`
+- [L1221](electron/database.ts#L1221) · export · `upsertPoliticianTrades(trades: PoliticianTrade[]): number`
+- [L1271](electron/database.ts#L1271) · intern · `PoliticianTradeRow`
+- [L1286](electron/database.ts#L1286) · intern · `rowToPoliticianTrade(r: PoliticianTradeRow): PoliticianTrade`
+- [L1304](electron/database.ts#L1304) · export · `getPoliticianTradesForTicker(ticker: string, days = 90): PoliticianTrade[]`
+- [L1315](electron/database.ts#L1315) · export · `getPoliticianTradeTickers(days = 90): string[]`
+- [L1328](electron/database.ts#L1328) · export · `upsertFilingEvents(events: FilingEvent[]): FilingEvent[]`
+- [L1347](electron/database.ts#L1347) · export · `getRecentFilingEvents(ticker: string, days = 90): FilingEvent[]`
+- [L1368](electron/database.ts#L1368) · export · `insertBacktestRun(report: PerformanceReport): void`
+- [L1374](electron/database.ts#L1374) · export · `getLatestBacktestRun(): PerformanceReport | null`
+- [L1382](electron/database.ts#L1382) · export · `BacktestSignalRow`
+- [L1395](electron/database.ts#L1395) · export · `OutcomeCandidate`
+- [L1413](electron/database.ts#L1413) · export · `getOutcomeCandidates(): OutcomeCandidate[]`
+- [L1488](electron/database.ts#L1488) · export · `getOutcomeBackfillCandidates(): OutcomeCandidate[]`
+- [L1506](electron/database.ts#L1506) · export · `getLabeledKeys(): Set<string>`
+- [L1513](electron/database.ts#L1513) · export · `SignalOutcome`
+- [L1527](electron/database.ts#L1527) · export · `upsertSignalOutcomes(rows: SignalOutcome[]): number`
+- [L1545](electron/database.ts#L1545) · export · `getOutcomeCoverage(): { perHorizon: { horizon: number; n: number }[]; components: { name: string; varying: number; total: number }[]; }`
+- [L1592](electron/database.ts#L1592) · export · `getScoreOutcomeRows(horizon: number): { score: number; alpha: number; entryDate: string; ticker: string; breakdown: string | null }[]`
+- [L1610](electron/database.ts#L1610) · export · `getFactorActivity(): { name: string; active: number; total: number }[]`
+- [L1645](electron/database.ts#L1645) · export · `getSignalRowsForBacktest(): BacktestSignalRow[]`
+- [L1657](electron/database.ts#L1657) · intern · `AlertRuleRow`
+- [L1667](electron/database.ts#L1667) · intern · `rowToAlertRule(row: AlertRuleRow): AlertRule`
+- [L1679](electron/database.ts#L1679) · export · `getAlertRules(): AlertRule[]`
+- [L1684](electron/database.ts#L1684) · export · `addAlertRule(rule: AlertRule): void`
+- [L1700](electron/database.ts#L1700) · export · `deleteAlertRule(id: number): void`
+- [L1704](electron/database.ts#L1704) · export · `setAlertRuleEnabled(id: number, enabled: boolean): void`
+- [L1709](electron/database.ts#L1709) · export · `getWatchlistTickers(): string[]`
+- [L1720](electron/database.ts#L1720) · export · `InsiderFlowInput`
+- [L1729](electron/database.ts#L1729) · export · `upsertInsiderFlow(rows: InsiderFlowInput[]): void`
+- [L1759](electron/database.ts#L1759) · export · `replaceInsiderSalesSnapshot(snapshot: { rows: InsiderFlowInput[]; complete: boolean; from: string; through: string; startedAt: string; }): boolean`
+- [L1790](electron/database.ts#L1790) · export · `InsiderFlowSummary`
+- [L1803](electron/database.ts#L1803) · export · `getNetInsiderFlow(ticker: string, days = 90): InsiderFlowSummary`
+- [L1838](electron/database.ts#L1838) · intern · `TRADE_SOURCE_RANK`
+- [L1846](electron/database.ts#L1846) · intern · `DEFAULT_TRADE_SOURCE_RANK`
+- [L1848](electron/database.ts#L1848) · intern · `tradeSourceRank(source: string): number`
+- [L1858](electron/database.ts#L1858) · export · `upsertInsiderTrades(trades: RawInsiderTrade[]): number`
+- [L1881](electron/database.ts#L1881) · intern · `isStoredTrade(value: unknown): value is RawInsiderTrade`
+- [L1891](electron/database.ts#L1891) · intern · `readCanonicalInsiderTrades(ticker?: string): RawInsiderTrade[]`
+- [L1906](electron/database.ts#L1906) · export · `getUnresolvedInsiderTrades(ticker?: string): RawInsiderTrade[]`
+- [L1910](electron/database.ts#L1910) · export · `getRecentInsiderTrades(days = 30, ticker?: string): RawInsiderTrade[]`
+- [L1921](electron/database.ts#L1921) · export · `backfillInsiderTradesFromSignals(days = 30): number`
+- [L1953](electron/database.ts#L1953) · export · `TickerMeta`
+- [L1966](electron/database.ts#L1966) · export · `getTickerMeta(ticker: string, maxAgeMs: number): TickerMeta | null`
+- [L2000](electron/database.ts#L2000) · export · `upsertTickerMeta(meta: { ticker: string; marketCap?: number; sector?: string; earningsDate?: string; earningsTiming?: string; shortPctFloat?: number; floatShares?: number; avgDollarVolume?: number; pctFrom52wHigh?: number; }): void`
+- [L2040](electron/database.ts#L2040) · export · `updateEarnings(ticker: string, earningsDate: string, earningsTiming: string | null, daysToEarnings: number | null): void`
+- [L2062](electron/database.ts#L2062) · export · `pruneOldData(retentionDays = 365): void`
+- [L2082](electron/database.ts#L2082) · export · `PriceRow`
+- [L2097](electron/database.ts#L2097) · export · `upsertPriceRows(rows: readonly PriceRow[]): number`
+- [L2136](electron/database.ts#L2136) · export · `getPriceBook(tickers: readonly string[], fromYmd: string): Record<string, Record<string, number>>`
+- [L2156](electron/database.ts#L2156) · export · `getPriceCoverage(): Record<string, { last: string; n: number; fetchedAt: string | null }>`
+- [L2169](electron/database.ts#L2169) · export · `getPriceAsOf(): string | null`
+- [L2174](electron/database.ts#L2174) · export · `PortfolioCandidateRow`
+- [L2188](electron/database.ts#L2188) · export · `getPortfolioSignalCandidates(minScore: number): PortfolioCandidateRow[]`
+- [L2207](electron/database.ts#L2207) · export · `getPortfolioOutcomeCandidates(minScore: number): PortfolioCandidateRow[]`
+- [L2220](electron/database.ts#L2220) · export · `getPortfolioUniverse(minScore: number): string[]`
+- [L2232](electron/database.ts#L2232) · export · `getPortfolioHistoryStart(minScore: number): string | null`
+- [L2246](electron/database.ts#L2246) · export · `getPortfolioLiveStart(): string | null`
+- [L2255](electron/database.ts#L2255) · intern · `EquityRow`
+- [L2266](electron/database.ts#L2266) · intern · `toEquityPoint`
+- [L2277](electron/database.ts#L2277) · export · `getPortfolioEquity(): PortfolioEquityPoint[]`
+- [L2287](electron/database.ts#L2287) · export · `insertPortfolioEquity(points: readonly PortfolioEquityPoint[]): number`
+- [L2313](electron/database.ts#L2313) · intern · `PositionRow`
+- [L2342](electron/database.ts#L2342) · export · `clearPortfolioEquity(): void`
+- [L2350](electron/database.ts#L2350) · export · `deletePortfolioEquityDay(date: string): void`
+- [L2354](electron/database.ts#L2354) · export · `getPortfolioPositions(): PortfolioPosition[]`
+- [L2384](electron/database.ts#L2384) · export · `replacePortfolioPositions(positions: readonly PortfolioPosition[]): void`
+- [L2417](electron/database.ts#L2417) · export · `getPortfolioEvents(limit = 500): PortfolioEvent[]`
+- [L2437](electron/database.ts#L2437) · export · `replacePortfolioEvents(events: readonly PortfolioEvent[]): void`
+- [L2450](electron/database.ts#L2450) · export · `insertPortfolioSuspectEvents(events: readonly PortfolioEvent[]): number`
+- [L2482](electron/database.ts#L2482) · export · `clearPortfolio(): void`
+- [L2494](electron/database.ts#L2494) · intern · `PORTFOLIO_CONFIG_KEY`
+- [L2495](electron/database.ts#L2495) · intern · `PORTFOLIO_META_KEY`
+- [L2497](electron/database.ts#L2497) · export · `getPortfolioConfig(): PortfolioConfig`
+- [L2504](electron/database.ts#L2504) · intern · `PORTFOLIO_CONFIG_VERSION_KEY`
+- [L2521](electron/database.ts#L2521) · export · `migratePortfolioConfig(): { migrated: string[]; kept: string[] } | null`
+- [L2568](electron/database.ts#L2568) · export · `setPortfolioConfig(partial: Partial<PortfolioConfig>): PortfolioConfig`
+- [L2586](electron/database.ts#L2586) · export · `PortfolioRunMeta`
+- [L2609](electron/database.ts#L2609) · export · `getPortfolioRunMeta(): PortfolioRunMeta | null`
+- [L2618](electron/database.ts#L2618) · export · `setPortfolioRunMeta(meta: PortfolioRunMeta): void`
+- [L2629](electron/database.ts#L2629) · export · `getPortfolioExperiment(id: string): PortfolioExperiment | null`
+- [L2634](electron/database.ts#L2634) · export · `setPortfolioExperiment(experiment: PortfolioExperiment): void`
+- [L2640](electron/database.ts#L2640) · export · `archiveExperimentCandidates(id: string, candidates: PortfolioCandidate[]): PortfolioCandidate[]`
+- [L2652](electron/database.ts#L2652) · export · `getArchivedExperimentCandidates(id: string): PortfolioCandidate[]`
+- [L2658](electron/database.ts#L2658) · export · `recordTickerQuality(ticker: string): void`
+- [L2666](electron/database.ts#L2666) · intern · `quarantineLegacyTickers(): void`
+- [L2671](electron/database.ts#L2671) · export · `archivePortfolioRevision(reason: string, state: unknown): void`
 
 #### [electron/desktopSnapshot.ts](electron/desktopSnapshot.ts)
 
@@ -722,22 +724,23 @@ Das folgende Verzeichnis ist aus dem geprüften Quellstand abgeleitet. Es nennt 
 #### [electron/portfolio.ts](electron/portfolio.ts)
 
 - [L75](electron/portfolio.ts#L75) · intern · `BENCHMARK`
-- [L78](electron/portfolio.ts#L78) · intern · `todayYmd`
-- [L100](electron/portfolio.ts#L100) · intern · `CURVE_BUILDER_VERSION`
-- [L102](electron/portfolio.ts#L102) · intern · `runInFlight`
-- [L104](electron/portfolio.ts#L104) · export · `PortfolioSyncReport`
-- [L122](electron/portfolio.ts#L122) · intern · `sameConfig(a: PortfolioConfig, b: PortfolioConfig): boolean`
-- [L146](electron/portfolio.ts#L146) · export · `buildCandidates(config: PortfolioConfig): PortfolioCandidate[]`
-- [L171](electron/portfolio.ts#L171) · intern · `PriceSyncResult`
-- [L183](electron/portfolio.ts#L183) · export · `syncPrices(tickers: readonly string[], fromYmd: string): Promise<PriceSyncResult>`
-- [L229](electron/portfolio.ts#L229) · export · `syncPortfolio(): Promise<PortfolioSyncReport>`
-- [L239](electron/portfolio.ts#L239) · intern · `runSync(): Promise<PortfolioSyncReport>`
+- [L77](electron/portfolio.ts#L77) · export · `MAIN_BOOK_CANDIDATE_ARCHIVE`
+- [L80](electron/portfolio.ts#L80) · intern · `todayYmd`
+- [L102](electron/portfolio.ts#L102) · intern · `CURVE_BUILDER_VERSION`
+- [L104](electron/portfolio.ts#L104) · intern · `runInFlight`
+- [L106](electron/portfolio.ts#L106) · export · `PortfolioSyncReport`
+- [L124](electron/portfolio.ts#L124) · intern · `sameConfig(a: PortfolioConfig, b: PortfolioConfig): boolean`
+- [L148](electron/portfolio.ts#L148) · export · `buildCandidates(config: PortfolioConfig): PortfolioCandidate[]`
+- [L173](electron/portfolio.ts#L173) · intern · `PriceSyncResult`
+- [L185](electron/portfolio.ts#L185) · export · `syncPrices(tickers: readonly string[], fromYmd: string): Promise<PriceSyncResult>`
+- [L231](electron/portfolio.ts#L231) · export · `syncPortfolio(): Promise<PortfolioSyncReport>`
+- [L241](electron/portfolio.ts#L241) · intern · `runSync(): Promise<PortfolioSyncReport>`
 - [L405](electron/portfolio.ts#L405) · intern · `liveBoundary(firstDay: string | null): string | null`
-- [L419](electron/portfolio.ts#L419) · intern · `countEvents(events: readonly PortfolioEvent[]): { skippedNoCash: number; skippedCap: number; dataMissing: number; }`
-- [L440](electron/portfolio.ts#L440) · export · `rebuildPortfolio(): Promise<PortfolioSyncReport>`
-- [L445](electron/portfolio.ts#L445) · export · `updatePortfolioConfig(partial: Partial<PortfolioConfig>): Promise<PortfolioSyncReport>`
-- [L463](electron/portfolio.ts#L463) · export · `writePortfolioJson(outDir: string): number`
-- [L490](electron/portfolio.ts#L490) · export · `getPortfolioState(): PortfolioState`
+- [L421](electron/portfolio.ts#L421) · intern · `countEvents(events: readonly PortfolioEvent[]): { skippedNoCash: number; skippedCap: number; dataMissing: number; }`
+- [L442](electron/portfolio.ts#L442) · export · `rebuildPortfolio(): Promise<PortfolioSyncReport>`
+- [L447](electron/portfolio.ts#L447) · export · `updatePortfolioConfig(partial: Partial<PortfolioConfig>): Promise<PortfolioSyncReport>`
+- [L465](electron/portfolio.ts#L465) · export · `writePortfolioJson(outDir: string): number`
+- [L492](electron/portfolio.ts#L492) · export · `getPortfolioState(): PortfolioState`
 
 #### [electron/preload.ts](electron/preload.ts)
 
@@ -756,18 +759,19 @@ Das folgende Verzeichnis ist aus dem geprüften Quellstand abgeleitet. Es nennt 
 - [L18](electron/prices.ts#L18) · intern · `YF_UA`
 - [L21](electron/prices.ts#L21) · export · `PRICE_REQUEST_GAP_MS`
 - [L22](electron/prices.ts#L22) · intern · `REQUEST_TIMEOUT_MS`
-- [L30](electron/prices.ts#L30) · export · `PRICE_MAX_DAILY_MOVE`
-- [L32](electron/prices.ts#L32) · export · `PricePoint`
-- [L37](electron/prices.ts#L37) · intern · `YahooChart`
-- [L46](electron/prices.ts#L46) · export · `FetchSeriesOptions`
-- [L55](electron/prices.ts#L55) · intern · `ymdUtcMs(s: string): number`
-- [L64](electron/prices.ts#L64) · export · `fetchAdjCloseSeries(symbol: string, opts: FetchSeriesOptions = {}): Promise<PricePoint[] | null>`
-- [L136](electron/prices.ts#L136) · export · `outcomeCutoff(points: readonly PricePoint[], today: string): string | null`
-- [L141](electron/prices.ts#L141) · export · `ScreenedSeries`
-- [L154](electron/prices.ts#L154) · export · `screenSeries(points: readonly PricePoint[], maxMove = PRICE_MAX_DAILY_MOVE): ScreenedSeries`
-- [L177](electron/prices.ts#L177) · export · `priceOnOrAfter(series: readonly PricePoint[], date: string): PricePoint | null`
-- [L184](electron/prices.ts#L184) · export · `outcomePricePair(series: readonly PricePoint[], benchmark: readonly PricePoint[], date: string): { equity: PricePoint; benchmark: PricePoint } | null`
-- [L191](electron/prices.ts#L191) · export · `sleep`
+- [L29](electron/prices.ts#L29) · export · `PRICE_MAX_DAILY_MOVE`
+- [L31](electron/prices.ts#L31) · export · `PricePoint`
+- [L36](electron/prices.ts#L36) · intern · `YahooChart`
+- [L47](electron/prices.ts#L47) · export · `FetchSeriesOptions`
+- [L74](electron/prices.ts#L74) · intern · `ymdUtcMs(s: string): number`
+- [L68](electron/prices.ts#L68) · export · `fetchAdjCloseSeries(symbol: string, opts: FetchSeriesOptions = {}): Promise<PricePoint[] | null>`
+- [L165](electron/prices.ts#L165) · export · `outcomeCutoff(points: readonly PricePoint[], today: string): string | null`
+- [L170](electron/prices.ts#L170) · export · `ScreenedSeries`
+- [L181](electron/prices.ts#L181) · export · `screenSeries(points: readonly PricePoint[], maxMove = PRICE_MAX_DAILY_MOVE): ScreenedSeries`
+- [L211](electron/prices.ts#L211) · export · `windowDiscontinuity(points: readonly PricePoint[], from: string, to: string, maxMove = PRICE_MAX_DAILY_MOVE): boolean`
+- [L216](electron/prices.ts#L216) · export · `priceOnOrAfter(series: readonly PricePoint[], date: string): PricePoint | null`
+- [L223](electron/prices.ts#L223) · export · `outcomePricePair(series: readonly PricePoint[], benchmark: readonly PricePoint[], date: string): { equity: PricePoint; benchmark: PricePoint } | null`
+- [L230](electron/prices.ts#L230) · export · `sleep`
 
 #### [electron/scheduler.ts](electron/scheduler.ts)
 
@@ -2015,63 +2019,65 @@ Ausführbare Tests, Ablaufskript oder Konfiguration; die verlinkte Datei enthäl
 - [L1327](src/types/index.ts#L1327) · export · `MAX_OPTION_BASE_POINTS`
 - [L1329](src/types/index.ts#L1329) · export · `MAX_SINGLE_OPTION_POINTS`
 - [L1334](src/types/index.ts#L1334) · export · `MAX_OPTIONS_SCORE_TOTAL`
-- [L1340](src/types/index.ts#L1340) · export · `MIN_TRACK_RECORD_TRADES`
-- [L1342](src/types/index.ts#L1342) · export · `TRACK_RECORD_SHRINKAGE_K`
-- [L1349](src/types/index.ts#L1349) · export · `shrunkAccuracy(wins: number, total: number, k = TRACK_RECORD_SHRINKAGE_K): number`
-- [L1354](src/types/index.ts#L1354) · export · `DEFAULT_SETTINGS`
-- [L1442](src/types/index.ts#L1442) · export · `PORTFOLIO_ENTRY_SCORE`
-- [L1444](src/types/index.ts#L1444) · export · `PORTFOLIO_SCORE_SPAN`
-- [L1445](src/types/index.ts#L1445) · export · `PORTFOLIO_BASE_WEIGHT`
-- [L1446](src/types/index.ts#L1446) · export · `PORTFOLIO_MIN_WEIGHT`
-- [L1447](src/types/index.ts#L1447) · export · `PORTFOLIO_MAX_WEIGHT`
-- [L1448](src/types/index.ts#L1448) · export · `PORTFOLIO_MAX_POSITIONS`
-- [L1450](src/types/index.ts#L1450) · export · `PORTFOLIO_MIN_TICKET`
-- [L1452](src/types/index.ts#L1452) · export · `PORTFOLIO_REENTRY_COOLDOWN_DAYS`
-- [L1468](src/types/index.ts#L1468) · export · `PORTFOLIO_TAKE_PROFIT`
-- [L1480](src/types/index.ts#L1480) · export · `PORTFOLIO_STOP_LOSS`
-- [L1495](src/types/index.ts#L1495) · export · `PORTFOLIO_MAX_HOLD_DAYS`
-- [L1505](src/types/index.ts#L1505) · export · `PORTFOLIO_TRAIL_ARM`
-- [L1506](src/types/index.ts#L1506) · export · `PORTFOLIO_TRAIL_DISTANCE`
-- [L1512](src/types/index.ts#L1512) · export · `PORTFOLIO_SIGMA_LOOKBACK_DAYS`
-- [L1514](src/types/index.ts#L1514) · export · `PORTFOLIO_TRADING_DAYS_PER_CALENDAR_DAY`
-- [L1516](src/types/index.ts#L1516) · export · `PORTFOLIO_SLIPPAGE_BPS`
-- [L1517](src/types/index.ts#L1517) · export · `PORTFOLIO_STARTING_CASH`
-- [L1530](src/types/index.ts#L1530) · export · `PORTFOLIO_INCEPTION`
-- [L1535](src/types/index.ts#L1535) · export · `PORTFOLIO_PRICE_SEARCH_DAYS`
-- [L1548](src/types/index.ts#L1548) · export · `PORTFOLIO_SESSION_CLOSE_UTC_HOUR`
-- [L1550](src/types/index.ts#L1550) · export · `PortfolioCashPolicy`
-- [L1551](src/types/index.ts#L1551) · export · `PortfolioExitReason`
-- [L1552](src/types/index.ts#L1552) · export · `PortfolioEventKind`
-- [L1577](src/types/index.ts#L1577) · export · `PortfolioSigmaBarriers`
-- [L1588](src/types/index.ts#L1588) · export · `PortfolioConfig`
-- [L1623](src/types/index.ts#L1623) · export · `DEFAULT_PORTFOLIO_CONFIG`
-- [L1656](src/types/index.ts#L1656) · export · `PORTFOLIO_CONFIG_VERSION`
-- [L1662](src/types/index.ts#L1662) · export · `PORTFOLIO_V1_EXIT_DEFAULTS`
-- [L1671](src/types/index.ts#L1671) · export · `PORTFOLIO_V2_DEFAULTS`
-- [L1682](src/types/index.ts#L1682) · export · `PORTFOLIO_SUPERSEDED_DEFAULTS`
-- [L1688](src/types/index.ts#L1688) · export · `PortfolioSignalSource`
-- [L1690](src/types/index.ts#L1690) · export · `PortfolioCandidate`
-- [L1699](src/types/index.ts#L1699) · export · `PortfolioPosition`
-- [L1720](src/types/index.ts#L1720) · export · `PortfolioOpenPosition`
-- [L1734](src/types/index.ts#L1734) · export · `PortfolioClosedPosition`
-- [L1741](src/types/index.ts#L1741) · export · `PortfolioEquityPoint`
-- [L1755](src/types/index.ts#L1755) · export · `PortfolioEvent`
-- [L1764](src/types/index.ts#L1764) · export · `PortfolioWindowKey`
-- [L1767](src/types/index.ts#L1767) · export · `PORTFOLIO_WINDOWS`
-- [L1775](src/types/index.ts#L1775) · export · `PortfolioWindowStat`
-- [L1787](src/types/index.ts#L1787) · export · `PortfolioMetric`
-- [L1795](src/types/index.ts#L1795) · export · `PortfolioTradeStats`
-- [L1812](src/types/index.ts#L1812) · export · `PortfolioStats`
-- [L1823](src/types/index.ts#L1823) · export · `PORTFOLIO_MIN_DAYS_CAGR`
-- [L1824](src/types/index.ts#L1824) · export · `PORTFOLIO_MIN_DAYS_SHARPE`
-- [L1826](src/types/index.ts#L1826) · export · `PORTFOLIO_SMALL_SAMPLE_N`
-- [L1828](src/types/index.ts#L1828) · export · `PortfolioMeta`
-- [L1857](src/types/index.ts#L1857) · export · `PortfolioExperiment`
-- [L1864](src/types/index.ts#L1864) · export · `PortfolioState`
-- [L1879](src/types/index.ts#L1879) · export · `InsiderTrackerAPI`
-- [L1979](src/types/index.ts#L1979) · export · `BIG_PLAYERS`
-- [L2012](src/types/index.ts#L2012) · export · `isBigPlayer(ticker: string): boolean`
-- [L2022](src/types/index.ts#L2022) · export · `isBigPlayerByCap(ticker: string, marketCap?: number): boolean`
+- [L1341](src/types/index.ts#L1341) · export · `MIN_TRACK_RECORD_TRADES`
+- [L1344](src/types/index.ts#L1344) · export · `TRACK_RECORD_EVENT_WINDOW_DAYS`
+- [L1357](src/types/index.ts#L1357) · export · `independentPurchases(trades: readonly T[], windowDays = TRACK_RECORD_EVENT_WINDOW_DAYS): T[]`
+- [L1376](src/types/index.ts#L1376) · export · `TRACK_RECORD_SHRINKAGE_K`
+- [L1383](src/types/index.ts#L1383) · export · `shrunkAccuracy(wins: number, total: number, k = TRACK_RECORD_SHRINKAGE_K): number`
+- [L1388](src/types/index.ts#L1388) · export · `DEFAULT_SETTINGS`
+- [L1476](src/types/index.ts#L1476) · export · `PORTFOLIO_ENTRY_SCORE`
+- [L1478](src/types/index.ts#L1478) · export · `PORTFOLIO_SCORE_SPAN`
+- [L1479](src/types/index.ts#L1479) · export · `PORTFOLIO_BASE_WEIGHT`
+- [L1480](src/types/index.ts#L1480) · export · `PORTFOLIO_MIN_WEIGHT`
+- [L1481](src/types/index.ts#L1481) · export · `PORTFOLIO_MAX_WEIGHT`
+- [L1482](src/types/index.ts#L1482) · export · `PORTFOLIO_MAX_POSITIONS`
+- [L1484](src/types/index.ts#L1484) · export · `PORTFOLIO_MIN_TICKET`
+- [L1486](src/types/index.ts#L1486) · export · `PORTFOLIO_REENTRY_COOLDOWN_DAYS`
+- [L1491](src/types/index.ts#L1491) · export · `PORTFOLIO_TAKE_PROFIT`
+- [L1494](src/types/index.ts#L1494) · export · `PORTFOLIO_STOP_LOSS`
+- [L1497](src/types/index.ts#L1497) · export · `PORTFOLIO_MAX_HOLD_DAYS`
+- [L1501](src/types/index.ts#L1501) · export · `PORTFOLIO_TRAIL_ARM`
+- [L1502](src/types/index.ts#L1502) · export · `PORTFOLIO_TRAIL_DISTANCE`
+- [L1508](src/types/index.ts#L1508) · export · `PORTFOLIO_SIGMA_LOOKBACK_DAYS`
+- [L1510](src/types/index.ts#L1510) · export · `PORTFOLIO_TRADING_DAYS_PER_CALENDAR_DAY`
+- [L1512](src/types/index.ts#L1512) · export · `PORTFOLIO_SLIPPAGE_BPS`
+- [L1513](src/types/index.ts#L1513) · export · `PORTFOLIO_STARTING_CASH`
+- [L1523](src/types/index.ts#L1523) · export · `PORTFOLIO_INCEPTION`
+- [L1528](src/types/index.ts#L1528) · export · `PORTFOLIO_PRICE_SEARCH_DAYS`
+- [L1530](src/types/index.ts#L1530) · export · `PORTFOLIO_SESSION_CLOSE_UTC_HOUR`
+- [L1532](src/types/index.ts#L1532) · export · `PortfolioCashPolicy`
+- [L1533](src/types/index.ts#L1533) · export · `PortfolioExitReason`
+- [L1534](src/types/index.ts#L1534) · export · `PortfolioEventKind`
+- [L1559](src/types/index.ts#L1559) · export · `PortfolioSigmaBarriers`
+- [L1570](src/types/index.ts#L1570) · export · `PortfolioConfig`
+- [L1611](src/types/index.ts#L1611) · export · `DEFAULT_PORTFOLIO_CONFIG`
+- [L1658](src/types/index.ts#L1658) · export · `PORTFOLIO_CONFIG_VERSION`
+- [L1664](src/types/index.ts#L1664) · export · `PORTFOLIO_V1_EXIT_DEFAULTS`
+- [L1673](src/types/index.ts#L1673) · export · `PORTFOLIO_V2_DEFAULTS`
+- [L1684](src/types/index.ts#L1684) · export · `PORTFOLIO_SUPERSEDED_DEFAULTS`
+- [L1690](src/types/index.ts#L1690) · export · `PortfolioSignalSource`
+- [L1692](src/types/index.ts#L1692) · export · `PortfolioCandidate`
+- [L1701](src/types/index.ts#L1701) · export · `PortfolioPosition`
+- [L1722](src/types/index.ts#L1722) · export · `PortfolioOpenPosition`
+- [L1737](src/types/index.ts#L1737) · export · `PortfolioClosedPosition`
+- [L1744](src/types/index.ts#L1744) · export · `PortfolioEquityPoint`
+- [L1758](src/types/index.ts#L1758) · export · `PortfolioEvent`
+- [L1767](src/types/index.ts#L1767) · export · `PortfolioWindowKey`
+- [L1770](src/types/index.ts#L1770) · export · `PORTFOLIO_WINDOWS`
+- [L1778](src/types/index.ts#L1778) · export · `PortfolioWindowStat`
+- [L1790](src/types/index.ts#L1790) · export · `PortfolioMetric`
+- [L1798](src/types/index.ts#L1798) · export · `PortfolioTradeStats`
+- [L1815](src/types/index.ts#L1815) · export · `PortfolioStats`
+- [L1826](src/types/index.ts#L1826) · export · `PORTFOLIO_MIN_DAYS_CAGR`
+- [L1827](src/types/index.ts#L1827) · export · `PORTFOLIO_MIN_DAYS_SHARPE`
+- [L1829](src/types/index.ts#L1829) · export · `PORTFOLIO_SMALL_SAMPLE_N`
+- [L1831](src/types/index.ts#L1831) · export · `PortfolioMeta`
+- [L1870](src/types/index.ts#L1870) · export · `PortfolioExperiment`
+- [L1878](src/types/index.ts#L1878) · export · `PortfolioState`
+- [L1894](src/types/index.ts#L1894) · export · `InsiderTrackerAPI`
+- [L1999](src/types/index.ts#L1999) · export · `BIG_PLAYERS`
+- [L2032](src/types/index.ts#L2032) · export · `isBigPlayer(ticker: string): boolean`
+- [L2042](src/types/index.ts#L2042) · export · `isBigPlayerByCap(ticker: string, marketCap?: number): boolean`
 
 #### [src/vite-env.d.ts](src/vite-env.d.ts)
 
@@ -2374,14 +2380,14 @@ Ausführbare Tests, Ablaufskript oder Konfiguration; die verlinkte Datei enthäl
 
 #### [scripts/label-outcomes.ts](scripts/label-outcomes.ts)
 
-- [L50](scripts/label-outcomes.ts#L50) · intern · `HORIZONS`
-- [L51](scripts/label-outcomes.ts#L51) · intern · `MAX_TICKERS_PER_RUN`
-- [L53](scripts/label-outcomes.ts#L53) · intern · `Series`
-- [L54](scripts/label-outcomes.ts#L54) · intern · `cache`
-- [L56](scripts/label-outcomes.ts#L56) · intern · `fetchSeries(ticker: string, fromYmd: string, identity?: PriceIdentity): Promise<Series | null>`
-- [L67](scripts/label-outcomes.ts#L67) · intern · `addDays(ymd: string, days: number): string`
-- [L73](scripts/label-outcomes.ts#L73) · intern · `main(): Promise<void>`
-- [L183](scripts/label-outcomes.ts#L183) · intern · `report(): void`
+- [L52](scripts/label-outcomes.ts#L52) · intern · `HORIZONS`
+- [L53](scripts/label-outcomes.ts#L53) · intern · `MAX_TICKERS_PER_RUN`
+- [L56](scripts/label-outcomes.ts#L56) · intern · `Series`
+- [L57](scripts/label-outcomes.ts#L57) · intern · `cache`
+- [L59](scripts/label-outcomes.ts#L59) · intern · `fetchSeries(ticker: string, fromYmd: string, identity?: PriceIdentity): Promise<Series | null>`
+- [L72](scripts/label-outcomes.ts#L72) · intern · `addDays(ymd: string, days: number): string`
+- [L78](scripts/label-outcomes.ts#L78) · intern · `main(): Promise<void>`
+- [L198](scripts/label-outcomes.ts#L198) · intern · `report(): void`
 
 #### [scripts/portfolio-sweep.ts](scripts/portfolio-sweep.ts)
 
@@ -2605,12 +2611,12 @@ Ausführbare Tests, Ablaufskript oder Konfiguration; die verlinkte Datei enthäl
 
 #### [scripts/verify-portfolio.ts](scripts/verify-portfolio.ts)
 
-- [L30](scripts/verify-portfolio.ts#L30) · intern · `failures`
-- [L31](scripts/verify-portfolio.ts#L31) · intern · `warnings`
-- [L33](scripts/verify-portfolio.ts#L33) · intern · `check(name: string, ok: boolean, detail = ''): void`
-- [L38](scripts/verify-portfolio.ts#L38) · intern · `warn(name: string, ok: boolean, detail = ''): void`
-- [L43](scripts/verify-portfolio.ts#L43) · intern · `money`
-- [L45](scripts/verify-portfolio.ts#L45) · intern · `main(): void`
+- [L32](scripts/verify-portfolio.ts#L32) · intern · `failures`
+- [L33](scripts/verify-portfolio.ts#L33) · intern · `warnings`
+- [L35](scripts/verify-portfolio.ts#L35) · intern · `check(name: string, ok: boolean, detail = ''): void`
+- [L40](scripts/verify-portfolio.ts#L40) · intern · `warn(name: string, ok: boolean, detail = ''): void`
+- [L45](scripts/verify-portfolio.ts#L45) · intern · `money`
+- [L47](scripts/verify-portfolio.ts#L47) · intern · `main(): void`
 
 #### [scripts/verify-scoring.ts](scripts/verify-scoring.ts)
 
